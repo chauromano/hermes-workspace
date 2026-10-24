@@ -86,7 +86,6 @@ export type NormalizeHermesConfigInput = {
 export const HERMES_PROVIDER_CATALOG: Array<ProviderDef> = [
   { id: 'nous', name: 'Nous Portal', kind: 'oauth', envKeys: [], models: [] },
   { id: 'openai-codex', name: 'OpenAI Codex', kind: 'oauth', envKeys: [], models: [] },
-  { id: 'vertex', name: 'Google Vertex AI', kind: 'oauth', envKeys: ['VERTEX_PROJECT', 'VERTEX_PROJECT_ID'], models: [] },
   { id: 'anthropic', name: 'Anthropic', kind: 'api_key', envKeys: ['ANTHROPIC_API_KEY'], models: [] },
   { id: 'openrouter', name: 'OpenRouter', kind: 'api_key', envKeys: ['OPENROUTER_API_KEY'], models: [] },
   { id: 'zai', name: 'Z.AI / GLM', kind: 'api_key', envKeys: ['GLM_API_KEY'], models: [] },

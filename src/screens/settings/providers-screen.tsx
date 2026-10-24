@@ -788,7 +788,6 @@ type PerformanceDraft = {
 
 const MODEL_PROVIDER_OPTIONS: Array<SelectOption> = [
   { label: 'Custom', value: 'custom' },
-  { label: 'Google Vertex AI', value: 'vertex' },
   { label: 'OpenRouter', value: 'openrouter' },
   { label: 'Anthropic', value: 'anthropic' },
   { label: 'OpenAI', value: 'openai' },
