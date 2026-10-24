@@ -2276,8 +2276,12 @@ function ChatComposerComponent({
                 type="button"
                 aria-label="Actions"
                 disabled={disabled}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
                 onClick={(event) => {
                   event.stopPropagation()
+                  ;(document.activeElement as HTMLElement)?.blur()
                   setIsModelMenuOpen(false)
                   setIsMobileActionsMenuOpen((prev) => !prev)
                 }}
@@ -2289,7 +2293,7 @@ function ChatComposerComponent({
               {/* Textarea — flex-1, auto-growing */}
               <PromptInputTextarea
                 placeholder={promptPlaceholder}
-                autoFocus
+                autoFocus={!isMobileViewport}
                 inputRef={promptRef}
                 onKeyDown={handlePromptKeyDown}
                 onFocus={() => {

@@ -80,7 +80,7 @@ function focusTextareaTarget(target: HTMLTextAreaElement | null) {
   }
 }
 
-function isInteractiveTarget(target: HTMLElement | null): boolean {
+function isInteractiveTarget(target: Element | null): boolean {
   if (!target) return false
   return Boolean(
     target.closest(
@@ -124,7 +124,7 @@ function PromptInput({
   }
 
   function handleClick(e: React.MouseEvent<HTMLDivElement>) {
-    const target = e.target instanceof HTMLElement ? e.target : null
+    const target = e.target instanceof Element ? e.target : null
     if (!disabled && !isInteractiveTarget(target)) {
       focusTextareaTarget(textareaRef.current)
     }
@@ -132,7 +132,7 @@ function PromptInput({
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    const target = e.target instanceof HTMLElement ? e.target : null
+    const target = e.target instanceof Element ? e.target : null
     if (
       !disabled &&
       e.pointerType === 'touch' &&
