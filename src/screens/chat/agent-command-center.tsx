@@ -4,12 +4,14 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowRight01Icon,
+  Cancel01Icon,
   Chat01Icon,
   CheckListIcon,
   Clock01Icon,
   EyeIcon,
   PinIcon,
   PlusSignIcon,
+  Search01Icon,
   UserGroupIcon,
   UserMultipleIcon,
   ViewOffIcon,
@@ -171,7 +173,7 @@ function NativeSessionRow({
             'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
             isPinned
               ? 'text-accent-600 hover:bg-accent-500/20'
-              : 'text-primary-300 opacity-0 group-hover:opacity-100 hover:bg-primary-200/60 hover:text-primary-700 focus:opacity-100',
+              : 'text-primary-300 opacity-60 md:opacity-0 md:group-hover:opacity-100 hover:bg-primary-200/60 hover:text-primary-700 focus:opacity-100',
           )}
         >
           <HugeiconsIcon
@@ -246,6 +248,7 @@ export function AgentCommandCenter({
   const queryClient = useQueryClient()
   const [showHiddenHarnesses, setShowHiddenHarnesses] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
+  const [sessionSearch, setSessionSearch] = useState('')
   const { hiddenIds, hiddenSet, toggleHarness, showAllHarnesses } =
     useHarnessVisibility()
   const operations = useOperations()
@@ -396,6 +399,35 @@ export function AgentCommandCenter({
     }
     return [...pinned, ...unpinned]
   }, [nativeSessions, isSessionPinned])
+
+  const filteredNativeSessions = useMemo(() => {
+    const q = sessionSearch.trim().toLowerCase()
+    if (!q) return sortedNativeSessions
+    return sortedNativeSessions.filter((s) => {
+      const title = (
+        s.title ||
+        s.derivedTitle ||
+        s.label ||
+        (s.friendlyId ? `Session ${s.friendlyId.slice(0, 8)}` : 'Session')
+      ).toLowerCase()
+      const key = (s.friendlyId || s.key || (s as any).id || '').toLowerCase()
+      const model = typeof s.model === 'string' ? s.model.toLowerCase() : ''
+      return title.includes(q) || key.includes(q) || model.includes(q)
+    })
+  }, [sortedNativeSessions, sessionSearch])
+
+  const { pinnedSessions, unpinnedSessions } = useMemo(() => {
+    const pinned: Array<GatewaySession> = []
+    const unpinned: Array<GatewaySession> = []
+    for (const session of filteredNativeSessions) {
+      if (isSessionPinned(session)) {
+        pinned.push(session)
+      } else {
+        unpinned.push(session)
+      }
+    }
+    return { pinnedSessions: pinned, unpinnedSessions: unpinned }
+  }, [filteredNativeSessions, isSessionPinned])
 
   return (
     <main className="h-full w-full max-w-full min-w-0 overflow-x-hidden overflow-y-auto bg-surface text-primary-900">
@@ -641,7 +673,7 @@ export function AgentCommandCenter({
               title="Recent sessions"
               subtitle="Past and active sessions across this workspace."
               action={
-                sortedNativeSessions.length > 0 ? (
+                nativeSessions.length > 0 ? (
                   <Link
                     to="/chat/$sessionKey"
                     params={{ sessionKey: 'new' }}
@@ -652,36 +684,114 @@ export function AgentCommandCenter({
                 ) : undefined
               }
             >
-              {sortedNativeSessions.length ? (
-                <div className="space-y-1">
-                  {(showAllSessions
-                    ? sortedNativeSessions
-                    : sortedNativeSessions.slice(0, 6)
-                  ).map((session) => (
-                    <NativeSessionRow
-                      key={session.key || session.friendlyId}
-                      session={session}
-                      isPinned={isSessionPinned(session)}
-                      onTogglePin={() => {
-                        togglePinnedSession(
-                          session.key ||
-                            session.friendlyId ||
-                            (session as any).id,
-                        )
-                      }}
-                    />
-                  ))}
-                  {sortedNativeSessions.length > 6 && (
+              {nativeSessions.length > 0 && (
+                <div className="mb-2.5 relative w-full min-w-0">
+                  <HugeiconsIcon
+                    icon={Search01Icon}
+                    size={14}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-400 pointer-events-none"
+                  />
+                  <input
+                    type="text"
+                    value={sessionSearch}
+                    onChange={(e) => setSessionSearch(e.target.value)}
+                    placeholder="Search sessions..."
+                    className="w-full text-xs rounded-xl pl-8 pr-7 py-1.5 bg-surface text-primary-900 placeholder:text-primary-400 border border-primary-200 focus:border-accent-500 focus:outline-none transition-colors"
+                  />
+                  {sessionSearch && (
                     <button
                       type="button"
-                      onClick={() => setShowAllSessions((prev) => !prev)}
-                      className="mt-2 w-full rounded-lg py-1.5 text-center text-xs font-medium text-accent-600 hover:bg-primary-100/60"
+                      onClick={() => setSessionSearch('')}
+                      aria-label="Clear search"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary-400 hover:text-primary-700 text-xs p-0.5 rounded transition-colors"
                     >
-                      {showAllSessions
-                        ? 'Show fewer'
-                        : `Show all ${sortedNativeSessions.length} sessions`}
+                      <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
                     </button>
                   )}
+                </div>
+              )}
+
+              {filteredNativeSessions.length ? (
+                <div className="space-y-1">
+                  {/* Pinned sessions section */}
+                  {pinnedSessions.length > 0 && (
+                    <div className="space-y-1 pb-1">
+                      <div className="flex items-center gap-1.5 px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500">
+                        <HugeiconsIcon icon={PinIcon} size={11} strokeWidth={2} />
+                        <span>Pinned</span>
+                        <span className="text-[10px] text-primary-400 font-normal">
+                          ({pinnedSessions.length})
+                        </span>
+                      </div>
+                      {pinnedSessions.map((session) => (
+                        <NativeSessionRow
+                          key={session.key || session.friendlyId}
+                          session={session}
+                          isPinned={true}
+                          onTogglePin={() => {
+                            togglePinnedSession(
+                              session.key ||
+                                session.friendlyId ||
+                                (session as any).id,
+                            )
+                          }}
+                        />
+                      ))}
+                      {unpinnedSessions.length > 0 && (
+                        <div className="my-1.5 border-t border-primary-200/80" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Unpinned / Recent sessions */}
+                  {unpinnedSessions.length > 0 && (
+                    <div className="space-y-1">
+                      {pinnedSessions.length > 0 && (
+                        <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500">
+                          <span>Recent</span>
+                        </div>
+                      )}
+                      {(showAllSessions || sessionSearch
+                        ? unpinnedSessions
+                        : unpinnedSessions.slice(0, 6)
+                      ).map((session) => (
+                        <NativeSessionRow
+                          key={session.key || session.friendlyId}
+                          session={session}
+                          isPinned={false}
+                          onTogglePin={() => {
+                            togglePinnedSession(
+                              session.key ||
+                                session.friendlyId ||
+                                (session as any).id,
+                            )
+                          }}
+                        />
+                      ))}
+                      {!sessionSearch && unpinnedSessions.length > 6 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllSessions((prev) => !prev)}
+                          className="mt-2 w-full rounded-lg py-1.5 text-center text-xs font-medium text-accent-600 hover:bg-primary-100/60 transition-colors"
+                        >
+                          {showAllSessions
+                            ? 'Show fewer'
+                            : `Show all ${unpinnedSessions.length} recent sessions`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : sessionSearch ? (
+                <div className="py-6 text-center text-xs text-primary-500">
+                  <p>No sessions found matching &ldquo;{sessionSearch}&rdquo;</p>
+                  <button
+                    type="button"
+                    onClick={() => setSessionSearch('')}
+                    className="mt-2 text-xs font-medium text-accent-600 hover:text-accent-700"
+                  >
+                    Clear search
+                  </button>
                 </div>
               ) : sessionsQuery.isLoading ? (
                 <div className="py-6 text-center text-xs text-primary-400">
