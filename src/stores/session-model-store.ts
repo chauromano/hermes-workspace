@@ -29,15 +29,15 @@ export const useSessionModelStore = create<State & Actions>()(
     (set, get) => ({
       models: {},
       getModel: (sessionKey) => {
-        if (!sessionKey) return undefined
-        return get().models[sessionKey]
+        if (!sessionKey) return get().models['draft']
+        return get().models[sessionKey] ?? get().models['draft']
       },
       setModel: (sessionKey, model) => {
-        if (!sessionKey) return
+        const key = sessionKey || 'draft'
         const trimmed = model.trim()
         if (!trimmed) return
         set((state) => ({
-          models: { ...state.models, [sessionKey]: trimmed },
+          models: { ...state.models, [key]: trimmed },
         }))
       },
       clearModel: (sessionKey) => {

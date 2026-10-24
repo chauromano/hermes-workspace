@@ -1144,9 +1144,7 @@ function ChatComposerComponent({
       // Per-session, browser-local persistence. No global config write —
       // picking a model here only affects this chat. The actual model is
       // passed on each request via the chat-completion `model` field.
-      if (normalizedSessionKey) {
-        setPersistedSessionModel(normalizedSessionKey, resolved)
-      }
+      setPersistedSessionModel(normalizedSessionKey || 'draft', resolved)
       setIsModelMenuOpen(false)
     },
     [
@@ -2688,18 +2686,29 @@ function ChatComposerComponent({
                               entry.id,
                               entry.provider,
                             )
+                            const onSelect = (e: React.SyntheticEvent) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+                                document.activeElement.blur()
+                              }
+                              handleModelSelect(entry.id, entry.provider || undefined)
+                              setIsModelMenuOpen(false)
+                              setModelSearchQuery('')
+                              setMobileProviderFilter('all')
+                            }
                             return (
-                              <div key={entry.id} className="relative flex items-center mb-1.5">
+                              <div key={entry.id} className="relative flex items-center mb-1.5 touch-manipulation">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    handleModelSelect(entry.id, entry.provider || undefined)
-                                    setIsModelMenuOpen(false)
-                                    setModelSearchQuery('')
-                                    setMobileProviderFilter('all')
+                                  onClick={onSelect}
+                                  onPointerUp={(e) => {
+                                    if (e.pointerType === 'touch') {
+                                      onSelect(e)
+                                    }
                                   }}
                                   className={cn(
-                                    'flex flex-1 min-h-[50px] items-center justify-between gap-3 px-3.5 py-2.5 text-left rounded-xl border transition-all active:scale-[0.99] cursor-pointer',
+                                    'flex flex-1 min-h-[50px] items-center justify-between gap-3 px-3.5 py-2.5 text-left rounded-xl border transition-all active:scale-[0.99] cursor-pointer touch-manipulation',
                                     isActive
                                       ? 'border-accent-500 bg-accent-50/80 dark:bg-accent-950/40 text-accent-700 dark:text-accent-300 shadow-xs'
                                       : 'border-neutral-200/60 dark:border-neutral-700/60 bg-neutral-50/80 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'

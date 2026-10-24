@@ -1058,7 +1058,10 @@ export function ChatScreen({
   }, [modelsQuery.data])
 
   const gatewayModel = currentModelQuery.data || ''
-  const currentModel = _localModelOverride || gatewayModel
+  const sessionModel = useSessionModelStore((s) =>
+    s.getModel(resolvedSessionKey || activeFriendlyId || (isNewChat ? 'draft' : 'main')),
+  )
+  const currentModel = _localModelOverride || sessionModel || gatewayModel
 
   // Ref so sendMessage can always read latest thinkingLevel without being in deps
   const thinkingLevelRef = useRef<ThinkingLevel>(thinkingLevel)
