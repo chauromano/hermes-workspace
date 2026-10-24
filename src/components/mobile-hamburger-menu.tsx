@@ -6,6 +6,7 @@ import {
   Castle02Icon,
   Chat01Icon,
   CheckListIcon,
+  Folder01Icon,
   Clock01Icon,
   CommandLineIcon,
   McpServerIcon,
@@ -53,6 +54,13 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     icon: CheckListIcon,
     to: '/tasks',
     match: (p: string) => p.startsWith('/tasks'),
+  },
+  {
+    id: 'projects',
+    label: 'Projects',
+    icon: Folder01Icon,
+    to: '/projects',
+    match: (p: string) => p.startsWith('/projects'),
   },
   {
     id: 'swarm',

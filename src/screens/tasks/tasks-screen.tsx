@@ -1,5 +1,7 @@
 'use client'
 
+import { useProjects } from '@/hooks/use-projects'
+
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -60,6 +62,8 @@ export function TasksScreen() {
   const navigate = useNavigate()
   const initialAssignee = typeof search.assignee === 'string' ? search.assignee : null
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(initialAssignee)
+  const { projects, activeId } = useProjects()
+  const [projectFilter, setProjectFilter] = useState<string | null>(null)
 
   const tasksQuery = useQuery({
     queryKey: [...QUERY_KEY, showDone],
@@ -93,13 +97,14 @@ export function TasksScreen() {
     }
     for (const t of tasks) {
       if (assigneeFilter && t.assignee !== assigneeFilter) continue
+      if (projectFilter && t.project_id !== projectFilter) continue
       map[t.column].push(t)
     }
     for (const col of COLUMN_ORDER) {
       map[col].sort((a, b) => a.position - b.position)
     }
     return map
-  }, [tasks, assigneeFilter])
+  }, [tasks, assigneeFilter, projectFilter])
 
   const stats = useMemo(() => {
     const total = tasks.length
@@ -233,6 +238,18 @@ export function TasksScreen() {
           >
             {showDone ? 'Hide Done' : 'Show Done'}
           </button>
+          <select
+            value={projectFilter ?? ''}
+            onChange={(e) => setProjectFilter(e.target.value ? e.target.value : null)}
+            className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-2.5 py-1 text-xs text-[var(--theme-text)] outline-none focus:border-accent-500 cursor-pointer"
+          >
+            <option value="">All Projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} {p.id === activeId ? '★ (Active)' : ''}
+              </option>
+            ))}
+          </select>
           <button
             onClick={invalidate}
             className="rounded-lg p-1.5 transition-colors hover:bg-[var(--theme-hover)]"

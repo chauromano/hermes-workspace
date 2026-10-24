@@ -4,6 +4,10 @@ import {
   listProjects,
   createProject,
   setActiveProject,
+  updateProject,
+  addProjectFolder,
+  removeProjectFolder,
+  archiveProject,
   deleteProject,
   listWorkspaceDirectories,
   type CreateProjectInput,
@@ -52,6 +56,65 @@ export const Route = createFileRoute('/api/projects')({
             const ident = typeof body.id === 'string' ? body.id : null
             const res = setActiveProject(ident)
             return jsonResponse({ success: true, active_id: res.active_id })
+          }
+
+          if (action === 'update') {
+            const ident = typeof body.id === 'string' ? body.id : ''
+            if (!ident) {
+              return jsonResponse({ error: 'Project ID is required' }, 400)
+            }
+            const project = updateProject(ident, {
+              name: typeof body.name === 'string' ? body.name : undefined,
+              description: body.description !== undefined ? String(body.description) : undefined,
+              primary_path: typeof body.primary_path === 'string' ? body.primary_path : undefined,
+              icon: body.icon !== undefined ? String(body.icon) : undefined,
+              color: body.color !== undefined ? String(body.color) : undefined,
+              board_slug: body.board_slug !== undefined ? String(body.board_slug) : undefined,
+            })
+            return jsonResponse({ success: true, project })
+          }
+
+          if (action === 'add_folder') {
+            const ident = typeof body.id === 'string' ? body.id : ''
+            const folderPath = typeof body.path === 'string' ? body.path : ''
+            if (!ident || !folderPath) {
+              return jsonResponse({ error: 'Project ID and folder path are required' }, 400)
+            }
+            const project = addProjectFolder(
+              ident,
+              folderPath,
+              typeof body.label === 'string' ? body.label : '',
+              body.is_primary === true,
+            )
+            return jsonResponse({ success: true, project })
+          }
+
+          if (action === 'remove_folder') {
+            const ident = typeof body.id === 'string' ? body.id : ''
+            const folderPath = typeof body.path === 'string' ? body.path : ''
+            if (!ident || !folderPath) {
+              return jsonResponse({ error: 'Project ID and folder path are required' }, 400)
+            }
+            const project = removeProjectFolder(ident, folderPath)
+            return jsonResponse({ success: true, project })
+          }
+
+          if (action === 'archive') {
+            const ident = typeof body.id === 'string' ? body.id : ''
+            if (!ident) {
+              return jsonResponse({ error: 'Project ID is required' }, 400)
+            }
+            const project = archiveProject(ident, true)
+            return jsonResponse({ success: true, project })
+          }
+
+          if (action === 'restore') {
+            const ident = typeof body.id === 'string' ? body.id : ''
+            if (!ident) {
+              return jsonResponse({ error: 'Project ID is required' }, 400)
+            }
+            const project = archiveProject(ident, false)
+            return jsonResponse({ success: true, project })
           }
 
           if (action === 'delete') {

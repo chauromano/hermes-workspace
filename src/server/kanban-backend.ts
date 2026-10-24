@@ -115,6 +115,7 @@ function dashboardTaskToCard(task: DashboardKanbanTask): SwarmKanbanCard {
     status: mapDashboardStatusToLane(task.status),
     missionId: null,
     reportPath: null,
+    projectId: task.project_id ?? null,
     createdBy: task.created_by ?? 'hermes-kanban',
     createdAt,
     updatedAt,
@@ -127,6 +128,7 @@ type ClaudeTaskRow = {
   body?: string | null
   status?: string | null
   assignee?: string | null
+  project_id?: string | null
   created_at?: number | string | null
   updated_at?: number | string | null
   parents_json?: string | null
@@ -225,6 +227,7 @@ function claudeTaskProjection(): string {
     'tasks.body,',
     'tasks.status,',
     'tasks.assignee,',
+    'tasks.project_id,',
     'tasks.created_at,',
     'coalesce(tasks.last_heartbeat_at, tasks.completed_at, tasks.started_at, tasks.created_at) as updated_at,',
     "coalesce((select json_group_array(parent_id) from task_links where child_id = tasks.id), '[]') as parents_json,",
@@ -458,13 +461,14 @@ const claudeBackend: KanbanBackend = {
     const statements = [
       'begin immediate;',
       'insert into tasks (',
-      'id, title, body, assignee, status, priority, created_by, created_at, workspace_kind, workspace_path, idempotency_key',
+      'id, title, body, assignee, project_id, status, priority, created_by, created_at, workspace_kind, workspace_path, idempotency_key',
       ') values (',
       [
         sqliteQuote(taskId),
         sqliteQuote(input.title.trim()),
         sqliteQuote((input.spec ?? '').trim()),
         input.assignedWorker?.trim() ? sqliteQuote(input.assignedWorker.trim()) : 'NULL',
+        input.projectId?.trim() ? sqliteQuote(input.projectId.trim()) : 'NULL',
         sqliteQuote(status),
         '0',
         sqliteQuote(input.createdBy?.trim() || 'swarm2-kanban'),
@@ -529,9 +533,24 @@ const dashboardProxyBackend: KanbanBackend = {
   async list() {
     const board = await fetchDashboardKanbanBoard()
     const cards: SwarmKanbanCard[] = []
+    const detection = detectClaudeKanban()
+    const projectMap = new Map<string, string>()
+    if (detection.available) {
+      try {
+        const raw = runSqlite(detection.dbPath, 'select id, project_id from tasks where project_id is not null;')
+        const rows = raw ? (JSON.parse(raw) as Array<{ id: string; project_id: string }>) : []
+        for (const r of rows) {
+          if (r.project_id) projectMap.set(r.id, r.project_id)
+        }
+      } catch {}
+    }
     for (const column of board.columns) {
       for (const task of column.tasks) {
-        cards.push(dashboardTaskToCard(task))
+        const card = dashboardTaskToCard(task)
+        if (projectMap.has(card.id)) {
+          card.projectId = projectMap.get(card.id)
+        }
+        cards.push(card)
       }
     }
     return cards.sort(
@@ -546,7 +565,20 @@ const dashboardProxyBackend: KanbanBackend = {
       status: mapLaneToDashboardStatus(input.status ?? 'backlog'),
       created_by: input.createdBy?.trim() || 'hermes-workspace',
     })
-    return dashboardTaskToCard(task)
+    if (input.projectId?.trim()) {
+      const detection = detectClaudeKanban()
+      if (detection.available) {
+        try {
+          runSqlite(
+            detection.dbPath,
+            'update tasks set project_id = ' + sqliteQuote(input.projectId.trim()) + ' where id = ' + sqliteQuote(task.id) + ';',
+          )
+        } catch {}
+      }
+    }
+    const card = dashboardTaskToCard(task)
+    card.projectId = input.projectId?.trim() || null
+    return card
   },
   async update(cardId, updates) {
     const patch: Parameters<typeof updateDashboardKanbanTask>[1] = {}

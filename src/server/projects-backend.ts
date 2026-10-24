@@ -306,6 +306,147 @@ export function setActiveProject(
   return { active_id: proj.id }
 }
 
+export function updateProject(
+  ident: string,
+  updates: {
+    name?: string
+    description?: string | null
+    primary_path?: string
+    icon?: string | null
+    color?: string | null
+    board_slug?: string | null
+  },
+  dbPath = getProjectsDbPath(),
+): Project {
+  const proj = getProject(ident, dbPath)
+  if (!proj) {
+    throw new Error(`Project not found: ${ident}`)
+  }
+
+  const setClauses: string[] = []
+  if (typeof updates.name === 'string' && updates.name.trim()) {
+    setClauses.push(`name = ${sqliteQuote(updates.name.trim())}`)
+  }
+  if (updates.description !== undefined) {
+    setClauses.push(
+      `description = ${updates.description ? sqliteQuote(updates.description.trim()) : 'NULL'}`,
+    )
+  }
+  if (updates.icon !== undefined) {
+    setClauses.push(`icon = ${updates.icon ? sqliteQuote(updates.icon.trim()) : 'NULL'}`)
+  }
+  if (updates.color !== undefined) {
+    setClauses.push(`color = ${updates.color ? sqliteQuote(updates.color.trim()) : 'NULL'}`)
+  }
+  if (updates.board_slug !== undefined) {
+    setClauses.push(
+      `board_slug = ${updates.board_slug ? sqliteQuote(updates.board_slug.trim()) : 'NULL'}`,
+    )
+  }
+
+  const statements: string[] = ['BEGIN TRANSACTION;']
+
+  if (typeof updates.primary_path === 'string' && updates.primary_path.trim()) {
+    const primary = resolve(updates.primary_path.trim()).replace(/\\/g, '/')
+    setClauses.push(`primary_path = ${sqliteQuote(primary)}`)
+    const now = Math.floor(Date.now() / 1000)
+    // Clear existing is_primary flags and set or insert this one
+    statements.push(
+      `UPDATE project_folders SET is_primary = 0 WHERE project_id = ${sqliteQuote(proj.id)};`,
+      `INSERT INTO project_folders (project_id, path, label, is_primary, added_at) VALUES (${sqliteQuote(proj.id)}, ${sqliteQuote(primary)}, 'primary', 1, ${now}) ON CONFLICT(project_id, path) DO UPDATE SET is_primary = 1;`,
+    )
+  }
+
+  if (setClauses.length > 0) {
+    statements.push(
+      `UPDATE projects SET ${setClauses.join(', ')} WHERE id = ${sqliteQuote(proj.id)};`,
+    )
+  }
+
+  statements.push('COMMIT;')
+  runSqliteExec(dbPath, statements.join('\n'))
+
+  const updated = getProject(proj.id, dbPath)
+  if (!updated) throw new Error('Failed to retrieve updated project')
+  return updated
+}
+
+export function addProjectFolder(
+  ident: string,
+  folderPath: string,
+  label = '',
+  isPrimary = false,
+  dbPath = getProjectsDbPath(),
+): Project {
+  const proj = getProject(ident, dbPath)
+  if (!proj) {
+    throw new Error(`Project not found: ${ident}`)
+  }
+
+  const cleanPath = resolve(folderPath.trim()).replace(/\\/g, '/')
+  const labelVal = label.trim() ? sqliteQuote(label.trim()) : 'NULL'
+  const now = Math.floor(Date.now() / 1000)
+
+  const statements: string[] = ['BEGIN TRANSACTION;']
+  if (isPrimary) {
+    statements.push(
+      `UPDATE project_folders SET is_primary = 0 WHERE project_id = ${sqliteQuote(proj.id)};`,
+      `UPDATE projects SET primary_path = ${sqliteQuote(cleanPath)} WHERE id = ${sqliteQuote(proj.id)};`,
+    )
+  }
+
+  statements.push(
+    `INSERT INTO project_folders (project_id, path, label, is_primary, added_at) VALUES (${sqliteQuote(proj.id)}, ${sqliteQuote(cleanPath)}, ${labelVal}, ${isPrimary ? 1 : 0}, ${now}) ON CONFLICT(project_id, path) DO UPDATE SET label = ${labelVal}, is_primary = ${isPrimary ? 1 : 'is_primary'};`,
+    'COMMIT;',
+  )
+
+  runSqliteExec(dbPath, statements.join('\n'))
+  const updated = getProject(proj.id, dbPath)
+  if (!updated) throw new Error('Failed to retrieve project after adding folder')
+  return updated
+}
+
+export function removeProjectFolder(
+  ident: string,
+  folderPath: string,
+  dbPath = getProjectsDbPath(),
+): Project {
+  const proj = getProject(ident, dbPath)
+  if (!proj) {
+    throw new Error(`Project not found: ${ident}`)
+  }
+
+  const cleanPath = resolve(folderPath.trim()).replace(/\\/g, '/')
+  runSqliteExec(
+    dbPath,
+    `DELETE FROM project_folders WHERE project_id = ${sqliteQuote(proj.id)} AND path = ${sqliteQuote(cleanPath)};`,
+  )
+
+  const updated = getProject(proj.id, dbPath)
+  if (!updated) throw new Error('Failed to retrieve project after removing folder')
+  return updated
+}
+
+export function archiveProject(
+  ident: string,
+  archive = true,
+  dbPath = getProjectsDbPath(),
+): Project {
+  const proj = getProject(ident, dbPath)
+  if (!proj) {
+    throw new Error(`Project not found: ${ident}`)
+  }
+
+  runSqliteExec(
+    dbPath,
+    `UPDATE projects SET archived = ${archive ? 1 : 0} WHERE id = ${sqliteQuote(proj.id)};`,
+  )
+
+  const updated = getProject(proj.id, dbPath)
+  if (!updated) throw new Error('Failed to retrieve archived project')
+  return updated
+}
+
 export function deleteProject(
   ident: string,
   dbPath = getProjectsDbPath(),

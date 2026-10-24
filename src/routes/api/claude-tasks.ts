@@ -39,6 +39,7 @@ export const Route = createFileRoute('/api/claude-tasks')({
           assignee: url.searchParams.get('assignee'),
           priority: url.searchParams.get('priority'),
           includeDone: url.searchParams.get('include_done') === 'true',
+          project_id: url.searchParams.get('project_id'),
         })
 
         return jsonResponse({ tasks })
@@ -64,6 +65,7 @@ export const Route = createFileRoute('/api/claude-tasks')({
             tags: Array.isArray(body.tags) ? body.tags.filter((tag): tag is string => typeof tag === 'string') : [],
             due_date: typeof body.due_date === 'string' ? body.due_date : null,
             created_by: typeof body.created_by === 'string' ? body.created_by : 'user',
+            project_id: typeof body.project_id === 'string' ? body.project_id : null,
           })
 
           return jsonResponse({ task }, 201)

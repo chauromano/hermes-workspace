@@ -92,6 +92,7 @@ export type ClaudeTask = {
   column: TaskColumn
   priority: TaskPriority
   assignee: string | null
+  project_id?: string | null
   tags: Array<string>
   due_date: string | null
   position: number
@@ -109,6 +110,7 @@ export type CreateTaskInput = {
   assignee?: string | null
   tags?: Array<string>
   due_date?: string | null
+  project_id?: string | null
   created_by?: string
 }
 
@@ -139,6 +141,7 @@ export async function fetchTasks(params?: {
   assignee?: string
   priority?: TaskPriority
   include_done?: boolean
+  project_id?: string
 }): Promise<Array<ClaudeTask>> {
   const { base } = await resolveBackend()
   const q = new URLSearchParams()
@@ -146,6 +149,7 @@ export async function fetchTasks(params?: {
   if (params?.assignee) q.set('assignee', params.assignee)
   if (params?.priority) q.set('priority', params.priority)
   if (params?.include_done) q.set('include_done', 'true')
+  if (params?.project_id) q.set('project_id', params.project_id)
   const url = q.toString() ? `${base}?${q}` : base
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to fetch tasks: ${res.status}`)

@@ -9,6 +9,7 @@ import {
   ComputerTerminal01Icon,
   DashboardSquare01Icon,
   File01Icon,
+  Folder01Icon,
   McpServerIcon,
   MessageMultiple01Icon,
   Moon02Icon,
@@ -735,6 +736,7 @@ function ChatSidebarComponent({
   const _isSettingsActive = pathname === '/settings'
   const isSkillsActive = pathname === '/skills'
   const isMcpActive = pathname === '/mcp'
+  const isProjectsActive = pathname === '/projects'
   const isFilesActive = pathname === '/files'
   const isAgoraActive = pathname === '/agora'
   const isTerminalActive = pathname === '/terminal'
@@ -982,6 +984,13 @@ function ChatSidebarComponent({
   ]
 
   const workspaceItems: Array<NavItemDef> = [
+    {
+      kind: 'link',
+      to: '/projects',
+      icon: Folder01Icon,
+      label: 'Projects',
+      active: isProjectsActive,
+    },
     {
       kind: 'link',
       to: '/files',

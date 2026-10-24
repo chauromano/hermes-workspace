@@ -1,3 +1,4 @@
+import { getActiveProjectId, getProject } from './projects-backend'
 import { join, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -35,8 +36,12 @@ export function getSwarmEnvironment(): SwarmEnvironment {
   const profilesRoot = getProfilesDir()
   const localBinDir = getLocalBinDir()
 
+  const activeProjectId = getActiveProjectId()
+  const activeProject = activeProjectId ? getProject(activeProjectId) : null
+  const canonicalRepo = (activeProject?.primary_path && existsSync(activeProject.primary_path)) ? activeProject.primary_path : SWARM_CANONICAL_REPO
+
   return {
-    canonicalRepo: SWARM_CANONICAL_REPO,
+    canonicalRepo,
     canonicalRepoExists: existsSync(SWARM_CANONICAL_REPO),
     memoryRoot: SWARM_MEMORY_ROOT,
     memoryRootExists: existsSync(SWARM_MEMORY_ROOT),

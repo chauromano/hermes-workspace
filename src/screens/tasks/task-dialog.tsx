@@ -1,3 +1,4 @@
+import { useProjects } from '@/hooks/use-projects'
 import { useEffect, useState } from 'react'
 import {
   DialogContent,
@@ -30,6 +31,8 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
   const [assignee, setAssignee] = useState<string>('')
   const [tags, setTags] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const { projects, activeId } = useProjects()
+  const [projectId, setProjectId] = useState<string>('')
 
   useEffect(() => {
     if (task) {
@@ -40,6 +43,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
       setAssignee(task.assignee ?? '')
       setTags(task.tags.join(', '))
       setDueDate(task.due_date ?? '')
+      setProjectId(task.project_id ?? '')
     } else {
       setTitle('')
       setDescription('')
@@ -48,6 +52,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
       setAssignee('')
       setTags('')
       setDueDate('')
+      setProjectId(activeId ?? '')
     }
   }, [task, open, defaultColumn])
 
@@ -59,6 +64,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
       description: description.trim(),
       column,
       priority,
+      project_id: projectId.trim() || undefined,
       assignee: assignee || null,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       due_date: dueDate || null,
@@ -114,6 +120,42 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
 
             <div className="grid grid-cols-2 gap-3">
               <div>
+                <label className={labelClass}>Project</label>
+                <select
+                  className={inputClass}
+                  style={{ colorScheme: 'dark' }}
+                  value={projectId}
+                  onChange={e => setProjectId(e.target.value)}
+                >
+                  <option value="">No Project (General)</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.id === activeId ? '★ (Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelClass}>Assignee</label>
+                <select
+                  className={inputClass}
+                  style={{ colorScheme: 'dark' }}
+                  value={assignee}
+                  onChange={e => setAssignee(e.target.value)}
+                >
+                  <option value="">Unassigned</option>
+                  {assignees.map(({ id, label }) => (
+                    <option key={id} value={id}>{label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[10px] text-[var(--theme-muted)]">
+                  Assignee is separate from status.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
                 <label className={labelClass}>Column</label>
                 <select
                   className={inputClass}
@@ -141,34 +183,15 @@ export function TaskDialog({ open, onOpenChange, task, defaultColumn, assignees,
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Assignee</label>
-                <select
-                  className={inputClass}
-                  style={{ colorScheme: 'dark' }}
-                  value={assignee}
-                  onChange={e => setAssignee(e.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {assignees.map(({ id, label }) => (
-                    <option key={id} value={id}>{label}</option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[10px] text-[var(--theme-muted)]">
-                  Assignee is separate from status. Dragging a card changes its column only.
-                </p>
-              </div>
-              <div>
-                <label className={labelClass}>Due Date</label>
-                <input
-                  type="date"
-                  className={inputClass}
-                  style={{ colorScheme: 'dark' }}
-                  value={dueDate}
-                  onChange={e => setDueDate(e.target.value)}
-                />
-              </div>
+            <div>
+              <label className={labelClass}>Due Date</label>
+              <input
+                type="date"
+                className={inputClass}
+                style={{ colorScheme: 'dark' }}
+                value={dueDate}
+                onChange={e => setDueDate(e.target.value)}
+              />
             </div>
 
             <div>

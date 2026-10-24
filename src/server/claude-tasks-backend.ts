@@ -16,6 +16,7 @@ export type ClaudeTaskRecord = {
   column: TaskColumn
   priority: TaskPriority
   assignee: string | null
+  project_id: string | null
   tags: string[]
   due_date: string | null
   position: number
@@ -28,6 +29,7 @@ type TaskFilters = {
   column?: string | null
   assignee?: string | null
   priority?: string | null
+  project_id?: string | null
   includeDone?: boolean
 }
 
@@ -39,6 +41,7 @@ type CreateTaskInput = {
   assignee?: string | null
   tags?: string[]
   due_date?: string | null
+  project_id?: string | null
   created_by?: string
 }
 
@@ -101,6 +104,7 @@ function mapCardToTask(card: {
     column: mapKanbanStatusToTaskColumn(card.status),
     priority: 'medium',
     assignee: card.assignedWorker,
+    project_id: card.projectId ?? null,
     tags: [],
     due_date: null,
     position: card.updatedAt,
@@ -128,6 +132,9 @@ export async function listClaudeTasks(filters: TaskFilters = {}): Promise<Claude
   if (filters.priority) {
     tasks = tasks.filter((task) => task.priority === filters.priority)
   }
+  if (filters.project_id) {
+    tasks = tasks.filter((task) => task.project_id === filters.project_id)
+  }
   return tasks.sort((a, b) => b.position - a.position || a.title.localeCompare(b.title))
 }
 
@@ -142,6 +149,7 @@ export async function createClaudeTask(input: CreateTaskInput): Promise<ClaudeTa
     title: input.title,
     spec: input.description ?? '',
     assignedWorker: input.assignee ?? null,
+    projectId: input.project_id ?? null,
     status: mapTaskColumnToKanbanStatus(input.column ?? 'backlog'),
     createdBy: input.created_by ?? 'user',
   })

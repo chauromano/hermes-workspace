@@ -4,11 +4,13 @@ import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowDown01Icon,
+  ArrowRight01Icon,
   CheckmarkCircle01Icon,
   Folder01Icon,
   PlusSignIcon,
   FolderOpenIcon,
 } from '@hugeicons/core-free-icons'
+import { Link } from '@tanstack/react-router'
 import {
   MenuContent,
   MenuItem,
@@ -174,8 +176,8 @@ export function ProjectSwitcher({
             </MenuItem>
           </div>
 
-          {/* New Project Action */}
-          <div className="border-t border-[var(--theme-border)] mt-1.5 pt-1">
+          {/* New Project & Manage Actions */}
+          <div className="border-t border-[var(--theme-border)] mt-1.5 pt-1 space-y-0.5">
             <button
               type="button"
               onClick={() => {
@@ -187,6 +189,16 @@ export function ProjectSwitcher({
               <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2.2} />
               <span>Create New Project</span>
             </button>
+            <Link
+              to="/projects"
+              className="flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-xs text-[var(--theme-text)] hover:bg-[var(--theme-hover)] transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <HugeiconsIcon icon={Folder01Icon} size={14} className="text-[var(--theme-muted)]" />
+                <span>Manage All Projects</span>
+              </div>
+              <HugeiconsIcon icon={ArrowRight01Icon} size={12} className="text-[var(--theme-muted)]" />
+            </Link>
           </div>
         </MenuContent>
       </MenuRoot>

@@ -16,6 +16,7 @@ export type SwarmKanbanCard = {
   status: SwarmKanbanLane | string
   missionId: string | null
   reportPath: string | null
+  projectId?: string | null
   createdBy: string
   createdAt: number
   updatedAt: number
@@ -33,6 +34,7 @@ type ListFilters = {
   assignedWorker?: string | null
   reviewer?: string | null
   missionId?: string | null
+  projectId?: string | null
 }
 
 export type CreateSwarmKanbanCardInput = {
@@ -44,6 +46,7 @@ export type CreateSwarmKanbanCardInput = {
   status?: SwarmKanbanLane | null
   missionId?: string | null
   reportPath?: string | null
+  projectId?: string | null
   createdBy?: string | null
   parents?: Array<string>
   tags?: Array<string>
