@@ -422,7 +422,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
 
             <div
               className={[
-                'page-transition flex flex-col',
+                'page-transition flex flex-col w-full max-w-full min-w-0',
                 isChromeFreeSurface ? 'min-h-full' : 'h-full',
                 slideClass,
                 isOnTerminalRoute ? 'hidden' : '',

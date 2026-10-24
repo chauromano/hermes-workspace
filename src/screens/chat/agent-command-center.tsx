@@ -80,13 +80,13 @@ function SectionCard({
   action?: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4 shadow-sm">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-primary-900">{title}</h2>
-          <p className="mt-0.5 text-xs text-primary-500">{subtitle}</p>
+    <section className="w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-primary-200 bg-primary-50/70 p-3 sm:p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold text-primary-900">{title}</h2>
+          <p className="mt-0.5 text-xs text-primary-500 line-clamp-2">{subtitle}</p>
         </div>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       {children}
     </section>
@@ -117,11 +117,11 @@ function NativeSessionRow({
         : undefined
 
   return (
-    <div className="group flex items-center justify-between gap-1 rounded-xl border border-transparent px-2.5 py-1 transition-colors hover:border-primary-200 hover:bg-primary-100">
+    <div className="group flex w-full min-w-0 max-w-full items-center justify-between gap-1 rounded-xl border border-transparent px-2 sm:px-2.5 py-1 transition-colors hover:border-primary-200 hover:bg-primary-100">
       <Link
         to="/chat/$sessionKey"
         params={{ sessionKey: friendlyId }}
-        className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
+        className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 py-1.5 overflow-hidden"
       >
         <span
           className={cn(
@@ -133,9 +133,9 @@ function NativeSessionRow({
         >
           <HugeiconsIcon icon={isPinned ? PinIcon : Chat01Icon} size={16} />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 truncate">
-            <span className="truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
+        <span className="min-w-0 flex-1 overflow-hidden">
+          <span className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
               {title}
             </span>
             {isPinned && (
@@ -187,7 +187,7 @@ function NativeSessionRow({
 
 function EmptyRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-primary-200 px-3 py-5 text-center text-xs text-primary-500">
+    <div className="w-full min-w-0 rounded-xl border border-dashed border-primary-200 px-3 py-5 text-center text-xs text-primary-500">
       {children}
     </div>
   )
@@ -206,7 +206,7 @@ function ConversationRow({
     <Link
       to="/chat/external/$conversationId"
       params={{ conversationId: conversation.id }}
-      className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-primary-200 hover:bg-primary-100"
+      className="group flex w-full min-w-0 max-w-full items-center gap-2.5 sm:gap-3 rounded-xl border border-transparent px-2.5 sm:px-3 py-2 sm:py-2.5 transition-colors hover:border-primary-200 hover:bg-primary-100 overflow-hidden"
     >
       <span
         className={cn(
@@ -218,7 +218,7 @@ function ConversationRow({
               : 'bg-primary-300',
         )}
       />
-      <span className="min-w-0 flex-1">
+      <span className="min-w-0 flex-1 overflow-hidden">
         <span className="block truncate text-sm font-medium text-primary-900">
           {conversation.name}
         </span>
@@ -227,13 +227,13 @@ function ConversationRow({
           {processing ? 'working' : needsYou ? 'needs approval' : 'ready'}
         </span>
       </span>
-      <span className="text-[11px] text-primary-400">
+      <span className="shrink-0 text-[11px] text-primary-400">
         {relativeTime(conversation.modifiedAt)}
       </span>
       <HugeiconsIcon
         icon={ArrowRight01Icon}
         size={15}
-        className="text-primary-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-600"
+        className="shrink-0 text-primary-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-600"
       />
     </Link>
   )
@@ -398,26 +398,26 @@ export function AgentCommandCenter({
   }, [nativeSessions, isSessionPinned])
 
   return (
-    <main className="h-full overflow-y-auto bg-surface text-primary-900">
-      <div className="mx-auto w-full max-w-[1180px] px-4 pb-24 pt-6 md:px-7 md:pt-9">
-        <header className="flex flex-col gap-4 border-b border-primary-200 pb-6 md:flex-row md:items-end md:justify-between">
-          <div>
+    <main className="h-full w-full max-w-full min-w-0 overflow-x-hidden overflow-y-auto bg-surface text-primary-900">
+      <div className="mx-auto w-full max-w-[1180px] min-w-0 px-3 pb-24 pt-4 sm:px-4 sm:pt-6 md:px-7 md:pt-9">
+        <header className="flex flex-col gap-4 border-b border-primary-200 pb-5 sm:pb-6 md:flex-row md:items-end md:justify-between min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-primary-500">
-              <span className="size-2 rounded-full bg-emerald-500" />
+              <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
               Live workspace
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-primary-950">
+            <h1 className="truncate text-xl sm:text-2xl font-semibold tracking-tight text-primary-950">
               {selectedRuntime
                 ? runtimeLabel(selectedRuntime)
                 : 'Command Center'}
             </h1>
-            <p className="mt-1.5 max-w-2xl text-sm text-primary-600">
+            <p className="mt-1.5 max-w-2xl text-xs sm:text-sm text-primary-600">
               {selectedRuntime
                 ? `Sessions and activity for the ${runtimeLabel(selectedRuntime)} harness.`
                 : 'See what every agent is doing, what needs you, and what just finished.'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {selectedRuntime ? (
               <Button
                 onClick={() => newExternalSession.mutate(selectedRuntime.id)}
@@ -442,7 +442,7 @@ export function AgentCommandCenter({
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-2 py-5 md:grid-cols-4">
+        <section className="grid w-full min-w-0 max-w-full grid-cols-2 gap-2 py-4 sm:py-5 md:grid-cols-4">
           {[
             { label: 'Working', value: workingCount, dot: 'bg-emerald-500' },
             { label: 'Needs you', value: waitingCount, dot: 'bg-amber-400' },
@@ -455,14 +455,14 @@ export function AgentCommandCenter({
           ].map((stat) => (
             <div
               key={stat.label}
-              className="flex items-center gap-3 rounded-xl border border-primary-200 bg-primary-50/60 px-3 py-3"
+              className="flex min-w-0 items-center gap-2.5 sm:gap-3 rounded-xl border border-primary-200 bg-primary-50/60 px-2.5 py-2.5 sm:px-3 sm:py-3"
             >
-              <span className={cn('size-2 rounded-full', stat.dot)} />
-              <div>
-                <div className="text-lg font-semibold leading-none text-primary-950">
+              <span className={cn('size-2 shrink-0 rounded-full', stat.dot)} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-base sm:text-lg font-semibold leading-none text-primary-950">
                   {stat.value}
                 </div>
-                <div className="mt-1 text-[11px] text-primary-500">
+                <div className="mt-1 truncate text-[11px] text-primary-500">
                   {stat.label}
                 </div>
               </div>
@@ -471,17 +471,17 @@ export function AgentCommandCenter({
         </section>
 
         {!selectedRuntime && (
-          <section className="mb-4 rounded-2xl border border-primary-200 bg-primary-50/70 p-3 shadow-sm">
-            <div className="flex items-center justify-between px-1 pb-2">
-              <div>
+          <section className="mb-4 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-primary-200 bg-primary-50/70 p-3 sm:p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2 px-1 pb-2 min-w-0">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-primary-900">
                   Agents
                 </h2>
-                <p className="text-xs text-primary-500">
+                <p className="truncate text-xs text-primary-500">
                   Pick a harness or open the full roster.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 {hiddenIds.length > 0 && (
                   <button
                     type="button"
@@ -494,35 +494,35 @@ export function AgentCommandCenter({
                 )}
                 <Link
                   to="/operations"
-                  className="text-xs font-medium text-accent-600 hover:text-accent-700"
+                  className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
                 >
                   Manage assistants
                 </Link>
               </div>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid w-full min-w-0 max-w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {!nativeHermesHidden && (
-                <div className="group flex items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100">
+                <div className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100">
                   <Link
                     to="/chat/$sessionKey"
                     params={{ sessionKey: sortedNativeSessions[0]?.friendlyId || 'new' }}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 px-3 py-3 overflow-hidden"
                   >
-                    <span className="flex size-9 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
                       <HugeiconsIcon icon={Chat01Icon} size={18} />
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium">Hermes</span>
+                    <span className="min-w-0 flex-1 overflow-hidden">
+                      <span className="block truncate text-sm font-medium">Hermes</span>
                       <span className="block truncate text-xs text-primary-500">
                         Native workspace · {nativeSessions.length} sessions
                       </span>
                     </span>
-                    <span className="size-2 rounded-full bg-emerald-500" />
+                    <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                   </Link>
                   <button
                     type="button"
                     onClick={() => toggleHarness('hermes-native')}
-                    className="mr-2 flex size-8 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
+                    className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
                     aria-label="Hide native Hermes"
                     title="Hide harness"
                   >
@@ -537,17 +537,17 @@ export function AgentCommandCenter({
                 return (
                   <div
                     key={runtime.id}
-                    className="group flex items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100"
+                    className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100"
                   >
                     <Link
                       to="/chat/harness/$runtimeId"
                       params={{ runtimeId: runtime.id }}
-                      className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 px-3 py-3 overflow-hidden"
                     >
-                      <span className="flex size-9 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
                         <HugeiconsIcon icon={UserMultipleIcon} size={18} />
                       </span>
-                      <span className="min-w-0 flex-1">
+                      <span className="min-w-0 flex-1 overflow-hidden">
                         <span className="block truncate text-sm font-medium">
                           {runtimeLabel(runtime)}
                         </span>
@@ -557,7 +557,7 @@ export function AgentCommandCenter({
                       </span>
                       <span
                         className={cn(
-                          'size-2 rounded-full',
+                          'size-2 shrink-0 rounded-full',
                           runtimeStatusClass(runtime.status),
                         )}
                       />
@@ -565,7 +565,7 @@ export function AgentCommandCenter({
                     <button
                       type="button"
                       onClick={() => toggleHarness(runtime.id)}
-                      className="mr-2 flex size-8 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
+                      className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
                       aria-label={`Hide ${runtimeLabel(runtime)}`}
                       title="Hide harness"
                     >
@@ -616,7 +616,7 @@ export function AgentCommandCenter({
           </section>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid w-full min-w-0 max-w-full gap-4 lg:grid-cols-2">
           {selectedRuntime ? (
             <SectionCard
               title={`${runtimeLabel(selectedRuntime)} chats`}
@@ -645,7 +645,7 @@ export function AgentCommandCenter({
                   <Link
                     to="/chat/$sessionKey"
                     params={{ sessionKey: 'new' }}
-                    className="text-xs font-medium text-accent-600 hover:text-accent-700"
+                    className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
                   >
                     + New session
                   </Link>
@@ -712,17 +712,17 @@ export function AgentCommandCenter({
                   <Link
                     key={task.id}
                     to="/tasks"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
                   >
                     <HugeiconsIcon
                       icon={CheckListIcon}
                       size={17}
-                      className="text-emerald-600"
+                      className="shrink-0 text-emerald-600"
                     />
                     <span className="min-w-0 flex-1 truncate text-sm text-primary-800">
                       {compactTaskLabel(task)}
                     </span>
-                    <span className="text-[11px] text-primary-400">
+                    <span className="shrink-0 text-[11px] text-primary-400">
                       {relativeTime(task.updated_at)}
                     </span>
                   </Link>
@@ -752,13 +752,13 @@ export function AgentCommandCenter({
                   <Link
                     key={task.id}
                     to="/tasks"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
                   >
                     <span className="size-2 shrink-0 rounded-full bg-amber-400" />
                     <span className="min-w-0 flex-1 truncate text-sm text-primary-800">
                       {compactTaskLabel(task)}
                     </span>
-                    <span className="rounded-md bg-amber-500/10 px-2 py-1 text-[10px] font-medium uppercase text-amber-700">
+                    <span className="shrink-0 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] font-medium uppercase text-amber-700">
                       {task.column}
                     </span>
                   </Link>
@@ -767,7 +767,7 @@ export function AgentCommandCenter({
                   <Link
                     key={agent.id}
                     to="/operations"
-                    className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
                   >
                     <span className="size-2 shrink-0 rounded-full bg-red-500" />
                     <span className="min-w-0 flex-1 truncate text-sm text-primary-800">
@@ -776,7 +776,7 @@ export function AgentCommandCenter({
                     <HugeiconsIcon
                       icon={ArrowRight01Icon}
                       size={15}
-                      className="text-primary-400"
+                      className="shrink-0 text-primary-400"
                     />
                   </Link>
                 ))}
@@ -797,14 +797,14 @@ export function AgentCommandCenter({
                     {latestUpdates.map((update) => (
                       <div
                         key={update.id}
-                        className="flex items-start gap-3 rounded-xl px-3 py-2.5"
+                        className="flex w-full min-w-0 max-w-full items-start gap-3 rounded-xl px-3 py-2.5 overflow-hidden"
                       >
                         <HugeiconsIcon
                           icon={Clock01Icon}
                           size={16}
-                          className="mt-0.5 text-primary-400"
+                          className="mt-0.5 shrink-0 text-primary-400"
                         />
-                        <span className="min-w-0 flex-1">
+                        <span className="min-w-0 flex-1 overflow-hidden">
                           <span className="block truncate text-sm font-medium text-primary-800">
                             {update.label}
                           </span>
@@ -812,7 +812,7 @@ export function AgentCommandCenter({
                             {update.detail}
                           </span>
                         </span>
-                        <span className="text-[11px] text-primary-400">
+                        <span className="shrink-0 text-[11px] text-primary-400">
                           {relativeTime(update.timestamp)}
                         </span>
                       </div>
@@ -833,15 +833,15 @@ export function AgentCommandCenter({
                       <Link
                         key={task.id}
                         to="/tasks"
-                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100"
+                        className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
                       >
-                        <span className="flex size-6 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
                           ✓
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm text-primary-700">
                           {task.title}
                         </span>
-                        <span className="text-[11px] text-primary-400">
+                        <span className="shrink-0 text-[11px] text-primary-400">
                           {relativeTime(task.updated_at)}
                         </span>
                       </Link>
@@ -856,7 +856,7 @@ export function AgentCommandCenter({
         </div>
 
         {!selectedRuntime && (
-          <nav className="mt-5 grid grid-cols-3 gap-2">
+          <nav className="mt-5 grid w-full min-w-0 max-w-full grid-cols-3 gap-2">
             {[
               {
                 to: '/operations',
@@ -869,10 +869,10 @@ export function AgentCommandCenter({
               <Link
                 key={item.label}
                 to={item.to}
-                className="flex items-center justify-center gap-2 rounded-xl border border-primary-200 px-3 py-3 text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 hover:text-primary-950"
+                className="flex min-w-0 items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-primary-200 px-2 sm:px-3 py-2.5 sm:py-3 text-xs sm:text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 hover:text-primary-950"
               >
-                <HugeiconsIcon icon={item.icon} size={17} />
-                {item.label}
+                <HugeiconsIcon icon={item.icon} size={16} className="shrink-0" />
+                <span className="truncate">{item.label}</span>
               </Link>
             ))}
           </nav>
