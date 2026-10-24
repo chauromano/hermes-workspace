@@ -96,9 +96,11 @@ function SectionCard({
 function NativeSessionRow({
   session,
   isPinned = false,
+  onTogglePin,
 }: {
   session: GatewaySession
   isPinned?: boolean
+  onTogglePin?: () => void
 }) {
   const title =
     session.title ||
@@ -115,49 +117,71 @@ function NativeSessionRow({
         : undefined
 
   return (
-    <Link
-      to="/chat/$sessionKey"
-      params={{ sessionKey: friendlyId }}
-      className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-primary-200 hover:bg-primary-100"
-    >
-      <span
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-xl',
-          isPinned
-            ? 'bg-accent-500/15 text-accent-600'
-            : 'bg-accent-500/10 text-accent-600',
-        )}
+    <div className="group flex items-center justify-between gap-1 rounded-xl border border-transparent px-2.5 py-1 transition-colors hover:border-primary-200 hover:bg-primary-100">
+      <Link
+        to="/chat/$sessionKey"
+        params={{ sessionKey: friendlyId }}
+        className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
       >
-        <HugeiconsIcon icon={isPinned ? PinIcon : Chat01Icon} size={16} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2 truncate">
-          <span className="truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
-            {title}
-          </span>
-          {isPinned && (
-            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-accent-500/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-700">
-              <HugeiconsIcon icon={PinIcon} size={10} strokeWidth={2} />
-              Pinned
-            </span>
+        <span
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-xl',
+            isPinned
+              ? 'bg-accent-500/15 text-accent-600'
+              : 'bg-accent-500/10 text-accent-600',
           )}
+        >
+          <HugeiconsIcon icon={isPinned ? PinIcon : Chat01Icon} size={16} />
         </span>
-        <span className="block truncate text-xs text-primary-500">
-          {model ? `${formatModelName(model)} · ` : ''}
-          {typeof count === 'number'
-            ? `${count} ${count === 1 ? 'message' : 'messages'}`
-            : 'Session'}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 truncate">
+            <span className="truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
+              {title}
+            </span>
+            {isPinned && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-accent-500/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-700">
+                <HugeiconsIcon icon={PinIcon} size={10} strokeWidth={2} />
+                Pinned
+              </span>
+            )}
+          </span>
+          <span className="block truncate text-xs text-primary-500">
+            {model ? `${formatModelName(model)} · ` : ''}
+            {typeof count === 'number'
+              ? `${count} ${count === 1 ? 'message' : 'messages'}`
+              : 'Session'}
+          </span>
         </span>
-      </span>
-      <span className="shrink-0 text-[11px] text-primary-400">
-        {relativeTime(session.updatedAt)}
-      </span>
-      <HugeiconsIcon
-        icon={ArrowRight01Icon}
-        size={15}
-        className="text-primary-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-600"
-      />
-    </Link>
+        <span className="shrink-0 text-[11px] text-primary-400">
+          {relativeTime(session.updatedAt)}
+        </span>
+      </Link>
+
+      {onTogglePin && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onTogglePin()
+          }}
+          aria-label={isPinned ? 'Unpin session' : 'Pin session'}
+          title={isPinned ? 'Unpin session' : 'Pin session'}
+          className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
+            isPinned
+              ? 'text-accent-600 hover:bg-accent-500/20'
+              : 'text-primary-300 opacity-0 group-hover:opacity-100 hover:bg-primary-200/60 hover:text-primary-700 focus:opacity-100',
+          )}
+        >
+          <HugeiconsIcon
+            icon={PinIcon}
+            size={14}
+            strokeWidth={isPinned ? 2 : 1.5}
+          />
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -332,7 +356,7 @@ export function AgentCommandCenter({
     pendingConversations.length +
     agentsNeedingSetup.length
   const nativeSessions = sessionsQuery.data?.sessions ?? []
-  const { pinnedSessionKeys } = usePinnedSessions()
+  const { pinnedSessionKeys, togglePinnedSession } = usePinnedSessions()
   const pinnedKeySet = useMemo(
     () => new Set(pinnedSessionKeys),
     [pinnedSessionKeys],
@@ -638,6 +662,13 @@ export function AgentCommandCenter({
                       key={session.key || session.friendlyId}
                       session={session}
                       isPinned={isSessionPinned(session)}
+                      onTogglePin={() => {
+                        togglePinnedSession(
+                          session.key ||
+                            session.friendlyId ||
+                            (session as any).id,
+                        )
+                      }}
                     />
                   ))}
                   {sortedNativeSessions.length > 6 && (

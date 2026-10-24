@@ -1,3 +1,4 @@
+import { usePinnedSessionsStore } from '@/hooks/use-pinned-sessions'
 export const BASE_URL =
   typeof window !== 'undefined'
     ? window.location.origin
@@ -217,9 +218,16 @@ export async function fetchSessions(): Promise<GatewaySessionsResponse> {
     )
   }
 
-  const payload = (await response.json()) as GatewaySessionsResponse
+  const payload = (await response.json()) as GatewaySessionsResponse & {
+    pinnedSessionKeys?: string[]
+  }
   if (!Array.isArray(payload.sessions)) {
     throw new Error('Session API returned an unexpected response shape')
+  }
+  if (Array.isArray(payload.pinnedSessionKeys)) {
+    usePinnedSessionsStore
+      .getState()
+      .setPinnedSessionKeys(payload.pinnedSessionKeys)
   }
   return payload
 }

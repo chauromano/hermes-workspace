@@ -1,4 +1,5 @@
 import { normalizeSessions, readError } from './utils'
+import { usePinnedSessionsStore } from '@/hooks/use-pinned-sessions'
 import type { QueryClient } from '@tanstack/react-query'
 import type {
   ChatMessage,
@@ -58,7 +59,14 @@ export const chatQueryKeys = {
 export async function fetchSessions(): Promise<Array<SessionMeta>> {
   const res = await fetch('/api/sessions')
   if (!res.ok) throw new Error(await readError(res))
-  const data = (await res.json()) as SessionListResponse
+  const data = (await res.json()) as SessionListResponse & {
+    pinnedSessionKeys?: string[]
+  }
+  if (Array.isArray(data.pinnedSessionKeys)) {
+    usePinnedSessionsStore
+      .getState()
+      .setPinnedSessionKeys(data.pinnedSessionKeys)
+  }
   return normalizeSessions(data.sessions)
 }
 

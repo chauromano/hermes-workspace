@@ -4,6 +4,13 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { requireJsonContentType } from '../../server/rate-limit'
 import {
+  pinServerSession,
+  readPinnedSessions,
+  toggleServerPinnedSession,
+  unpinServerSession,
+  writePinnedSessions,
+} from '../../server/pinned-sessions-store'
+import {
   SESSIONS_API_UNAVAILABLE_MESSAGE,
   createSession,
   deleteSession,
@@ -64,7 +71,16 @@ export const Route = createFileRoute('/api/sessions')({
             }
           }
 
-          return json({ sessions: gatewaySessions })
+          const pinnedSessionKeys = readPinnedSessions()
+          const pinnedSet = new Set(pinnedSessionKeys)
+          for (const s of gatewaySessions as any[]) {
+            s.isPinned =
+              pinnedSet.has(s.key) ||
+              pinnedSet.has(s.friendlyId) ||
+              pinnedSet.has(s.id)
+          }
+
+          return json({ sessions: gatewaySessions, pinnedSessionKeys })
         } catch (err) {
           return json(
             {
@@ -96,6 +112,16 @@ export const Route = createFileRoute('/api/sessions')({
             string,
             unknown
           >
+
+          if (body.action === 'toggle-pin' && typeof body.key === 'string') {
+            const result = toggleServerPinnedSession(body.key)
+            return json({ ok: true, ...result })
+          }
+
+          if (Array.isArray(body.pinnedSessionKeys)) {
+            const finalKeys = writePinnedSessions(body.pinnedSessionKeys as string[])
+            return json({ ok: true, pinnedSessionKeys: finalKeys })
+          }
 
           const requestedLabel =
             typeof body.label === 'string' ? body.label.trim() : ''
