@@ -24,6 +24,7 @@ import type { SessionMeta } from '@/screens/chat/types'
 import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
 import { getTheme, getThemeVariant, isDarkTheme, setTheme } from '@/lib/theme'
+import { ProjectSwitcher } from '@/components/projects/project-switcher'
 import {
   selectChatProfileDisplayName,
   useChatSettingsStore,
@@ -454,6 +455,11 @@ export function MobileHamburgerMenu({
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2.2} />
             <span>New Session</span>
           </button>
+
+          {/* Active Project Switcher */}
+          <div className="pt-0.5">
+            <ProjectSwitcher variant="mobile" />
+          </div>
 
           {/* Segmented Switch: Sessions vs Workspace */}
           <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 p-1 text-xs font-medium">
