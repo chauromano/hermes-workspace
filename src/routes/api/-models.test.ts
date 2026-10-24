@@ -31,4 +31,40 @@ describe('mergeModelEntries', () => {
       },
     ])
   })
+
+  it('normalizes structured models from gateway /api/model/catalog responses', () => {
+    expect(
+      mergeModelEntries([
+        {
+          id: 'gpt-6.1-sol',
+          name: 'gpt-6.1-sol',
+          provider: 'openai-codex',
+          provider_label: 'ChatGPT or Codex Subscription',
+          is_current: true,
+        },
+        {
+          id: 'google/gemini-3.8-flash',
+          name: 'google/gemini-3.8-flash',
+          provider: 'vertex',
+          provider_label: 'Google Vertex AI',
+          is_current: false,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: 'gpt-6.1-sol',
+        name: 'gpt-6.1-sol',
+        provider: 'openai-codex',
+        provider_label: 'ChatGPT or Codex Subscription',
+        is_current: true,
+      },
+      {
+        id: 'google/gemini-3.8-flash',
+        name: 'google/gemini-3.8-flash',
+        provider: 'vertex',
+        provider_label: 'Google Vertex AI',
+        is_current: false,
+      },
+    ])
+  })
 })

@@ -186,10 +186,6 @@ export async function updateSession(
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  if (getCapabilities().dashboard.available) {
-    await deleteDashboardSession(sessionId)
-    return
-  }
   return claudeDeleteReq(`/api/sessions/${sessionId}`)
 }
 

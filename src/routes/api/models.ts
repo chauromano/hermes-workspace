@@ -386,11 +386,66 @@ function readClaudeConfigCatalog(): Array<ModelEntry> {
 }
 
 /**
- * Fallback: fetch models from the hermes-agent /v1/models endpoint.
+ * Fetch models from the hermes-agent gateway catalog endpoint (/api/model/catalog),
+ * with graceful fallback to /api/model/options or /v1/models.
  */
 async function fetchClaudeModels(): Promise<Array<ModelEntry>> {
-  const headers: Record<string, string> = {}
-  if (BEARER_TOKEN) headers['Authorization'] = `Bearer ${BEARER_TOKEN}`
+  const headers: Record<string, string> = { accept: "application/json" }
+  if (BEARER_TOKEN) headers["Authorization"] = `Bearer ${BEARER_TOKEN}`
+
+  // 1. Authoritative gateway catalog
+  try {
+    const catalogRes = await fetch(`${CLAUDE_API}/api/model/catalog`, { headers })
+    if (catalogRes.ok) {
+      const payload = asRecord(await catalogRes.json())
+      const raw = Array.isArray(payload.models)
+        ? payload.models
+        : Array.isArray(payload.data)
+          ? payload.data
+          : []
+      if (raw.length > 0) {
+        return raw
+          .map(normalizeModel)
+          .filter((e): e is ModelEntry => e !== null)
+      }
+    }
+  } catch {
+    // Fall through to options / v1 fallback
+  }
+
+  // 2. Gateway model options fallback
+  try {
+    const optionsRes = await fetch(
+      `${CLAUDE_API}/api/model/options?include_unconfigured=false`,
+      { headers },
+    )
+    if (optionsRes.ok) {
+      const payload = asRecord(await optionsRes.json())
+      const providers = Array.isArray(payload.providers)
+        ? payload.providers
+        : []
+      const extracted: Array<ModelEntry> = []
+      for (const p of providers) {
+        const prec = asRecord(p)
+        const slug = readString(prec.slug) || "unknown"
+        const pmodels = Array.isArray(prec.models) ? prec.models : []
+        for (const m of pmodels) {
+          const mid =
+            typeof m === "string" ? m.trim() : readString(asRecord(m).id)
+          if (mid) {
+            extracted.push({ id: mid, name: mid, provider: slug })
+          }
+        }
+      }
+      if (extracted.length > 0) {
+        return extracted
+      }
+    }
+  } catch {
+    // Fall through to /v1/models
+  }
+
+  // 3. Fallback to /v1/models for older gateways
   const response = await fetch(`${CLAUDE_API}/v1/models`, { headers })
   if (!response.ok)
     throw new Error(`Hermes models request failed (${response.status})`)
