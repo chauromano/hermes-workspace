@@ -1879,7 +1879,7 @@ function ClaudeConfigSection({
                       const isChecked = selectedVisibleModels.has(m.id)
                       return (
                         <label
-                          key={m.id}
+                          key={`${m.provider}:${m.id}`}
                           className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
                             isChecked
                               ? 'border-accent-400 bg-accent-50/50 text-accent-900 dark:bg-accent-950/30 dark:border-accent-700 dark:text-accent-200'
