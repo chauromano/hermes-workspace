@@ -7,6 +7,7 @@ import {
   textFromMessage,
 } from '../utils'
 import { MessageActionsBar } from './message-actions-bar'
+import { useSessionModelStore } from '@/stores/session-model-store'
 import {
   buildHermesActivitySummary,
   shouldAutoExpandHermesActivityCard,
@@ -740,6 +741,7 @@ function getMessageUsageMetadata(message: ChatMessage): {
   cacheReadTokens: number | null
   cacheWriteTokens: number | null
   contextPercent: number | null
+  rawModel: string | null
   modelLabel: string | null
 } {
   const root = message as Record<string, unknown>
@@ -820,19 +822,27 @@ function getMessageUsageMetadata(message: ChatMessage): {
       usage?.context_percent ??
       usage?.context,
   )
-  const rawModel =
+  const rawModelValue =
     root.model ??
     root.modelName ??
     root.model_name ??
+    root.used_model ??
+    root.usedModel ??
     usage?.model ??
     usage?.modelName ??
     usage?.model_name ??
+    usage?.used_model ??
+    usage?.usedModel ??
     details?.model ??
-    details?.modelName
-  const modelLabel =
-    typeof rawModel === 'string' && rawModel.trim()
-      ? shortenModelName(rawModel.trim())
+    details?.modelName ??
+    (root.runtime as Record<string, unknown> | undefined)?.model
+
+  const rawModel =
+    typeof rawModelValue === 'string' && rawModelValue.trim()
+      ? rawModelValue.trim()
       : null
+
+  const modelLabel = rawModel ? shortenModelName(rawModel) : null
 
   return {
     inputTokens,
@@ -840,6 +850,7 @@ function getMessageUsageMetadata(message: ChatMessage): {
     cacheReadTokens,
     cacheWriteTokens,
     contextPercent,
+    rawModel,
     modelLabel,
   }
 }
@@ -2508,6 +2519,18 @@ function MessageItemComponent({
     () => getMessageUsageMetadata(message),
     [message],
   )
+  const effectiveModel = useMemo(() => {
+    if (isUser) return null
+    if (usageMetadata.rawModel) return usageMetadata.rawModel
+    const root = message as Record<string, unknown>
+    if (typeof root.model === 'string' && root.model) return root.model
+    if (typeof root.used_model === 'string' && root.used_model) return root.used_model
+    const sessionKey =
+      (typeof root.sessionKey === 'string' && root.sessionKey) ||
+      (typeof window !== 'undefined' ? window.location.pathname.split('/').pop() : '') ||
+      'main'
+    return useSessionModelStore.getState().getModel(sessionKey) || null
+  }, [isUser, usageMetadata.rawModel, message])
   const hasAssistantMetadata =
     !isUser &&
     !effectiveIsStreaming &&
@@ -2868,32 +2891,26 @@ function MessageItemComponent({
           </div>
         </Message>
       )}
-      {/* Bottom thinking bubble handles empty streaming states; avoid duplicate in-thread working copy. */}
-      {hasAssistantMetadata ? (
-        <div className="flex flex-wrap justify-end gap-x-2 gap-y-0.5 pl-10 pr-1 mt-0.5 font-mono text-[10px] tabular-nums text-primary-400 leading-relaxed">
-          {usageMetadata.inputTokens !== null && (
-            <span>↑{formatCompactNumber(usageMetadata.inputTokens)}</span>
-          )}
-          {usageMetadata.outputTokens !== null && (
-            <span>↓{formatCompactNumber(usageMetadata.outputTokens)}</span>
-          )}
-          {usageMetadata.cacheReadTokens !== null && (
-            <span>R{formatCompactNumber(usageMetadata.cacheReadTokens)}</span>
-          )}
-          {usageMetadata.cacheWriteTokens !== null && (
-            <span>W{formatCompactNumber(usageMetadata.cacheWriteTokens)}</span>
-          )}
-          {usageMetadata.modelLabel && (
-            <span className="opacity-60">{usageMetadata.modelLabel}</span>
-          )}
-        </div>
-      ) : null}
-
-      {(!hasToolCalls || hasText) && (
+      {(!hasToolCalls || hasText || !isUser) && (
         <MessageActionsBar
           text={fullText}
           timestamp={timestamp}
           align={isUser ? 'end' : 'start'}
+          model={!isUser ? effectiveModel : undefined}
+          tokenUsage={
+            !isUser &&
+            (usageMetadata.inputTokens !== null ||
+              usageMetadata.outputTokens !== null ||
+              usageMetadata.cacheReadTokens !== null ||
+              usageMetadata.cacheWriteTokens !== null)
+              ? {
+                  inputTokens: usageMetadata.inputTokens,
+                  outputTokens: usageMetadata.outputTokens,
+                  cacheReadTokens: usageMetadata.cacheReadTokens,
+                  cacheWriteTokens: usageMetadata.cacheWriteTokens,
+                }
+              : null
+          }
           forceVisible={forceActionsVisible}
           isQueued={isUser && isQueued && !isFailed}
           isFailed={isUser && (isFailed || isStuckSending)}

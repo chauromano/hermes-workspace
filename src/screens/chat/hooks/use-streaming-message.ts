@@ -426,6 +426,10 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
         timestamp: Date.now(),
         __streamingStatus: 'complete',
         ...stepUsageRef.current,
+        model:
+          stepUsageRef.current.model ||
+          ((payload as Record<string, unknown> | undefined)?.model as string) ||
+          undefined,
         ...(payload as Record<string, unknown>),
       }
 
@@ -528,6 +532,9 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
           break
         }
         case 'chunk': {
+          if (typeof payload.model === 'string' && payload.model) {
+            stepUsageRef.current.model = payload.model
+          }
           const chunk = payload as StreamChunk
           const fullReplace =
             (chunk as Record<string, unknown>).fullReplace === true
@@ -693,12 +700,17 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
             model:
               typeof payload.model === 'string'
                 ? payload.model
-                : stepUsageRef.current.model,
+                : typeof payload.used_model === 'string'
+                  ? payload.used_model
+                  : stepUsageRef.current.model,
           }
           stepUsageRef.current = nextUsage
           break
         }
         case 'done': {
+          if (typeof payload.model === 'string' && payload.model) {
+            stepUsageRef.current.model = payload.model
+          }
           const doneState = (payload as { state?: string }).state
           const errorMessage = (payload as { errorMessage?: string })
             .errorMessage
@@ -836,6 +848,7 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
       eventSourceRef.current = abortController
       finishedRef.current = false
       resetActiveStreamState(params.sessionKey)
+      stepUsageRef.current = { model: params.model }
       lifecyclePhaseRef.current = 'requesting'
       requestedSessionKeyRef.current = params.sessionKey
 

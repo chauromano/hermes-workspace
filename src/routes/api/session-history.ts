@@ -11,6 +11,7 @@ import {
   ensureGatewayProbed,
   getGatewayCapabilities,
   getMessages,
+  getSession,
   toChatMessage,
 } from '../../server/claude-api'
 import { resolveSessionKey } from '../../server/session-utils'
@@ -41,7 +42,10 @@ export const Route = createFileRoute('/api/session-history')({
         // Try local store first (in-memory sessions)
         const local = getLocalSession(key)
         if (local) {
-          const messages = getLocalMessages(key).slice(-limit)
+          const messages = getLocalMessages(key).slice(-limit).map((m) => ({
+            ...m,
+            model: (m as Record<string, unknown>).model || local.model || undefined,
+          }))
           return json({ ok: true, messages, sessionKey: key, source: 'local' })
         }
         if (!getGatewayCapabilities().sessions) {
@@ -58,11 +62,18 @@ export const Route = createFileRoute('/api/session-history')({
             defaultKey: 'main',
           })
           void includeTools
+          let sessionModel: string | undefined
+          try {
+            const sess = await getSession(resolved.sessionKey)
+            sessionModel = (sess?.model as string) || undefined
+          } catch {
+            sessionModel = undefined
+          }
           const rows = await getMessages(resolved.sessionKey)
           const trimmed = rows.slice(-limit)
           return json({
             ok: true,
-            messages: trimmed.map((row) => toChatMessage(row)),
+            messages: trimmed.map((row) => toChatMessage(row, { sessionModel })),
             sessionKey: resolved.sessionKey,
             source: 'gateway',
           })

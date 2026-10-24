@@ -5,6 +5,7 @@ import {
   ensureGatewayProbed,
   getGatewayCapabilities,
   getMessages,
+  getSession,
   listSessions,
   toChatMessage,
 } from '../../server/claude-api'
@@ -98,8 +99,14 @@ export const Route = createFileRoute('/api/history')({
             })
           }
           let messages: Awaited<ReturnType<typeof getMessages>> = []
+          let sessionModel: string | undefined
           try {
-            messages = await getMessages(sessionKey)
+            const [fetchedMessages, sess] = await Promise.all([
+              getMessages(sessionKey),
+              getSession(sessionKey).catch(() => null),
+            ])
+            messages = fetchedMessages
+            sessionModel = (sess?.model as string) || undefined
           } catch {
             messages = []
           }
@@ -118,6 +125,7 @@ export const Route = createFileRoute('/api/history')({
                   content: [{ type: 'text', text: m.content }],
                   timestamp: m.timestamp,
                   historyIndex: index,
+                  model: (m as Record<string, unknown>).model || localSession.model || undefined,
                 })),
               })
             }
@@ -129,7 +137,7 @@ export const Route = createFileRoute('/api/history')({
             sessionKey,
             sessionId: sessionKey,
             messages: boundedMessages.map((message, index) =>
-              toChatMessage(message, { historyIndex: index }),
+              toChatMessage(message, { historyIndex: index, sessionModel }),
             ),
           })
         } catch (err) {

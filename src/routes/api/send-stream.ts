@@ -734,6 +734,7 @@ export const Route = createFileRoute('/api/send-stream')({
                         state: 'complete',
                         sessionKey: portableSessionKey,
                         runId,
+                        model: requestModel || (typeof body.model === 'string' ? body.model : undefined),
                         message: {
                           role: 'assistant',
                           content: [
@@ -849,6 +850,7 @@ export const Route = createFileRoute('/api/send-stream')({
                     state: 'complete',
                     sessionKey: portableSessionKey,
                     runId,
+                    model: requestModel || (typeof body.model === 'string' ? body.model : undefined),
                     message: {
                       role: 'assistant',
                       content: [
@@ -1119,6 +1121,9 @@ export const Route = createFileRoute('/api/send-stream')({
                           fullReplace: true,
                           sessionKey: sessionKeyFromEvent,
                           runId,
+                          model:
+                            ((data.runtime as Record<string, unknown> | undefined)?.model as string) ||
+                            (typeof body.model === 'string' ? body.model : undefined),
                         }
                         sendEvent('chunk', translated)
                         skipPublish || publishChatEvent('chunk', translated)
@@ -1480,6 +1485,12 @@ export const Route = createFileRoute('/api/send-stream')({
                         state: 'complete',
                         sessionKey: sessionKeyFromEvent,
                         runId,
+                        usage: data.usage,
+                        runtime: data.runtime,
+                        model:
+                          ((data.usage as Record<string, unknown> | undefined)?.used_model as string) ||
+                          ((data.runtime as Record<string, unknown> | undefined)?.model as string) ||
+                          (typeof body.model === 'string' ? body.model : undefined),
                       }
                       persistActiveRun((runSessionKey, activeId) =>
                         markRunStatus(runSessionKey, activeId, 'complete'),

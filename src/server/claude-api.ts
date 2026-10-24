@@ -237,7 +237,7 @@ export async function forkSession(
 /** Convert a ClaudeMessage to the ChatMessage format the frontend expects */
 export function toChatMessage(
   msg: ClaudeMessage,
-  options?: { historyIndex?: number },
+  options?: { historyIndex?: number; sessionModel?: string },
 ): Record<string, unknown> {
   // Accept either parsed arrays from FastAPI or legacy JSON strings.
   let toolCalls: Array<unknown> | undefined
@@ -296,9 +296,17 @@ export function toChatMessage(
     content.push({ type: 'text', text: msg.content })
   }
 
+  const resolvedModel =
+    (msg as Record<string, unknown>).model ||
+    (msg as Record<string, unknown>).used_model ||
+    (msg as Record<string, unknown>).model_name ||
+    options?.sessionModel ||
+    undefined
+
   return {
     id: `msg-${msg.id}`,
     role: msg.role,
+    model: resolvedModel,
     content,
     text: msg.content || '',
     timestamp: msg.timestamp ? msg.timestamp * 1000 : Date.now(),
