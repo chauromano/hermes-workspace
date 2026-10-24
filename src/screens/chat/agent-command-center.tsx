@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -8,6 +8,7 @@ import {
   CheckListIcon,
   Clock01Icon,
   EyeIcon,
+  PinIcon,
   PlusSignIcon,
   UserGroupIcon,
   UserMultipleIcon,
@@ -18,6 +19,7 @@ import type {
   ExternalRuntime,
 } from '@/lib/external-harness-api'
 import type { ClaudeTask } from '@/lib/tasks-api'
+import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { useOperations } from '@/screens/agents/hooks/use-operations'
 import { useHarnessVisibility } from '@/screens/chat/harness-visibility'
 import { fetchTasks } from '@/lib/tasks-api'
@@ -91,12 +93,18 @@ function SectionCard({
   )
 }
 
-function NativeSessionRow({ session }: { session: GatewaySession }) {
+function NativeSessionRow({
+  session,
+  isPinned = false,
+}: {
+  session: GatewaySession
+  isPinned?: boolean
+}) {
   const title =
     session.title ||
     session.derivedTitle ||
     session.label ||
-    (session.friendlyId ? `Session ${session.friendlyId.slice(0, 8)}` : 'Chat')
+    (session.friendlyId ? `Session ${session.friendlyId.slice(0, 8)}` : 'Session')
   const friendlyId = session.friendlyId || session.key || 'main'
   const model = session.model as string | undefined
   const count =
@@ -112,18 +120,33 @@ function NativeSessionRow({ session }: { session: GatewaySession }) {
       params={{ sessionKey: friendlyId }}
       className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-primary-200 hover:bg-primary-100"
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
-        <HugeiconsIcon icon={Chat01Icon} size={16} />
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-xl',
+          isPinned
+            ? 'bg-accent-500/15 text-accent-600'
+            : 'bg-accent-500/10 text-accent-600',
+        )}
+      >
+        <HugeiconsIcon icon={isPinned ? PinIcon : Chat01Icon} size={16} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
-          {title}
+        <span className="flex items-center gap-2 truncate">
+          <span className="truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
+            {title}
+          </span>
+          {isPinned && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-accent-500/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-700">
+              <HugeiconsIcon icon={PinIcon} size={10} strokeWidth={2} />
+              Pinned
+            </span>
+          )}
         </span>
         <span className="block truncate text-xs text-primary-500">
           {model ? `${formatModelName(model)} · ` : ''}
           {typeof count === 'number'
             ? `${count} ${count === 1 ? 'message' : 'messages'}`
-            : 'Conversation'}
+            : 'Session'}
         </span>
       </span>
       <span className="shrink-0 text-[11px] text-primary-400">
@@ -309,8 +332,24 @@ export function AgentCommandCenter({
     pendingConversations.length +
     agentsNeedingSetup.length
   const nativeSessions = sessionsQuery.data?.sessions ?? []
+  const { pinnedSessionKeys } = usePinnedSessions()
+  const pinnedKeySet = useMemo(
+    () => new Set(pinnedSessionKeys),
+    [pinnedSessionKeys],
+  )
+  const isSessionPinned = useCallback(
+    (s: GatewaySession) => {
+      const key = s.key || s.friendlyId || (s as any).id
+      return (
+        Boolean(key && pinnedKeySet.has(key)) ||
+        Boolean(s.friendlyId && pinnedKeySet.has(s.friendlyId))
+      )
+    },
+    [pinnedKeySet],
+  )
+
   const sortedNativeSessions = useMemo(() => {
-    return [...nativeSessions].sort((a, b) => {
+    const sorted = [...nativeSessions].sort((a, b) => {
       const timeA =
         typeof a.updatedAt === 'number'
           ? a.updatedAt
@@ -321,7 +360,18 @@ export function AgentCommandCenter({
           : Date.parse(String(b.updatedAt || 0)) || 0
       return timeB - timeA
     })
-  }, [nativeSessions])
+
+    const pinned: Array<GatewaySession> = []
+    const unpinned: Array<GatewaySession> = []
+    for (const session of sorted) {
+      if (isSessionPinned(session)) {
+        pinned.push(session)
+      } else {
+        unpinned.push(session)
+      }
+    }
+    return [...pinned, ...unpinned]
+  }, [nativeSessions, isSessionPinned])
 
   return (
     <main className="h-full overflow-y-auto bg-surface text-primary-900">
@@ -564,8 +614,8 @@ export function AgentCommandCenter({
             </SectionCard>
           ) : (
             <SectionCard
-              title="Recent conversations"
-              subtitle="Past chats and active sessions across this workspace."
+              title="Recent sessions"
+              subtitle="Past and active sessions across this workspace."
               action={
                 sortedNativeSessions.length > 0 ? (
                   <Link
@@ -573,7 +623,7 @@ export function AgentCommandCenter({
                     params={{ sessionKey: 'new' }}
                     className="text-xs font-medium text-accent-600 hover:text-accent-700"
                   >
-                    + New chat
+                    + New session
                   </Link>
                 ) : undefined
               }
@@ -587,6 +637,7 @@ export function AgentCommandCenter({
                     <NativeSessionRow
                       key={session.key || session.friendlyId}
                       session={session}
+                      isPinned={isSessionPinned(session)}
                     />
                   ))}
                   {sortedNativeSessions.length > 6 && (
@@ -597,16 +648,16 @@ export function AgentCommandCenter({
                     >
                       {showAllSessions
                         ? 'Show fewer'
-                        : `Show all ${sortedNativeSessions.length} conversations`}
+                        : `Show all ${sortedNativeSessions.length} sessions`}
                     </button>
                   )}
                 </div>
               ) : sessionsQuery.isLoading ? (
                 <div className="py-6 text-center text-xs text-primary-400">
-                  Loading conversations...
+                  Loading sessions...
                 </div>
               ) : (
-                <EmptyRow>No past conversations yet. Start the first chat above.</EmptyRow>
+                <EmptyRow>No sessions yet. Start the first session above.</EmptyRow>
               )}
             </SectionCard>
           )}
