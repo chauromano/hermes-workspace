@@ -2270,31 +2270,6 @@ function ChatComposerComponent({
         {isMobileViewport ? (
           /* ── Mobile: Telegram-style single-row bar ── */
           <>
-            {!hideModelSelector && (
-              <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModelMenuOpen(true)
-                    setIsMobileActionsMenuOpen(false)
-                  }}
-                  disabled={isModelSwitcherDisabled}
-                  className="inline-flex max-w-[85vw] items-center gap-1.5 rounded-full bg-neutral-100/90 dark:bg-neutral-800/90 px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-200 border border-neutral-200/60 dark:border-neutral-700/60 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`Select model, currently ${modelButtonLabel}`}
-                >
-                  <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="truncate">{modelButtonLabel}</span>
-                  <svg className="size-3 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
-                </button>
-                {value.length >= 100 && (
-                  <span className="text-[10px] text-neutral-400 tabular-nums select-none">
-                    ~{Math.ceil(value.length / 4)} tokens
-                  </span>
-                )}
-              </div>
-            )}
             <div className="flex items-center gap-2 px-3 py-2">
               {/* + button — opens bottom sheet actions menu */}
               <button
@@ -2479,18 +2454,26 @@ function ChatComposerComponent({
                               setIsModelMenuOpen(true)
                             }
                           }}
-                          className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-1.5 text-left disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] transition-transform"
                         >
-                          <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
-                            <HugeiconsIcon
-                              icon={ArrowDown01Icon}
-                              size={24}
-                              strokeWidth={1.5}
-                            />
-                          </span>
-                          <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate max-w-full">
-                            {modelButtonLabel}
-                          </span>
+                          <div className="flex w-full items-center justify-between">
+                            <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
+                              <HugeiconsIcon
+                                icon={ArrowDown01Icon}
+                                size={22}
+                                strokeWidth={1.5}
+                              />
+                            </span>
+                            <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                          </div>
+                          <div className="flex flex-col min-w-0 w-full mt-0.5">
+                            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                              Model
+                            </span>
+                            <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate max-w-full" title={modelButtonLabel}>
+                              {modelButtonLabel}
+                            </span>
+                          </div>
                         </button>
 
                         {hasDraft && !isLoading ? (
