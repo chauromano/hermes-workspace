@@ -389,13 +389,14 @@ function readClaudeConfigCatalog(): Array<ModelEntry> {
  * Fetch models from the hermes-agent gateway catalog endpoint (/api/model/catalog),
  * with graceful fallback to /api/model/options or /v1/models.
  */
-async function fetchClaudeModels(): Promise<Array<ModelEntry>> {
+async function fetchClaudeModels(includeAll = false): Promise<Array<ModelEntry>> {
   const headers: Record<string, string> = { accept: "application/json" }
   if (BEARER_TOKEN) headers["Authorization"] = `Bearer ${BEARER_TOKEN}`
 
   // 1. Authoritative gateway catalog
   try {
-    const catalogRes = await fetch(`${CLAUDE_API}/api/model/catalog`, { headers })
+    const catalogUrl = `${CLAUDE_API}/api/model/catalog${includeAll ? '?include_all=true' : ''}`
+    const catalogRes = await fetch(catalogUrl, { headers })
     if (catalogRes.ok) {
       const payload = asRecord(await catalogRes.json())
       const raw = Array.isArray(payload.models)
@@ -460,6 +461,24 @@ async function fetchClaudeModels(): Promise<Array<ModelEntry>> {
     .filter((e): e is ModelEntry => e !== null)
 }
 
+function readVisibleModelsFromConfig(): Array<string> {
+  try {
+    if (!fs.existsSync(CONFIG_PATH)) return []
+    const parsed = YAML.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'))
+    if (!parsed || typeof parsed !== 'object') return []
+    const raw =
+      (parsed.model_catalog && parsed.model_catalog.visible_models) ||
+      (parsed.model && parsed.model.visible_models) ||
+      parsed.visible_models
+    if (Array.isArray(raw)) {
+      return raw.map((x: unknown) => String(x).trim()).filter(Boolean)
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
 export const Route = createFileRoute('/api/models')({
   server: {
     handlers: {
@@ -470,6 +489,10 @@ export const Route = createFileRoute('/api/models')({
         await ensureGatewayProbed()
 
         try {
+          const url = new URL(request.url)
+          const includeAll = url.searchParams.get('include_all') === 'true'
+          const visibleModels = readVisibleModelsFromConfig()
+
           // Primary: read user-configured models from ~/.hermes/models.json
           let models = readClaudeModelsJson()
           let source = 'models.json'
@@ -499,7 +522,7 @@ export const Route = createFileRoute('/api/models')({
           // Operations picker only showed the local Workspace subset and drifted
           // from the CLI/backend model universe.
           if (getGatewayCapabilities().models) {
-            const hermesModels = await fetchClaudeModels()
+            const hermesModels = await fetchClaudeModels(includeAll)
             models = mergeModelEntries(models, hermesModels)
             source = source === 'models.json' ? 'models.json+hermes-agent' : 'hermes-agent'
           }
@@ -522,6 +545,15 @@ export const Route = createFileRoute('/api/models')({
             ensureProviderInConfig(m.provider)
           }
 
+          // If visible_models is configured and includeAll is false, filter the returned list
+          if (!includeAll && visibleModels.length > 0) {
+            const visibleSet = new Set(visibleModels.map((x) => x.toLowerCase()))
+            models = models.filter((m) => {
+              const id = (m.id || '').toLowerCase()
+              return visibleSet.has(id) || (defaultModel && m.id === defaultModel.id)
+            })
+          }
+
           const configuredProviders = Array.from(
             new Set(
               models
@@ -539,6 +571,7 @@ export const Route = createFileRoute('/api/models')({
             object: 'list',
             data: models,
             models,
+            visibleModels,
             configuredProviders,
             source,
             ...streamTimeouts,

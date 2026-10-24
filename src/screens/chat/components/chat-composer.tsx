@@ -915,6 +915,8 @@ function ChatComposerComponent({
     return window.matchMedia('(max-width: 767px)').matches
   })
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
+  const [modelSearchQuery, setModelSearchQuery] = useState('')
+  const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({})
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false)
@@ -2524,23 +2526,50 @@ function ChatComposerComponent({
                       type="button"
                       aria-label="Close model picker"
                       className="fixed inset-0 z-[209] bg-black/30"
-                      onClick={() => setIsModelMenuOpen(false)}
+                      onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }}
                     />
                     <div
-                      className="fixed bottom-0 left-0 right-0 z-[210] rounded-t-2xl bg-white shadow-2xl pb-safe dark:bg-neutral-900 animate-in slide-in-from-bottom-10 duration-200"
+                      className="fixed bottom-0 left-0 right-0 z-[210] rounded-t-2xl bg-white shadow-2xl pb-safe dark:bg-neutral-900 animate-in slide-in-from-bottom-10 duration-200 flex flex-col max-h-[80dvh]"
                       role="dialog"
                       aria-label="Select model"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <div className="mx-auto mt-3 mb-4 h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      <div className="px-4 pb-2 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
-                        Model
+                      <div className="mx-auto mt-3 mb-2 h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+                      <div className="px-4 pb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">
+                        Select Model
                       </div>
-                      <div className="pb-4 max-h-[60dvh] overflow-y-auto overflow-x-hidden">
+                      <div className="px-4 pb-2">
+                        <div className="relative flex items-center">
+                          <svg className="absolute left-3 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                          </svg>
+                          <input
+                            type="text"
+                            value={modelSearchQuery}
+                            onChange={(e) => setModelSearchQuery(e.target.value)}
+                            placeholder="Filter models in realtime..."
+                            className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
+                          />
+                          {modelSearchQuery ? (
+                            <button
+                              type="button"
+                              onClick={() => setModelSearchQuery('')}
+                              className="absolute right-2 rounded p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                              title="Clear filter"
+                            >
+                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="pb-4 flex-1 overflow-y-auto overflow-x-hidden px-2">
                         {(() => {
                           const allModels = modelsQuery.data?.models ?? []
-                          const defaultProvider =
-                            modelsQuery.data?.currentProvider ?? ''
+                          const defaultProvider = modelsQuery.data?.currentProvider ?? ''
                           if (allModels.length === 0) {
                             return (
                               <div className="p-4 text-center text-sm text-neutral-500">
@@ -2553,85 +2582,75 @@ function ChatComposerComponent({
                               </div>
                             )
                           }
-                          // Parse models into typed entries
                           const parsed = allModels.map((m) => {
-                            const mId = String(
-                              typeof m === 'string'
-                                ? m
-                                : m.id || m.model || m.name || 'unknown',
-                            )
-                            const mName = String(
-                              typeof m === 'string'
-                                ? m
-                                : m.name ||
-                                    m.displayName ||
-                                    m.label ||
-                                    m.id ||
-                                    m.model ||
-                                    m,
-                            )
-                            const mProvider =
-                              typeof m === 'string'
-                                ? defaultProvider
-                                : ((m as Record<string, unknown>)
-                                    .provider as string) || defaultProvider
-                            const LOCAL_PROVIDER_IDS = ['ollama', 'atomic-chat']
-                            const isLocal =
-                              (typeof m !== 'string' &&
-                                (m as Record<string, unknown>).description ===
-                                  'local') ||
-                              LOCAL_PROVIDER_IDS.includes(mProvider)
-                            return {
-                              id: mId,
-                              name: mName,
-                              provider: mProvider,
-                              isLocal,
-                            }
+                            const mId = String(typeof m === 'string' ? m : m.id || m.model || m.name || 'unknown')
+                            const mName = String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || m)
+                            const mProvider = typeof m === 'string' ? defaultProvider : ((m as Record<string, unknown>).provider as string) || defaultProvider
+                            const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
+                            return { id: mId, name: mName, provider: mProvider, isLocal }
                           })
-                          // Split pinned vs unpinned, group unpinned by provider
-                          const pinnedEntries = parsed.filter((e) =>
-                            isPinned(e.id),
-                          )
-                          const unpinnedGroups = new Map<
-                            string,
-                            typeof parsed
-                          >()
-                          for (const entry of parsed) {
-                            if (isPinned(entry.id)) continue
-                            const group =
-                              unpinnedGroups.get(entry.provider) ?? []
+                          const query = modelSearchQuery.trim().toLowerCase()
+                          const filtered = query
+                            ? parsed.filter(
+                                (m) =>
+                                  m.name.toLowerCase().includes(query) ||
+                                  m.id.toLowerCase().includes(query) ||
+                                  m.provider.toLowerCase().includes(query),
+                              )
+                            : parsed
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="p-4 text-center text-xs text-neutral-500">
+                                <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                                  No models match &ldquo;{modelSearchQuery}&rdquo;
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setModelSearchQuery('')}
+                                  className="text-accent-600 hover:underline text-[11px]"
+                                >
+                                  Clear filter
+                                </button>
+                              </div>
+                            )
+                          }
+                          const pinnedEntries = filtered.filter((e) => isPinned(e.id))
+                          const unpinnedGroups = new Map<string, typeof parsed>()
+                          for (const entry of filtered) {
+                            if (isPinned(entry.id) && !query) continue
+                            const group = unpinnedGroups.get(entry.provider) ?? []
                             group.push(entry)
                             unpinnedGroups.set(entry.provider, group)
                           }
+                          const activeModelId = persistedSessionModel || currentModel
+                          const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
+                            if (query) return false
+                            if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
+                            const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
+                            return !hasActive
+                          }
                           const renderEntry = (entry: (typeof parsed)[0]) => {
                             const isActive = isCurrentModel(
-                              persistedSessionModel || currentModel,
+                              activeModelId,
                               entry.id,
                               entry.provider,
                             )
                             return (
-                              <div
-                                key={entry.id}
-                                className="group relative flex items-center"
-                              >
+                              <div key={entry.id} className="group relative flex items-center">
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    handleModelSelect(
-                                      entry.id,
-                                      entry.provider || undefined,
-                                    )
+                                    handleModelSelect(entry.id, entry.provider || undefined)
                                     setIsModelMenuOpen(false)
+                                    setModelSearchQuery('')
                                   }}
-                                  className={`flex flex-1 items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                                  className={`flex flex-1 items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors rounded-lg ${
                                     isActive
                                       ? 'bg-accent-50 text-accent-700 font-medium dark:bg-accent-900/30 dark:text-accent-300 border-l-2 border-accent-500'
                                       : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800'
                                   }`}
                                 >
-                                  <span className="flex-1 truncate">
-                                    {entry.name}
-                                  </span>
+                                  <span className="flex-1 truncate">{entry.name}</span>
                                   {entry.isLocal && (
                                     <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800">
                                       local
@@ -2652,21 +2671,13 @@ function ChatComposerComponent({
                                       ? 'text-accent-500 opacity-80 hover:opacity-100'
                                       : 'text-neutral-400 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-accent-500'
                                   }`}
-                                  aria-label={
-                                    isPinned(entry.id)
-                                      ? `Unpin ${entry.name}`
-                                      : `Pin ${entry.name}`
-                                  }
+                                  aria-label={isPinned(entry.id) ? `Unpin ${entry.name}` : `Pin ${entry.name}`}
                                 >
                                   <svg
                                     width="13"
                                     height="13"
                                     viewBox="0 0 24 24"
-                                    fill={
-                                      isPinned(entry.id)
-                                        ? 'currentColor'
-                                        : 'none'
-                                    }
+                                    fill={isPinned(entry.id) ? 'currentColor' : 'none'}
                                     stroke="currentColor"
                                     strokeWidth="2"
                                   >
@@ -2692,21 +2703,53 @@ function ChatComposerComponent({
                                     >
                                       <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
                                     </svg>
-                                    <span>Pinned</span>
+                                    <span>Pinned ({pinnedEntries.length})</span>
                                   </div>
                                   {pinnedEntries.map(renderEntry)}
                                 </div>
                               )}
                               {Array.from(unpinnedGroups.entries())
                                 .sort((a, b) => a[0].localeCompare(b[0]))
-                                .map(([provider, models]) => (
-                                  <div key={provider}>
-                                    <div className="px-4 pb-1 pt-3 text-[10px] font-medium uppercase tracking-wider text-neutral-400">
-                                      {provider}
+                                .map(([provider, models]) => {
+                                  const collapsed = isGroupCollapsed(provider, models)
+                                  return (
+                                    <div key={provider} className="mb-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCollapsedProviders((prev) => ({
+                                            ...prev,
+                                            [provider]: !collapsed,
+                                          }))
+                                        }}
+                                        className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                                      >
+                                        <span className="flex items-center gap-1.5">
+                                          <svg
+                                            className={`h-3 w-3 transition-transform duration-150 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-neutral-600 dark:text-neutral-300'}`}
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                          >
+                                            <polyline points="6 9 12 15 18 9" />
+                                          </svg>
+                                          <span>{provider}</span>
+                                        </span>
+                                        <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                          {models.length}
+                                        </span>
+                                      </button>
+                                      {!collapsed && (
+                                        <div className="mt-0.5 pl-1 space-y-0.5">
+                                          {models.map(renderEntry)}
+                                        </div>
+                                      )}
                                     </div>
-                                    {models.map(renderEntry)}
-                                  </div>
-                                ))}
+                                  )
+                                })}
                             </>
                           )
                         })()}
@@ -2714,8 +2757,7 @@ function ChatComposerComponent({
                     </div>
                   </>,
                   document.body,
-                )
-              : null}
+                )              : null}
           </>
         ) : (
           /* ── Desktop: original layout ── */
@@ -2962,8 +3004,37 @@ function ChatComposerComponent({
                             </button>
                             {isModelMenuOpen && (
                               <>
-                                <div className="fixed inset-0 z-[199]" onClick={() => setIsModelMenuOpen(false)} />
-                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                                <div className="fixed inset-0 z-[199]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
+                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
+                                  <div className="border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
+                                    <div className="relative flex items-center">
+                                      <svg className="absolute left-2.5 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="8" />
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                      </svg>
+                                      <input
+                                        type="text"
+                                        value={modelSearchQuery}
+                                        onChange={(e) => setModelSearchQuery(e.target.value)}
+                                        placeholder="Filter models in realtime..."
+                                        className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
+                                        autoFocus
+                                      />
+                                      {modelSearchQuery ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setModelSearchQuery('')}
+                                          className="absolute right-2 rounded p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                                          title="Clear filter"
+                                        >
+                                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18" />
+                                            <line x1="6" y1="6" x2="18" y2="18" />
+                                          </svg>
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
                                   <div className="max-h-[20rem] overflow-y-auto overflow-x-hidden p-1">
                                     {(() => {
                                       const allModels = modelsQuery.data?.models ?? []
@@ -2978,17 +3049,49 @@ function ChatComposerComponent({
                                         const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
                                         return { id: mId, name: mName, provider: mProvider, isLocal }
                                       })
-                                      const pinnedEntries = parsed.filter((e) => isPinned(e.id))
+                                      const query = modelSearchQuery.trim().toLowerCase()
+                                      const filtered = query
+                                        ? parsed.filter(
+                                            (m) =>
+                                              m.name.toLowerCase().includes(query) ||
+                                              m.id.toLowerCase().includes(query) ||
+                                              m.provider.toLowerCase().includes(query),
+                                          )
+                                        : parsed
+                                      if (filtered.length === 0) {
+                                        return (
+                                          <div className="p-4 text-center text-xs text-neutral-500">
+                                            <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                                              No models match &ldquo;{modelSearchQuery}&rdquo;
+                                            </p>
+                                            <button
+                                              type="button"
+                                              onClick={() => setModelSearchQuery('')}
+                                              className="text-accent-600 hover:underline text-[11px]"
+                                            >
+                                              Clear filter
+                                            </button>
+                                          </div>
+                                        )
+                                      }
+                                      const pinnedEntries = filtered.filter((e) => isPinned(e.id))
                                       const unpinnedGroups = new Map<string, typeof parsed>()
-                                      for (const entry of parsed) {
-                                        if (isPinned(entry.id)) continue
+                                      for (const entry of filtered) {
+                                        if (isPinned(entry.id) && !query) continue
                                         const group = unpinnedGroups.get(entry.provider) ?? []
                                         group.push(entry)
                                         unpinnedGroups.set(entry.provider, group)
                                       }
+                                      const activeModelId = persistedSessionModel || currentModel
+                                      const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
+                                        if (query) return false
+                                        if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
+                                        const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
+                                        return !hasActive
+                                      }
                                       const renderEntry = (entry: (typeof parsed)[0]) => {
                                         const isActive = isCurrentModel(
-                                          persistedSessionModel || currentModel,
+                                          activeModelId,
                                           entry.id,
                                           entry.provider,
                                         )
@@ -2999,10 +3102,11 @@ function ChatComposerComponent({
                                               onClick={() => {
                                                 handleModelSelect(entry.id, entry.provider || undefined)
                                                 setIsModelMenuOpen(false)
+                                                setModelSearchQuery('')
                                               }}
-                                              className={`flex flex-1 items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${
+                                              className={`flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors rounded-lg ${
                                                 isActive
-                                                  ? 'border-l-2 border-accent-500 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
+                                                  ? 'border-l-2 border-accent-500 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium'
                                                   : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/50'
                                               }`}
                                             >
@@ -3038,17 +3142,51 @@ function ChatComposerComponent({
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" className="text-accent-500">
                                                   <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
                                                 </svg>
-                                                <span>Pinned</span>
+                                                <span>Pinned ({pinnedEntries.length})</span>
                                               </div>
                                               {pinnedEntries.map(renderEntry)}
                                             </div>
                                           ) : null}
-                                          {Array.from(unpinnedGroups.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([provider, models]) => (
-                                            <div key={provider}>
-                                              <div className="px-3 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-neutral-400">{provider}</div>
-                                              {models.map(renderEntry)}
-                                            </div>
-                                          ))}
+                                          {Array.from(unpinnedGroups.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([provider, models]) => {
+                                            const collapsed = isGroupCollapsed(provider, models)
+                                            return (
+                                              <div key={provider} className="mb-1">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setCollapsedProviders((prev) => ({
+                                                      ...prev,
+                                                      [provider]: !collapsed,
+                                                    }))
+                                                  }}
+                                                  className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                                                >
+                                                  <span className="flex items-center gap-1.5">
+                                                    <svg
+                                                      className={`h-3 w-3 transition-transform duration-150 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-neutral-600 dark:text-neutral-300'}`}
+                                                      viewBox="0 0 24 24"
+                                                      fill="none"
+                                                      stroke="currentColor"
+                                                      strokeWidth="2"
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                    >
+                                                      <polyline points="6 9 12 15 18 9" />
+                                                    </svg>
+                                                    <span>{provider}</span>
+                                                  </span>
+                                                  <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                                    {models.length}
+                                                  </span>
+                                                </button>
+                                                {!collapsed && (
+                                                  <div className="mt-0.5 pl-1 space-y-0.5">
+                                                    {models.map(renderEntry)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )
+                                          })}
                                         </>
                                       )
                                     })()}

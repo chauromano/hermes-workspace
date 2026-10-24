@@ -1262,6 +1262,11 @@ function ClaudeConfigSection({
   const [fallbackModelInput, setFallbackModelInput] = useState('')
   const [fallbackBaseUrlInput, setFallbackBaseUrlInput] = useState('')
   const [showFallbackRow, setShowFallbackRow] = useState(false)
+  const [catalogModels, setCatalogModels] = useState<Array<{ id: string; name: string; provider: string }>>([])
+  const [selectedVisibleModels, setSelectedVisibleModels] = useState<Set<string>>(new Set())
+  const [visibilitySearch, setVisibilitySearch] = useState('')
+  const [visibilitySaving, setVisibilitySaving] = useState(false)
+  const [visibilityMsg, setVisibilityMsg] = useState<string | null>(null)
 
   const [availableProviders, setAvailableProviders] = useState<
     Array<{ id: string; label: string; authenticated: boolean }>
@@ -1283,6 +1288,34 @@ function ClaudeConfigSection({
     setShowFallbackRow(Boolean(fb.provider || fb.model || fb.baseUrl))
 
     setCustomBaseUrl(readManifestBlockBaseUrl(cfg))
+
+    const rawVisible =
+      ((cfg.model_catalog as Record<string, unknown>)?.visible_models) ||
+      ((cfg.model as Record<string, unknown>)?.visible_models) ||
+      cfg.visible_models
+    if (Array.isArray(rawVisible)) {
+      setSelectedVisibleModels(new Set(rawVisible.map((x) => String(x).trim()).filter(Boolean)))
+    } else {
+      setSelectedVisibleModels(new Set())
+    }
+  }, [])
+
+  const fetchCatalogModels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/models?include_all=true')
+      if (res.ok) {
+        const d = await res.json()
+        const raw = Array.isArray(d.models) ? d.models : Array.isArray(d.data) ? d.data : []
+        const parsed = raw.map((m: any) => ({
+          id: String(typeof m === 'string' ? m : m.id || m.model || m.name || ''),
+          name: String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || ''),
+          provider: String(typeof m === 'string' ? 'unknown' : m.provider || 'unknown'),
+        })).filter((m: any) => m.id)
+        setCatalogModels(parsed)
+      }
+    } catch {
+      // ignore
+    }
   }, [])
 
   const fetchConfig = useCallback(async () => {
@@ -1323,7 +1356,8 @@ function ClaudeConfigSection({
         }
       })
       .catch(() => setLoading(false))
-  }, [fetchConfig, fetchModelsForProvider])
+    void fetchCatalogModels()
+  }, [fetchConfig, fetchModelsForProvider, fetchCatalogModels])
 
   const saveConfig = async (updates: {
     config?: Record<string, unknown>
@@ -1740,6 +1774,181 @@ function ClaudeConfigSection({
           >
             {saving ? 'Saving...' : 'Save Model'}
           </Button>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Model Visibility & Selection"
+        description="Choose which models appear in the composition board and chat model switcher. If no models are selected, all discovered models are available."
+        icon={SourceCodeSquareIcon}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex-1 max-w-sm">
+              <Input
+                value={visibilitySearch}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVisibilitySearch(e.target.value)}
+                placeholder="Filter models to toggle..."
+                className="text-xs pl-3 pr-7"
+              />
+              {visibilitySearch && (
+                <button
+                  type="button"
+                  onClick={() => setVisibilitySearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-xs h-8 cursor-pointer"
+                onClick={() => {
+                  const filtered = catalogModels.filter((m) =>
+                    !visibilitySearch ||
+                    m.name.toLowerCase().includes(visibilitySearch.toLowerCase()) ||
+                    m.id.toLowerCase().includes(visibilitySearch.toLowerCase()) ||
+                    m.provider.toLowerCase().includes(visibilitySearch.toLowerCase())
+                  )
+                  setSelectedVisibleModels((prev) => {
+                    const next = new Set(prev)
+                    for (const m of filtered) next.add(m.id)
+                    return next
+                  })
+                }}
+              >
+                Select Filtered
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="text-xs h-8 cursor-pointer"
+                onClick={() => setSelectedVisibleModels(new Set())}
+              >
+                Clear Selection (Show All)
+              </Button>
+            </div>
+          </div>
+
+          <div className="text-xs text-primary-600">
+            {selectedVisibleModels.size === 0 ? (
+              <span className="font-medium text-amber-600 dark:text-amber-400">
+                All models are currently visible in the composition board (no filter applied).
+              </span>
+            ) : (
+              <span>
+                <span className="font-semibold text-primary-900">{selectedVisibleModels.size}</span> model(s) selected to appear in the composition board.
+              </span>
+            )}
+          </div>
+
+          <div className="max-h-72 overflow-y-auto rounded-xl border border-primary-200 bg-white/60 p-3 space-y-4">
+            {(() => {
+              const query = visibilitySearch.trim().toLowerCase()
+              const filtered = query
+                ? catalogModels.filter(
+                    (m) =>
+                      m.name.toLowerCase().includes(query) ||
+                      m.id.toLowerCase().includes(query) ||
+                      m.provider.toLowerCase().includes(query)
+                  )
+                : catalogModels
+
+              if (filtered.length === 0) {
+                return <div className="text-center py-4 text-xs text-neutral-500">No models found.</div>
+              }
+
+              const groups = new Map<string, typeof catalogModels>()
+              for (const m of filtered) {
+                const list = groups.get(m.provider) || []
+                list.push(m)
+                groups.set(m.provider, list)
+              }
+
+              return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([provider, models]) => (
+                <div key={provider} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-primary-700 border-b border-primary-100 pb-1">
+                    <span>{provider}</span>
+                    <span className="text-[10px] text-primary-400 font-normal">
+                      {models.filter((m) => selectedVisibleModels.has(m.id)).length} / {models.length} selected
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                    {models.map((m) => {
+                      const isChecked = selectedVisibleModels.has(m.id)
+                      return (
+                        <label
+                          key={m.id}
+                          className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'border-accent-400 bg-accent-50/50 text-accent-900 dark:bg-accent-950/30 dark:border-accent-700 dark:text-accent-200'
+                              : 'border-neutral-200 hover:bg-neutral-50 text-neutral-700 dark:border-neutral-700 dark:hover:bg-neutral-800 dark:text-neutral-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              setSelectedVisibleModels((prev) => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.add(m.id)
+                                else next.delete(m.id)
+                                return next
+                              })
+                            }}
+                            className="rounded border-neutral-300 text-accent-600 focus:ring-accent-500"
+                          />
+                          <span className="truncate flex-1 font-mono text-[11px]" title={m.id}>
+                            {m.name || m.id}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))
+            })()}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              {visibilityMsg && (
+                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  {visibilityMsg}
+                </span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              disabled={visibilitySaving}
+              className="cursor-pointer"
+              onClick={async () => {
+                setVisibilitySaving(true)
+                const list = Array.from(selectedVisibleModels)
+                await saveConfig({
+                  config: {
+                    model_catalog: {
+                      visible_models: list,
+                    },
+                  },
+                })
+                setVisibilitySaving(false)
+                setVisibilityMsg(
+                  list.length > 0
+                    ? `Saved! ${list.length} models visible in composition board.`
+                    : 'Saved! All models are now visible in composition board.'
+                )
+                setTimeout(() => setVisibilityMsg(null), 4000)
+              }}
+            >
+              {visibilitySaving ? 'Saving...' : 'Save Model Visibility'}
+            </Button>
+          </div>
         </div>
       </SettingsSection>
 
