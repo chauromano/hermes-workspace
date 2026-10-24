@@ -917,6 +917,7 @@ function ChatComposerComponent({
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false)
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({})
+  const [mobileProviderFilter, setMobileProviderFilter] = useState<string>('all')
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false)
@@ -1347,6 +1348,7 @@ function ChatComposerComponent({
     )
       return
     function handleOutsideClick(event: MouseEvent) {
+      if (isMobileViewport) return
       const target = event.target as Node
       if (controlsMenuRef.current?.contains(target)) return
       if (modelSelectorRef.current?.contains(target)) return
@@ -2270,6 +2272,31 @@ function ChatComposerComponent({
         {isMobileViewport ? (
           /* ── Mobile: Telegram-style single-row bar ── */
           <>
+            {!hideModelSelector && (
+              <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModelMenuOpen(true)
+                    setIsMobileActionsMenuOpen(false)
+                  }}
+                  disabled={isModelSwitcherDisabled}
+                  className="inline-flex max-w-[85vw] items-center gap-1.5 rounded-full bg-neutral-100/90 dark:bg-neutral-800/90 px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-200 border border-neutral-200/60 dark:border-neutral-700/60 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={`Select model, currently ${modelButtonLabel}`}
+                >
+                  <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="truncate">{modelButtonLabel}</span>
+                  <svg className="size-3 text-neutral-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                {value.length >= 100 && (
+                  <span className="text-[10px] text-neutral-400 tabular-nums select-none">
+                    ~{Math.ceil(value.length / 4)} tokens
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-2 px-3 py-2">
               {/* + button — opens bottom sheet actions menu */}
               <button
@@ -2525,22 +2552,55 @@ function ChatComposerComponent({
                     <button
                       type="button"
                       aria-label="Close model picker"
-                      className="fixed inset-0 z-[209] bg-black/30"
-                      onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }}
+                      className="fixed inset-0 z-[209] bg-black/40 backdrop-blur-xs transition-opacity"
+                      onClick={() => {
+                        setIsModelMenuOpen(false)
+                        setModelSearchQuery('')
+                        setMobileProviderFilter('all')
+                      }}
                     />
                     <div
-                      className="fixed bottom-0 left-0 right-0 z-[210] rounded-t-2xl bg-white shadow-2xl pb-safe dark:bg-neutral-900 animate-in slide-in-from-bottom-10 duration-200 flex flex-col max-h-[80dvh]"
+                      className="fixed inset-x-0 bottom-0 z-[210] flex flex-col rounded-t-3xl bg-white dark:bg-neutral-900 shadow-2xl transition-all duration-200 overflow-hidden"
+                      style={{
+                        maxHeight: mobileKeyboardInset > 0 ? `calc(100dvh - ${mobileKeyboardInset + 16}px)` : '88dvh',
+                        bottom: mobileKeyboardInset > 0 ? `${mobileKeyboardInset}px` : 0,
+                        paddingBottom: mobileKeyboardInset > 0 ? '8px' : 'max(env(safe-area-inset-bottom, 16px), 16px)',
+                      }}
                       role="dialog"
                       aria-label="Select model"
                       onClick={(event) => event.stopPropagation()}
                     >
-                      <div className="mx-auto mt-3 mb-2 h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      <div className="px-4 pb-2 text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-                        Select Model
+                      {/* Drag handle */}
+                      <div className="mx-auto mt-3 mb-1 h-1.5 w-12 rounded-full bg-neutral-300 dark:bg-neutral-600" />
+
+                      {/* Header with Title and Close Button */}
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-100 dark:border-neutral-800">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base font-bold text-neutral-800 dark:text-neutral-100">
+                            Select Model
+                          </span>
+                          <span className="rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-xs text-neutral-500 font-medium">
+                            {modelsQuery.data?.models?.length ?? 0}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsModelMenuOpen(false)
+                            setModelSearchQuery('')
+                            setMobileProviderFilter('all')
+                          }}
+                          className="size-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 active:scale-95 transition-all cursor-pointer"
+                          aria-label="Close model selector"
+                        >
+                          <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={2} />
+                        </button>
                       </div>
-                      <div className="px-4 pb-2">
+
+                      {/* Search Bar */}
+                      <div className="px-4 pt-3 pb-2">
                         <div className="relative flex items-center">
-                          <svg className="absolute left-3 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg className="absolute left-3.5 size-4 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="11" cy="11" r="8" />
                             <line x1="21" y1="21" x2="16.65" y2="16.65" />
                           </svg>
@@ -2548,31 +2608,30 @@ function ChatComposerComponent({
                             type="text"
                             value={modelSearchQuery}
                             onChange={(e) => setModelSearchQuery(e.target.value)}
-                            placeholder="Filter models in realtime..."
-                            className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
+                            placeholder="Filter models or providers..."
+                            className="w-full rounded-xl bg-neutral-100 dark:bg-neutral-800 py-2.5 pl-10 pr-9 text-base md:text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-accent-500"
                           />
                           {modelSearchQuery ? (
                             <button
                               type="button"
                               onClick={() => setModelSearchQuery('')}
-                              className="absolute right-2 rounded p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                              className="absolute right-2.5 size-7 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 active:scale-90 cursor-pointer"
                               title="Clear filter"
                             >
-                              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
+                              <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
                             </button>
                           ) : null}
                         </div>
                       </div>
-                      <div className="pb-4 flex-1 overflow-y-auto overflow-x-hidden px-2">
+
+                      {/* Content Area */}
+                      <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-6 space-y-1">
                         {(() => {
                           const allModels = modelsQuery.data?.models ?? []
                           const defaultProvider = modelsQuery.data?.currentProvider ?? ''
                           if (allModels.length === 0) {
                             return (
-                              <div className="p-4 text-center text-sm text-neutral-500">
+                              <div className="p-6 text-center text-sm text-neutral-500">
                                 <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                                   No models available
                                 </p>
@@ -2589,8 +2648,12 @@ function ChatComposerComponent({
                             const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
                             return { id: mId, name: mName, provider: mProvider, isLocal }
                           })
+
+                          // Providers list for quick pill filter
+                          const providerNames = Array.from(new Set(parsed.map((m) => m.provider))).filter(Boolean).sort()
+
                           const query = modelSearchQuery.trim().toLowerCase()
-                          const filtered = query
+                          let filtered = query
                             ? parsed.filter(
                                 (m) =>
                                   m.name.toLowerCase().includes(query) ||
@@ -2598,37 +2661,27 @@ function ChatComposerComponent({
                                   m.provider.toLowerCase().includes(query),
                               )
                             : parsed
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="p-4 text-center text-xs text-neutral-500">
-                                <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                                  No models match &ldquo;{modelSearchQuery}&rdquo;
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setModelSearchQuery('')}
-                                  className="text-accent-600 hover:underline text-[11px]"
-                                >
-                                  Clear filter
-                                </button>
-                              </div>
-                            )
+
+                          if (mobileProviderFilter !== 'all') {
+                            filtered = filtered.filter((m) => m.provider === mobileProviderFilter)
                           }
+
                           const pinnedEntries = filtered.filter((e) => isPinned(e.id))
                           const unpinnedGroups = new Map<string, typeof parsed>()
                           for (const entry of filtered) {
-                            if (isPinned(entry.id) && !query) continue
+                            if (isPinned(entry.id) && !query && mobileProviderFilter === 'all') continue
                             const group = unpinnedGroups.get(entry.provider) ?? []
                             group.push(entry)
                             unpinnedGroups.set(entry.provider, group)
                           }
                           const activeModelId = persistedSessionModel || currentModel
                           const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
-                            if (query) return false
+                            if (query || mobileProviderFilter !== 'all') return false
                             if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
                             const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
                             return !hasActive
                           }
+
                           const renderEntry = (entry: (typeof parsed)[0]) => {
                             const isActive = isCurrentModel(
                               activeModelId,
@@ -2636,29 +2689,46 @@ function ChatComposerComponent({
                               entry.provider,
                             )
                             return (
-                              <div key={entry.id} className="group relative flex items-center">
+                              <div key={entry.id} className="relative flex items-center mb-1.5">
                                 <button
                                   type="button"
                                   onClick={() => {
                                     handleModelSelect(entry.id, entry.provider || undefined)
                                     setIsModelMenuOpen(false)
                                     setModelSearchQuery('')
+                                    setMobileProviderFilter('all')
                                   }}
-                                  className={`flex flex-1 items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors rounded-lg ${
+                                  className={cn(
+                                    'flex flex-1 min-h-[50px] items-center justify-between gap-3 px-3.5 py-2.5 text-left rounded-xl border transition-all active:scale-[0.99] cursor-pointer',
                                     isActive
-                                      ? 'bg-accent-50 text-accent-700 font-medium dark:bg-accent-900/30 dark:text-accent-300 border-l-2 border-accent-500'
-                                      : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800'
-                                  }`}
+                                      ? 'border-accent-500 bg-accent-50/80 dark:bg-accent-950/40 text-accent-700 dark:text-accent-300 shadow-xs'
+                                      : 'border-neutral-200/60 dark:border-neutral-700/60 bg-neutral-50/80 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-200 active:bg-neutral-100 dark:active:bg-neutral-800'
+                                  )}
                                 >
-                                  <span className="flex-1 truncate">{entry.name}</span>
-                                  {entry.isLocal && (
-                                    <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800">
-                                      local
+                                  <div className="flex flex-col min-w-0 flex-1 pr-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className={cn('truncate text-[14px] leading-snug', isActive ? 'font-semibold' : 'font-medium')}>
+                                        {entry.name}
+                                      </span>
+                                      {entry.isLocal && (
+                                        <span className="text-[10px] text-neutral-500 px-1.5 py-0.2 rounded-full bg-neutral-200/70 dark:bg-neutral-700/70 shrink-0">
+                                          local
+                                        </span>
+                                      )}
+                                    </div>
+                                    {entry.name !== entry.id && (
+                                      <span className="text-[11px] text-neutral-400 dark:text-neutral-500 truncate mt-0.5 leading-tight">
+                                        {entry.id}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {isActive ? (
+                                    <span className="size-6 rounded-full bg-accent-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                      <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                        <polyline points="20 6 9 17 4 12" />
+                                      </svg>
                                     </span>
-                                  )}
-                                  {isActive && (
-                                    <span className="size-1.5 rounded-full bg-accent-500 shrink-0" />
-                                  )}
+                                  ) : null}
                                 </button>
                                 <button
                                   type="button"
@@ -2666,18 +2736,12 @@ function ChatComposerComponent({
                                     e.stopPropagation()
                                     togglePin(entry.id)
                                   }}
-                                  className={`absolute right-3 rounded p-1 transition-opacity ${
-                                    isPinned(entry.id)
-                                      ? 'text-accent-500 opacity-80 hover:opacity-100'
-                                      : 'text-neutral-400 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-accent-500'
-                                  }`}
+                                  className="ml-1 size-10 rounded-xl flex items-center justify-center text-neutral-400 hover:text-amber-500 active:scale-90 shrink-0 cursor-pointer"
                                   aria-label={isPinned(entry.id) ? `Unpin ${entry.name}` : `Pin ${entry.name}`}
                                 >
                                   <svg
-                                    width="13"
-                                    height="13"
+                                    className={cn('size-4 transition-colors', isPinned(entry.id) ? 'fill-amber-400 text-amber-500' : 'fill-none text-neutral-300 dark:text-neutral-600')}
                                     viewBox="0 0 24 24"
-                                    fill={isPinned(entry.id) ? 'currentColor' : 'none'}
                                     stroke="currentColor"
                                     strokeWidth="2"
                                   >
@@ -2687,69 +2751,127 @@ function ChatComposerComponent({
                               </div>
                             )
                           }
+
                           return (
                             <>
-                              {pinnedEntries.length > 0 && (
-                                <div className="mb-2 border-b border-neutral-100 dark:border-neutral-800 pb-2">
-                                  <div className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-neutral-400">
-                                    <svg
-                                      width="13"
-                                      height="13"
-                                      viewBox="0 0 24 24"
-                                      fill="currentColor"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      className="text-accent-500"
-                                    >
-                                      <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-                                    </svg>
-                                    <span>Pinned ({pinnedEntries.length})</span>
-                                  </div>
-                                  {pinnedEntries.map(renderEntry)}
+                              {/* Horizontal Quick-Filter Pills */}
+                              {providerNames.length > 1 && (
+                                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 mb-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMobileProviderFilter('all')}
+                                    className={cn(
+                                      'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-all active:scale-95 cursor-pointer',
+                                      mobileProviderFilter === 'all'
+                                        ? 'bg-accent-500 text-white shadow-xs'
+                                        : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                                    )}
+                                  >
+                                    All ({parsed.length})
+                                  </button>
+                                  {providerNames.map((p) => {
+                                    const count = parsed.filter((m) => m.provider === p).length
+                                    const isSelected = mobileProviderFilter === p
+                                    return (
+                                      <button
+                                        key={p}
+                                        type="button"
+                                        onClick={() => setMobileProviderFilter(isSelected ? 'all' : p)}
+                                        className={cn(
+                                          'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-all active:scale-95 cursor-pointer',
+                                          isSelected
+                                            ? 'bg-accent-500 text-white shadow-xs'
+                                            : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'
+                                        )}
+                                      >
+                                        {p} ({count})
+                                      </button>
+                                    )
+                                  })}
                                 </div>
                               )}
-                              {Array.from(unpinnedGroups.entries())
-                                .sort((a, b) => a[0].localeCompare(b[0]))
-                                .map(([provider, models]) => {
-                                  const collapsed = isGroupCollapsed(provider, models)
-                                  return (
-                                    <div key={provider} className="mb-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setCollapsedProviders((prev) => ({
-                                            ...prev,
-                                            [provider]: !collapsed,
-                                          }))
-                                        }}
-                                        className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
-                                      >
-                                        <span className="flex items-center gap-1.5">
-                                          <svg
-                                            className={`h-3 w-3 transition-transform duration-150 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-neutral-600 dark:text-neutral-300'}`}
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                          >
-                                            <polyline points="6 9 12 15 18 9" />
-                                          </svg>
-                                          <span>{provider}</span>
-                                        </span>
-                                        <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                          {models.length}
-                                        </span>
-                                      </button>
-                                      {!collapsed && (
-                                        <div className="mt-0.5 pl-1 space-y-0.5">
-                                          {models.map(renderEntry)}
-                                        </div>
-                                      )}
+
+                              {filtered.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-neutral-500">
+                                  <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                                    No models match your filter
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setModelSearchQuery('')
+                                      setMobileProviderFilter('all')
+                                    }}
+                                    className="text-accent-600 hover:underline text-xs cursor-pointer font-medium"
+                                  >
+                                    Reset filters
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  {pinnedEntries.length > 0 && (
+                                    <div className="mb-3 border-b border-neutral-100 dark:border-neutral-800 pb-2">
+                                      <div className="flex items-center gap-1.5 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                                        <svg
+                                          width="13"
+                                          height="13"
+                                          viewBox="0 0 24 24"
+                                          fill="currentColor"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          className="text-amber-500"
+                                        >
+                                          <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
+                                        </svg>
+                                        <span>Pinned ({pinnedEntries.length})</span>
+                                      </div>
+                                      {pinnedEntries.map(renderEntry)}
                                     </div>
-                                  )
-                                })}
+                                  )}
+                                  {Array.from(unpinnedGroups.entries())
+                                    .sort((a, b) => a[0].localeCompare(b[0]))
+                                    .map(([provider, models]) => {
+                                      const collapsed = isGroupCollapsed(provider, models)
+                                      return (
+                                        <div key={provider} className="mb-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setCollapsedProviders((prev) => ({
+                                                ...prev,
+                                                [provider]: !collapsed,
+                                              }))
+                                            }}
+                                            className="flex w-full min-h-[42px] items-center justify-between rounded-xl px-3.5 py-2 my-1 text-xs font-semibold uppercase tracking-wider bg-neutral-100/90 dark:bg-neutral-800/80 text-neutral-700 dark:text-neutral-200 border border-neutral-200/50 dark:border-neutral-700/50 active:bg-neutral-200 dark:active:bg-neutral-700 transition-colors cursor-pointer"
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <svg
+                                                className={`size-3.5 transition-transform duration-200 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-accent-500'}`}
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2.5"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                              >
+                                                <polyline points="6 9 12 15 18 9" />
+                                              </svg>
+                                              <span>{provider}</span>
+                                            </span>
+                                            <span className="rounded-full bg-white dark:bg-neutral-700 px-2 py-0.5 text-[11px] font-medium text-neutral-600 dark:text-neutral-300 shadow-xs">
+                                              {models.length}
+                                            </span>
+                                          </button>
+                                          {!collapsed && (
+                                            <div className="mt-1 space-y-1">
+                                              {models.map(renderEntry)}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                </>
+                              )}
                             </>
                           )
                         })()}
@@ -2757,7 +2879,8 @@ function ChatComposerComponent({
                     </div>
                   </>,
                   document.body,
-                )              : null}
+                )
+              : null}
           </>
         ) : (
           /* ── Desktop: original layout ── */
