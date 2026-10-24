@@ -10,13 +10,16 @@ import {
   CommandLineIcon,
   McpServerIcon,
   Menu01Icon,
+  PlusSignIcon,
   PuzzleIcon,
   Rocket01Icon,
+  Search01Icon,
   Settings01Icon,
   UserGroupIcon,
   UserMultipleIcon,
 } from '@hugeicons/core-free-icons'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { SessionMeta } from '@/screens/chat/types'
 import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
 import { getTheme, getThemeVariant, isDarkTheme, setTheme } from '@/lib/theme'
@@ -83,7 +86,6 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     to: '/echo-studio',
     match: (p: string) => p.startsWith('/echo-studio'),
   },
-
   {
     id: 'memory',
     label: 'Memory',
@@ -114,6 +116,42 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
   },
 ]
 
+function normalizeLabel(value: string | undefined): string {
+  if (typeof value !== 'string') return ''
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : ''
+}
+
+function getSessionTitle(session: SessionMeta): string {
+  const label = normalizeLabel(session.label)
+  if (label) return label
+  const derivedTitle = normalizeLabel(session.derivedTitle)
+  if (derivedTitle) return derivedTitle
+  const title = normalizeLabel(session.title)
+  if (title) return title
+  return `Session ${session.friendlyId ? session.friendlyId.slice(0, 8) : 'Chat'}`
+}
+
+const dayFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+})
+
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+function formatUpdatedAt(updatedAt?: number): string {
+  if (typeof updatedAt !== 'number') return ''
+  const value = new Date(updatedAt)
+  const now = new Date()
+  if (value.toDateString() === now.toDateString()) {
+    return timeFormatter.format(value)
+  }
+  return dayFormatter.format(value)
+}
+
 /** Shared drawer state — used by both the trigger button and the drawer itself */
 let _setOpen: ((v: boolean) => void) | null = null
 
@@ -142,10 +180,38 @@ export function HamburgerTrigger({ className }: { className?: string }) {
   )
 }
 
+type MobileHamburgerMenuProps = {
+  sessions?: Array<SessionMeta>
+  activeFriendlyId?: string
+  sessionsLoading?: boolean
+  onNewChat?: () => void
+}
+
 /** Mount once in WorkspaceShell — renders the drawer + backdrop */
-export function MobileHamburgerMenu() {
+export function MobileHamburgerMenu({
+  sessions = [],
+  activeFriendlyId = '',
+  sessionsLoading = false,
+  onNewChat,
+}: MobileHamburgerMenuProps) {
   const [open, setOpen] = useState(false)
   _setOpen = setOpen
+
+  const navigate = useNavigate()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const isChatRoute =
+    pathname.startsWith('/chat') || pathname === '/new' || pathname === '/'
+
+  const [activeTab, setActiveTab] = useState<'chats' | 'apps'>('chats')
+  const [chatSearch, setChatSearch] = useState('')
+
+  // Automatically switch tab when opening based on current route
+  useEffect(() => {
+    if (open) {
+      setActiveTab(isChatRoute ? 'chats' : 'apps')
+      setChatSearch('')
+    }
+  }, [open, isChatRoute])
 
   // Add/remove body class to push main content
   useEffect(() => {
@@ -155,8 +221,6 @@ export function MobileHamburgerMenu() {
     }
   }, [open])
 
-  const navigate = useNavigate()
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const profileDisplayName = useChatSettingsStore(selectChatProfileDisplayName)
   const echoStudioEnabled = useSettingsStore(
     (state) => state.settings.experimentalEchoStudio,
@@ -164,8 +228,6 @@ export function MobileHamburgerMenu() {
   const visibleNavItems = MOBILE_HAMBURGER_NAV_ITEMS.filter(
     (item) => item.id !== 'echo-studio' || echoStudioEnabled,
   )
-  const isChatRoute =
-    pathname.startsWith('/chat') || pathname === '/new' || pathname === '/'
 
   function handleNav(to: string) {
     hapticTap()
@@ -173,10 +235,19 @@ export function MobileHamburgerMenu() {
     setOpen(false)
   }
 
+  const filteredSessions = useMemo(() => {
+    if (!sessions) return []
+    const q = chatSearch.trim().toLowerCase()
+    if (!q) return sessions
+    return sessions.filter((s) => {
+      const title = getSessionTitle(s).toLowerCase()
+      const key = (s.friendlyId || s.key || '').toLowerCase()
+      return title.includes(q) || key.includes(q)
+    })
+  }, [sessions, chatSearch])
+
   return (
     <>
-      {/* No floating button — each page has MobilePageHeader with HamburgerTrigger inline */}
-
       {/* Push-style layout wrapper — sidebar pushes content right */}
       <div
         className={cn(
@@ -201,7 +272,7 @@ export function MobileHamburgerMenu() {
       {/* Slide-over drawer */}
       <div
         className={cn(
-          'fixed top-0 left-0 bottom-0 z-[96] w-72 md:hidden',
+          'fixed top-0 left-0 bottom-0 z-[96] w-80 max-w-[85vw] md:hidden',
           'shadow-2xl',
           'flex flex-col pt-[max(env(safe-area-inset-top,20px),20px)] pb-[max(env(safe-area-inset-bottom,20px),20px)]',
           'transition-transform duration-300 ease-in-out',
@@ -214,7 +285,7 @@ export function MobileHamburgerMenu() {
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 pb-4"
+          className="flex items-center justify-between px-4 pb-3"
           style={{ borderBottom: '1px solid var(--color-border, #e5e7eb)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -242,54 +313,235 @@ export function MobileHamburgerMenu() {
             type="button"
             aria-label="Close menu"
             onClick={() => setOpen(false)}
-            className="flex items-center justify-center size-8 rounded-full active:scale-90 transition-all"
-            style={{ color: 'var(--color-muted, #888)' }}
+            className="flex items-center justify-center size-8 rounded-full active:scale-90 transition-all text-primary-400 hover:text-primary-600"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={18} strokeWidth={1.8} />
           </button>
         </div>
 
-        {/* Nav items */}
-        <nav className="flex flex-col gap-1 px-3 pt-4 flex-1">
-          {visibleNavItems.map((item) => {
-            const isActive = item.match(pathname)
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNav(item.to)}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-3 rounded-xl text-left w-full',
-                  'transition-all duration-150 active:scale-[0.98]',
-                )}
-                style={
-                  isActive
-                    ? {
-                        background:
-                          'var(--theme-accent-subtle, color-mix(in srgb, var(--theme-accent, #6366f1) 12%, transparent))',
-                        color:
-                          'var(--theme-accent, var(--color-accent, #6366f1))',
-                      }
-                    : {
-                        color:
-                          'var(--theme-muted, var(--color-ink-muted, #555))',
-                      }
-                }
-              >
+        {/* Action + Segmented Tab Control */}
+        <div className="px-3 pt-3 pb-2 flex flex-col gap-2 shrink-0">
+          {/* New Chat Button */}
+          <button
+            type="button"
+            onClick={() => {
+              hapticTap()
+              if (onNewChat) {
+                onNewChat()
+              } else {
+                void navigate({
+                  to: '/chat/$sessionKey',
+                  params: { sessionKey: 'new' },
+                })
+              }
+              setOpen(false)
+            }}
+            className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-accent-600 text-white font-medium text-sm shadow-sm active:scale-[0.98] transition-all hover:bg-accent-700"
+          >
+            <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2.2} />
+            <span>New Chat</span>
+          </button>
+
+          {/* Segmented Switch: Chats vs Workspace */}
+          <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 p-1 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => {
+                hapticTap()
+                setActiveTab('chats')
+              }}
+              className={cn(
+                'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
+                activeTab === 'chats'
+                  ? 'bg-surface text-ink font-semibold shadow-xs'
+                  : 'text-primary-500 hover:text-primary-800',
+              )}
+            >
+              <HugeiconsIcon
+                icon={Chat01Icon}
+                size={14}
+                strokeWidth={activeTab === 'chats' ? 2 : 1.6}
+              />
+              <span>
+                Chats{sessions.length > 0 ? ` (${sessions.length})` : ''}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                hapticTap()
+                setActiveTab('apps')
+              }}
+              className={cn(
+                'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
+                activeTab === 'apps'
+                  ? 'bg-surface text-ink font-semibold shadow-xs'
+                  : 'text-primary-500 hover:text-primary-800',
+              )}
+            >
+              <HugeiconsIcon
+                icon={UserMultipleIcon}
+                size={14}
+                strokeWidth={activeTab === 'apps' ? 2 : 1.6}
+              />
+              <span>Workspace</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content area: Chats Tab */}
+        {activeTab === 'chats' && (
+          <div className="flex-1 min-h-0 flex flex-col px-3 pt-1">
+            {/* Search filter if there are several sessions */}
+            {sessions.length > 4 && (
+              <div className="mb-2 relative shrink-0">
                 <HugeiconsIcon
-                  icon={item.icon}
-                  size={20}
-                  strokeWidth={isActive ? 2 : 1.6}
+                  icon={Search01Icon}
+                  size={14}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-400"
                 />
-                <span className="text-[15px] font-medium">{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
+                <input
+                  type="text"
+                  value={chatSearch}
+                  onChange={(e) => setChatSearch(e.target.value)}
+                  placeholder="Search chats..."
+                  className="w-full text-xs rounded-lg pl-8 pr-7 py-1.5 bg-primary-100/60 text-ink placeholder:text-primary-400 border border-transparent focus:border-accent-300 focus:outline-none transition-colors"
+                />
+                {chatSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setChatSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary-400 hover:text-primary-600 text-xs px-1"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Scrollable chat session list */}
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5">
+              {filteredSessions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 px-3 text-center text-primary-400">
+                  <HugeiconsIcon
+                    icon={Chat01Icon}
+                    size={28}
+                    strokeWidth={1.5}
+                    className="mb-2 opacity-50"
+                  />
+                  <p className="text-xs font-medium text-primary-600">
+                    {chatSearch
+                      ? 'No chats found matching query'
+                      : sessionsLoading
+                        ? 'Loading chats...'
+                        : 'No past conversations yet'}
+                  </p>
+                  <p className="mt-1 text-[11px] text-primary-400">
+                    {chatSearch
+                      ? 'Try a different search keyword.'
+                      : 'Tap "+ New Chat" to start a conversation.'}
+                  </p>
+                </div>
+              ) : (
+                filteredSessions.map((session) => {
+                  const isActive = session.friendlyId === activeFriendlyId
+                  const timestamp = formatUpdatedAt(session.updatedAt)
+                  const title = getSessionTitle(session)
+                  return (
+                    <button
+                      key={session.key}
+                      type="button"
+                      onClick={() => {
+                        hapticTap()
+                        void navigate({
+                          to: '/chat/$sessionKey',
+                          params: {
+                            sessionKey: session.friendlyId || session.key,
+                          },
+                        })
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        'flex items-center gap-2.5 w-full rounded-xl px-2.5 py-2 text-left transition-all active:scale-[0.99]',
+                        isActive
+                          ? 'bg-accent-500/10 text-accent-700 font-semibold'
+                          : 'hover:bg-primary-100/70 text-ink',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'flex size-7 shrink-0 items-center justify-center rounded-lg',
+                          isActive
+                            ? 'bg-accent-500/20 text-accent-600'
+                            : 'bg-primary-100 text-primary-500',
+                        )}
+                      >
+                        <HugeiconsIcon icon={Chat01Icon} size={15} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium">
+                          {title}
+                        </span>
+                        {timestamp ? (
+                          <span className="block truncate text-[10px] text-primary-400">
+                            {timestamp}
+                          </span>
+                        ) : null}
+                      </span>
+                      {isActive && (
+                        <span className="size-2 rounded-full bg-accent-500 shrink-0" />
+                      )}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Content area: Workspace Apps Tab */}
+        {activeTab === 'apps' && (
+          <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-3 pt-1">
+            {visibleNavItems.map((item) => {
+              const isActive = item.match(pathname)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleNav(item.to)}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-left w-full',
+                    'transition-all duration-150 active:scale-[0.98]',
+                  )}
+                  style={
+                    isActive
+                      ? {
+                          background:
+                            'var(--theme-accent-subtle, color-mix(in srgb, var(--theme-accent, #6366f1) 12%, transparent))',
+                          color:
+                            'var(--theme-accent, var(--color-accent, #6366f1))',
+                        }
+                      : {
+                          color:
+                            'var(--theme-muted, var(--color-ink-muted, #555))',
+                        }
+                  }
+                >
+                  <HugeiconsIcon
+                    icon={item.icon}
+                    size={19}
+                    strokeWidth={isActive ? 2 : 1.6}
+                  />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+        )}
 
         {/* Bottom — user profile + settings + theme toggle */}
         <div
-          className="px-3 pb-2 pt-3"
+          className="px-3 pb-2 pt-3 shrink-0"
           style={{ borderTop: '1px solid var(--color-border, #e5e7eb)' }}
         >
           <div className="flex items-center gap-3 px-2">

@@ -22,6 +22,8 @@ import { useOperations } from '@/screens/agents/hooks/use-operations'
 import { useHarnessVisibility } from '@/screens/chat/harness-visibility'
 import { fetchTasks } from '@/lib/tasks-api'
 import { fetchSessions } from '@/lib/gateway-api'
+import type { GatewaySession } from '@/lib/gateway-api'
+import { formatModelName } from '@/lib/format-model-name'
 import {
   createExternalConversation,
   fetchExternalConversations,
@@ -68,19 +70,71 @@ function SectionCard({
   title,
   subtitle,
   children,
+  action,
 }: {
   title: string
   subtitle: string
   children: React.ReactNode
+  action?: React.ReactNode
 }) {
   return (
     <section className="rounded-2xl border border-primary-200 bg-primary-50/70 p-4 shadow-sm">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold text-primary-900">{title}</h2>
-        <p className="mt-0.5 text-xs text-primary-500">{subtitle}</p>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-primary-900">{title}</h2>
+          <p className="mt-0.5 text-xs text-primary-500">{subtitle}</p>
+        </div>
+        {action}
       </div>
       {children}
     </section>
+  )
+}
+
+function NativeSessionRow({ session }: { session: GatewaySession }) {
+  const title =
+    session.title ||
+    session.derivedTitle ||
+    session.label ||
+    (session.friendlyId ? `Session ${session.friendlyId.slice(0, 8)}` : 'Chat')
+  const friendlyId = session.friendlyId || session.key || 'main'
+  const model = session.model as string | undefined
+  const count =
+    typeof session.messageCount === 'number'
+      ? session.messageCount
+      : typeof session.message_count === 'number'
+        ? session.message_count
+        : undefined
+
+  return (
+    <Link
+      to="/chat/$sessionKey"
+      params={{ sessionKey: friendlyId }}
+      className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-primary-200 hover:bg-primary-100"
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
+        <HugeiconsIcon icon={Chat01Icon} size={16} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-primary-900 group-hover:text-primary-950">
+          {title}
+        </span>
+        <span className="block truncate text-xs text-primary-500">
+          {model ? `${formatModelName(model)} · ` : ''}
+          {typeof count === 'number'
+            ? `${count} ${count === 1 ? 'message' : 'messages'}`
+            : 'Conversation'}
+        </span>
+      </span>
+      <span className="shrink-0 text-[11px] text-primary-400">
+        {relativeTime(session.updatedAt)}
+      </span>
+      <HugeiconsIcon
+        icon={ArrowRight01Icon}
+        size={15}
+        className="text-primary-300 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-600"
+      />
+    </Link>
   )
 }
 
@@ -144,6 +198,7 @@ export function AgentCommandCenter({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showHiddenHarnesses, setShowHiddenHarnesses] = useState(false)
+  const [showAllSessions, setShowAllSessions] = useState(false)
   const { hiddenIds, hiddenSet, toggleHarness, showAllHarnesses } =
     useHarnessVisibility()
   const operations = useOperations()
@@ -254,6 +309,19 @@ export function AgentCommandCenter({
     pendingConversations.length +
     agentsNeedingSetup.length
   const nativeSessions = sessionsQuery.data?.sessions ?? []
+  const sortedNativeSessions = useMemo(() => {
+    return [...nativeSessions].sort((a, b) => {
+      const timeA =
+        typeof a.updatedAt === 'number'
+          ? a.updatedAt
+          : Date.parse(String(a.updatedAt || 0)) || 0
+      const timeB =
+        typeof b.updatedAt === 'number'
+          ? b.updatedAt
+          : Date.parse(String(b.updatedAt || 0)) || 0
+      return timeB - timeA
+    })
+  }, [nativeSessions])
 
   return (
     <main className="h-full overflow-y-auto bg-surface text-primary-900">
@@ -363,7 +431,7 @@ export function AgentCommandCenter({
                 <div className="group flex items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100">
                   <Link
                     to="/chat/$sessionKey"
-                    params={{ sessionKey: 'new' }}
+                    params={{ sessionKey: sortedNativeSessions[0]?.friendlyId || 'new' }}
                     className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3"
                   >
                     <span className="flex size-9 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
@@ -475,20 +543,12 @@ export function AgentCommandCenter({
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <SectionCard
-            title={
-              selectedRuntime
-                ? `${runtimeLabel(selectedRuntime)} chats`
-                : 'Working now'
-            }
-            subtitle={
-              selectedRuntime
-                ? 'Open a session or start another.'
-                : 'Active agents and tasks across the workspace.'
-            }
-          >
-            {selectedRuntime ? (
-              visibleConversations.length ? (
+          {selectedRuntime ? (
+            <SectionCard
+              title={`${runtimeLabel(selectedRuntime)} chats`}
+              subtitle="Open a session or start another."
+            >
+              {visibleConversations.length ? (
                 <div className="space-y-1">
                   {visibleConversations.slice(0, 8).map((conversation) => (
                     <ConversationRow
@@ -500,8 +560,62 @@ export function AgentCommandCenter({
                 </div>
               ) : (
                 <EmptyRow>No sessions yet. Start the first chat.</EmptyRow>
-              )
-            ) : activeTasks.length || processingConversations.length ? (
+              )}
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title="Recent conversations"
+              subtitle="Past chats and active sessions across this workspace."
+              action={
+                sortedNativeSessions.length > 0 ? (
+                  <Link
+                    to="/chat/$sessionKey"
+                    params={{ sessionKey: 'new' }}
+                    className="text-xs font-medium text-accent-600 hover:text-accent-700"
+                  >
+                    + New chat
+                  </Link>
+                ) : undefined
+              }
+            >
+              {sortedNativeSessions.length ? (
+                <div className="space-y-1">
+                  {(showAllSessions
+                    ? sortedNativeSessions
+                    : sortedNativeSessions.slice(0, 6)
+                  ).map((session) => (
+                    <NativeSessionRow
+                      key={session.key || session.friendlyId}
+                      session={session}
+                    />
+                  ))}
+                  {sortedNativeSessions.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSessions((prev) => !prev)}
+                      className="mt-2 w-full rounded-lg py-1.5 text-center text-xs font-medium text-accent-600 hover:bg-primary-100/60"
+                    >
+                      {showAllSessions
+                        ? 'Show fewer'
+                        : `Show all ${sortedNativeSessions.length} conversations`}
+                    </button>
+                  )}
+                </div>
+              ) : sessionsQuery.isLoading ? (
+                <div className="py-6 text-center text-xs text-primary-400">
+                  Loading conversations...
+                </div>
+              ) : (
+                <EmptyRow>No past conversations yet. Start the first chat above.</EmptyRow>
+              )}
+            </SectionCard>
+          )}
+
+          <SectionCard
+            title="Working now"
+            subtitle="Active agents and tasks across the workspace."
+          >
+            {activeTasks.length || processingConversations.length ? (
               <div className="space-y-1">
                 {processingConversations.slice(0, 4).map((conversation) => (
                   <ConversationRow

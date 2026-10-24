@@ -464,7 +464,14 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
         ) : null}
       </div>
 
-      {!isChromeFreeSurface ? <MobileHamburgerMenu /> : null}
+      {!isChromeFreeSurface ? (
+        <MobileHamburgerMenu
+          sessions={sessions}
+          activeFriendlyId={activeFriendlyId}
+          sessionsLoading={sessionsLoading}
+          onNewChat={startNewChat}
+        />
+      ) : null}
       {!isChromeFreeSurface ? <MobileTabBar /> : null}
       {!isChromeFreeSurface && !isMobile && !isOnChatRoute && settings.showSystemMetricsFooter ? (
         <SystemMetricsFooter leftOffsetPx={sidebarCollapsed ? 48 : 300} />
