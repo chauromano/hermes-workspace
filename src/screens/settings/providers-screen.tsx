@@ -158,7 +158,7 @@ async function fetchModels(): Promise<{
   models?: Array<ModelCatalogEntry>
   configuredProviders?: Array<string>
 }> {
-  const response = await fetch('/api/models')
+  const response = await fetch('/api/models?include_all=true')
   if (!response.ok) {
     throw new Error(`Models request failed (${response.status})`)
   }
@@ -788,6 +788,7 @@ type PerformanceDraft = {
 
 const MODEL_PROVIDER_OPTIONS: Array<SelectOption> = [
   { label: 'Custom', value: 'custom' },
+  { label: 'Google Vertex AI', value: 'vertex' },
   { label: 'OpenRouter', value: 'openrouter' },
   { label: 'Anthropic', value: 'anthropic' },
   { label: 'OpenAI', value: 'openai' },

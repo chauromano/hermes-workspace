@@ -312,7 +312,7 @@ function SettingsRoute() {
     async function fetchModels() {
       setModelsError(false)
       try {
-        const res = await fetch('/api/models')
+        const res = await fetch('/api/models?include_all=true')
         if (!res.ok) {
           setModelsError(true)
           return
@@ -1327,14 +1327,10 @@ function ClaudeConfigSection({
   }, [syncInputsFromData])
 
   const fetchModelsForProvider = useCallback(async (provider: string) => {
-    if (!provider) {
-      setAvailableModels([])
-      return
-    }
     setLoadingModels(true)
     try {
       const res = await fetch(
-        `/api/claude-proxy/api/available-models?provider=${encodeURIComponent(provider)}`,
+        `/api/claude-proxy/api/available-models?provider=${encodeURIComponent(provider || '')}`,
       )
       if (res.ok) {
         const result = (await res.json()) as AvailableModelsResponse

@@ -14,16 +14,60 @@ async function fallbackAvailableModels(
   authHeaders: Record<string, string>,
 ): Promise<Response> {
   try {
+    const optionsRes = await fetch(
+      `${CLAUDE_API}/api/model/options?include_unconfigured=false`,
+      { headers: authHeaders },
+    )
+    if (optionsRes.ok) {
+      const data = (await optionsRes.json()) as {
+        providers?: Array<{
+          slug: string
+          name?: string
+          authenticated?: boolean
+          models?: Array<string | { id: string; name?: string; description?: string }>
+        }>
+      }
+      const wanted = (provider || '').toLowerCase()
+      const providersList = Array.isArray(data.providers) ? data.providers : []
+      const targetProvider = providersList.find(
+        (p) =>
+          p.slug.toLowerCase() === wanted ||
+          (wanted === 'google' && p.slug.toLowerCase() === 'vertex'),
+      )
+      const rawModels = targetProvider?.models ?? []
+      const models = rawModels
+        .map((m) => {
+          const id = typeof m === 'string' ? m : m.id || ''
+          const desc = typeof m === 'string' ? m : m.description || m.name || id
+          return { id, description: desc }
+        })
+        .filter((m) => Boolean(m.id))
+
+      const providers = providersList.map((p) => ({
+        id: p.slug,
+        label: p.name || p.slug,
+        authenticated: Boolean(p.authenticated),
+      }))
+
+      return new Response(
+        JSON.stringify({ provider, models, providers }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+    }
+
     const res = await fetch(`${CLAUDE_API}/v1/models`, { headers: authHeaders })
     if (!res.ok) {
-      return new Response(JSON.stringify({ models: [] }), {
+      return new Response(JSON.stringify({ provider, models: [], providers: [] }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })
     }
     const data = (await res.json()) as { data?: Array<Record<string, unknown>> }
     const list = Array.isArray(data?.data) ? data.data : []
-    const wanted = provider.toLowerCase()
+    const wanted = (provider || '').toLowerCase()
     const models = list
       .map((m) => {
         const id = typeof m.id === 'string' ? m.id : ''
@@ -31,15 +75,15 @@ async function fallbackAvailableModels(
         const owned = typeof m.owned_by === 'string' ? m.owned_by.toLowerCase() : ''
         const idProvider = id.includes('/') ? id.split('/')[0].toLowerCase() : owned
         if (wanted && idProvider !== wanted) return null
-        return { id }
+        return { id, description: id }
       })
-      .filter((m): m is { id: string } => Boolean(m))
-    return new Response(JSON.stringify({ models }), {
+      .filter((m): m is { id: string; description: string } => Boolean(m))
+    return new Response(JSON.stringify({ provider, models, providers: [] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })
   } catch {
-    return new Response(JSON.stringify({ models: [] }), {
+    return new Response(JSON.stringify({ provider, models: [], providers: [] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     })
