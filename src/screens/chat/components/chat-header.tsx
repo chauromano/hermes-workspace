@@ -69,6 +69,8 @@ type ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'adaptive'
 
 type ChatHeaderProps = {
   activeTitle: string
+  activeProjectId?: string | null
+  activeProjectName?: string | null
   onRenameTitle?: (nextTitle: string) => Promise<void> | void
   renamingTitle?: boolean
   wrapperRef?: React.Ref<HTMLDivElement>
@@ -109,6 +111,8 @@ type ChatHeaderProps = {
 
 function ChatHeaderComponent({
   activeTitle,
+  activeProjectId,
+  activeProjectName,
   onRenameTitle,
   renamingTitle = false,
   wrapperRef,
