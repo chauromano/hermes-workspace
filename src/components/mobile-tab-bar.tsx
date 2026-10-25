@@ -80,11 +80,13 @@ export function MobileTabBar() {
 
   const { settings } = useSettings()
   void settings.mobileChatNavMode // reserved for future use
-  const isOnChat =
-    pathname.startsWith('/chat') || pathname === '/new' || pathname === '/'
+  // Active conversation routes have a fixed bottom composer; hide tab bar for typing mode
+  const isConversationRoute =
+    pathname === '/new' ||
+    (pathname.startsWith('/chat/') && !pathname.startsWith('/chat/harness')) ||
+    pathname.startsWith('/chat/external/')
 
-  // Always hide tab bar on chat routes — iMessage/Telegram pattern
-  const isChatRoute = isOnChat
+  const isChatRoute = isConversationRoute
 
   // Drag-to-switch: horizontal swipe across pill switches tabs
   const handlePillTouchStart = useCallback((event: TouchEvent<HTMLElement>) => {

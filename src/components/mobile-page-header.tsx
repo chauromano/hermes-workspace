@@ -52,12 +52,12 @@ export function MobilePageHeader({
         </svg>
       </button>
       <span
-        className="flex-1 text-center text-[15px] font-semibold truncate -ml-11"
+        className="flex-1 text-center text-[15px] font-semibold truncate px-2"
         style={{ color: 'var(--color-ink, #111)' }}
       >
         {title}
       </span>
-      <div className="shrink-0 w-9">{right ?? null}</div>
+      <div className="shrink-0 w-11 flex items-center justify-end">{right ?? null}</div>
     </div>
   )
 }

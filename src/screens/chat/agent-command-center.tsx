@@ -34,6 +34,7 @@ import {
   fetchExternalRuntimes,
 } from '@/lib/external-harness-api'
 import { Button } from '@/components/ui/button'
+import { MobilePageHeader } from '@/components/mobile-page-header'
 import { cn } from '@/lib/utils'
 
 type AgentCommandCenterProps = {
@@ -433,6 +434,27 @@ export function AgentCommandCenter({
 
   return (
     <main className="h-full w-full max-w-full min-w-0 overflow-x-hidden overflow-y-auto bg-surface text-primary-900">
+      <MobilePageHeader
+        title={selectedRuntime ? runtimeLabel(selectedRuntime) : 'Command Center'}
+        className="sticky top-0 z-20 backdrop-blur bg-surface/95"
+        right={
+          <button
+            type="button"
+            onClick={() =>
+              selectedRuntime
+                ? newExternalSession.mutate(selectedRuntime.id)
+                : navigate({
+                    to: '/chat/$sessionKey',
+                    params: { sessionKey: 'new' },
+                  })
+            }
+            className="flex size-9 items-center justify-center rounded-xl text-primary-600 hover:text-primary-950 active:scale-95 transition-all touch-manipulation"
+            aria-label="New chat"
+          >
+            <HugeiconsIcon icon={PlusSignIcon} size={20} strokeWidth={2} />
+          </button>
+        }
+      />
       <div className="mx-auto w-full max-w-[1180px] min-w-0 px-3 pb-24 pt-4 sm:px-4 sm:pt-6 md:px-7 md:pt-9">
         <header className="flex flex-col gap-4 border-b border-primary-200 pb-5 sm:pb-6 md:flex-row md:items-end md:justify-between min-w-0">
           <div className="min-w-0 flex-1">
