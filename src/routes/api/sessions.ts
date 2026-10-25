@@ -21,7 +21,7 @@ import {
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
-import { findProjectForPath, getSessionCwdMap, extractPathFromDirective, listProjects, setSessionProject } from '../../server/projects-backend'
+import { findProjectForPath, getSessionCwdMap, extractPathFromDirective, listProjects, setSessionProject, readSessionsFromStateDb } from '../../server/projects-backend'
 import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
@@ -38,19 +38,27 @@ export const Route = createFileRoute('/api/sessions')({
         if (!isAuthenticated(request)) {
           return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         }
-        const capabilities = await ensureGatewayProbed()
-        if (!capabilities.sessions) {
-          return json({
-            ok: true,
-            sessions: [],
-            source: 'unavailable',
-            message: SESSIONS_API_UNAVAILABLE_MESSAGE,
-          })
-        }
+
+        // Trigger background reprobe without blocking the request
+        void ensureGatewayProbed().catch(() => {})
 
         try {
-          const sessions = await listSessions(50, 0)
-          const gatewaySessions = sessions.map(toSessionSummary)
+          let gatewaySessions: any[] = []
+
+          // 1. Try listing sessions via gateway API (with 2.5s timeout)
+          try {
+            const listPromise = listSessions(50, 0)
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Gateway listSessions timeout')), 2500)
+            )
+            const sessions = await Promise.race([listPromise, timeoutPromise])
+            gatewaySessions = (sessions || []).map(toSessionSummary)
+          } catch {}
+
+          // 2. If gateway failed, timed out, or returned 0 items, read directly from state.db
+          if (gatewaySessions.length === 0) {
+            gatewaySessions = readSessionsFromStateDb(50) as any[]
+          }
 
           // Merge local portable sessions (Ollama, Atomic Chat, etc.)
           const localSessions = listLocalSessions()
@@ -77,6 +85,7 @@ export const Route = createFileRoute('/api/sessions')({
           const pinnedSet = new Set(pinnedSessionKeys)
           for (const s of gatewaySessions as any[]) {
             s.isPinned =
+              Boolean(s.isPinned) ||
               pinnedSet.has(s.key) ||
               pinnedSet.has(s.friendlyId) ||
               pinnedSet.has(s.id)
@@ -88,7 +97,7 @@ export const Route = createFileRoute('/api/sessions')({
 
           for (const s of gatewaySessions as any[]) {
             const sid = String(s.key || s.friendlyId || s.id)
-            const cwd = cwdMap.get(sid) || extractPathFromDirective(s.preview) || null
+            const cwd = s.cwd || cwdMap.get(sid) || extractPathFromDirective(s.preview) || null
             const project = findProjectForPath(cwd, allProjects)
             s.cwd = cwd
             s.projectId = project?.id ?? null
@@ -98,6 +107,19 @@ export const Route = createFileRoute('/api/sessions')({
 
           return json({ sessions: gatewaySessions, pinnedSessionKeys })
         } catch (err) {
+          // Robust fallback to state.db even on unexpected processing errors
+          try {
+            const fallbackSessions = readSessionsFromStateDb(50) as any[]
+            const { projects: allProjects } = listProjects({ includeArchived: true })
+            for (const s of fallbackSessions) {
+              const project = findProjectForPath(s.cwd, allProjects)
+              s.projectId = project?.id ?? null
+              s.projectName = project?.name ?? null
+              s.projectSlug = project?.slug ?? null
+            }
+            return json({ sessions: fallbackSessions, pinnedSessionKeys: [] })
+          } catch {}
+
           return json(
             {
               error: err instanceof Error ? err.message : String(err),

@@ -683,3 +683,46 @@ export function setSessionProject(
     projectName,
   }
 }
+
+export function readSessionsFromStateDb(
+  limit = 50,
+  stateDb = getStateDbPath(),
+): Array<Record<string, unknown>> {
+  if (!existsSync(stateDb)) return []
+  try {
+    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
+    const raw = runSqlite(stateDb, sql)
+    if (!raw) return []
+    const rows = JSON.parse(raw) as Array<Record<string, any>>
+    return rows.map((s) => ({
+      key: s.id,
+      id: s.id,
+      friendlyId: s.id,
+      kind: 'chat',
+      status: 'idle',
+      model: s.model || '',
+      label: s.title || undefined,
+      title: s.title || undefined,
+      derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
+      preview: undefined,
+      tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
+      totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
+      message_count: s.message_count || 0,
+      tool_call_count: s.tool_call_count || 0,
+      messageCount: s.message_count || 0,
+      toolCallCount: s.tool_call_count || 0,
+      cost: 0,
+      createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+      startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+      updatedAt: s.last_activity_at
+        ? Math.floor(s.last_activity_at * 1000)
+        : s.started_at
+          ? Math.floor(s.started_at * 1000)
+          : Date.now(),
+      isPinned: Boolean(s.pinned),
+      cwd: s.cwd || null,
+    }))
+  } catch {
+    return []
+  }
+}
