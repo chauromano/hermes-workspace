@@ -93,6 +93,10 @@ export type SessionSummary = {
   titleSource?: SessionTitleSource
   titleError?: string | null
   preview?: string | null
+  cwd?: string | null
+  projectId?: string | null
+  projectName?: string | null
+  projectSlug?: string | null
 }
 
 export type SessionListResponse = {
@@ -117,6 +121,10 @@ export type SessionMeta = {
   titleSource?: SessionTitleSource
   titleError?: string | null
   preview?: string | null
+  cwd?: string | null
+  projectId?: string | null
+  projectName?: string | null
+  projectSlug?: string | null
 }
 
 export type PathsPayload = {

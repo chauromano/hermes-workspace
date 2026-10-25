@@ -248,3 +248,33 @@ export function useRestoreProject() {
     },
   })
 }
+
+export function useSetSessionProject() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      sessionKey,
+      projectId,
+    }: {
+      sessionKey: string
+      projectId: string | null
+    }): Promise<{ success: boolean; cwd: string | null; projectId: string | null; projectName: string }> => {
+      const res = await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionKey, projectId }),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || `Failed to set session project (${res.status})`)
+      }
+      const data = await res.json()
+      return data.entry
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
+    },
+  })
+}

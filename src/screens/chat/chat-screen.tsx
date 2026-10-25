@@ -59,6 +59,7 @@ import { useChatMobile } from './hooks/use-chat-mobile'
 import { useChatSessions } from './hooks/use-chat-sessions'
 import { useAutoSessionTitle } from './hooks/use-auto-session-title'
 import { useRenameSession } from './hooks/use-rename-session'
+import { useProjects, useSetActiveProject } from '@/hooks/use-projects'
 import { useContextAlert } from './hooks/use-context-alert'
 import { ContextBar } from './components/context-bar'
 import {
@@ -567,6 +568,16 @@ export function ChatScreen({
     sessionsFetching: _sessionsFetching,
     refetchSessions: _refetchSessions,
   } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
+  const { activeId } = useProjects()
+  const setActiveProjectMutation = useSetActiveProject()
+
+  useEffect(() => {
+    if (!activeSession || isNewChat) return
+    const targetProjectId = activeSession.projectId ?? null
+    if (activeId !== targetProjectId) {
+      setActiveProjectMutation.mutate(targetProjectId)
+    }
+  }, [activeSession?.key, activeSession?.projectId, activeId])
   const {
     historyQuery,
     historyMessages,
@@ -2760,6 +2771,8 @@ export function ChatScreen({
           {!compact && (
             <ChatHeader
               activeTitle={activeTitle}
+              activeProjectId={activeSession?.projectId}
+              activeProjectName={activeSession?.projectName}
               onRenameTitle={handleRenameActiveSessionTitle}
               renamingTitle={renamingSessionTitle}
               wrapperRef={headerRef}

@@ -122,9 +122,13 @@ function SessionItemComponent({
     const parts: Array<string> = []
     const formatted = formatSessionTimestamp(updatedAt)
     if (formatted) parts.push(formatted)
-    if (session.friendlyId) parts.push(getFriendlyIdLabel(session.friendlyId))
+    if (session.projectName) {
+      parts.push(session.projectName)
+    } else if (session.friendlyId) {
+      parts.push(getFriendlyIdLabel(session.friendlyId))
+    }
     return parts.join(' • ')
-  }, [isError, session.friendlyId, session.titleError, updatedAt])
+  }, [isError, session.friendlyId, session.projectName, session.titleError, updatedAt])
 
   return (
     <Link

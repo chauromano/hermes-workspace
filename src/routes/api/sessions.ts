@@ -21,6 +21,8 @@ import {
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
+import { findProjectForPath, getSessionCwdMap, extractPathFromDirective, listProjects, setSessionProject } from '../../server/projects-backend'
+import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
   getLocalSession,
@@ -78,6 +80,20 @@ export const Route = createFileRoute('/api/sessions')({
               pinnedSet.has(s.key) ||
               pinnedSet.has(s.friendlyId) ||
               pinnedSet.has(s.id)
+          }
+
+          const sessionIds = gatewaySessions.map((s: any) => String(s.key || s.friendlyId || s.id))
+          const cwdMap = getSessionCwdMap(sessionIds)
+          const { projects: allProjects } = listProjects({ includeArchived: true })
+
+          for (const s of gatewaySessions as any[]) {
+            const sid = String(s.key || s.friendlyId || s.id)
+            const cwd = cwdMap.get(sid) || extractPathFromDirective(s.preview) || null
+            const project = findProjectForPath(cwd, allProjects)
+            s.cwd = cwd
+            s.projectId = project?.id ?? null
+            s.projectName = project?.name ?? null
+            s.projectSlug = project?.slug ?? null
           }
 
           return json({ sessions: gatewaySessions, pinnedSessionKeys })
@@ -225,6 +241,27 @@ export const Route = createFileRoute('/api/sessions')({
               { ok: false, error: 'sessionKey required' },
               { status: 400 },
             )
+          }
+
+          if (body.projectId !== undefined) {
+            const targetProjectId = typeof body.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : null
+            const projectRes = setSessionProject(sessionKey, targetProjectId)
+            if (projectRes.cwd) {
+              try {
+                await saveWorkspaceSelection({ path: projectRes.cwd, name: projectRes.projectName })
+              } catch {}
+            }
+            return json({
+              ok: true,
+              sessionKey,
+              friendlyId: rawFriendlyId || sessionKey,
+              entry: {
+                key: sessionKey,
+                id: sessionKey,
+                ...projectRes,
+              },
+              updated: true,
+            })
           }
 
           const localSession = getLocalSession(sessionKey)

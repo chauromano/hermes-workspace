@@ -499,3 +499,110 @@ export function listWorkspaceDirectories(
     return []
   }
 }
+
+export function getStateDbPath(): string {
+  const primary = join(getHermesRoot(), 'state.db')
+  if (existsSync(primary)) return primary
+
+  const fallback = '/opt/data/state.db'
+  if (existsSync(fallback)) return fallback
+
+  return primary
+}
+
+export function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+export function findProjectForPath(
+  targetPath: string | null | undefined,
+  allProjects?: Project[],
+  dbPath = getProjectsDbPath(),
+): Project | null {
+  if (!targetPath || !targetPath.trim()) return null
+  const normTarget = normalizePath(targetPath.trim())
+  const projects = allProjects ?? listProjects({ includeArchived: true, dbPath }).projects
+
+  let bestMatch: { project: Project; folderLen: number } | null = null
+
+  for (const proj of projects) {
+    if (proj.archived) continue
+    for (const folder of proj.folders) {
+      const normFolder = normalizePath(folder.path)
+      if (normTarget === normFolder || normTarget.startsWith(normFolder + '/')) {
+        if (!bestMatch || normFolder.length > bestMatch.folderLen) {
+          bestMatch = { project: proj, folderLen: normFolder.length }
+        }
+      }
+    }
+  }
+
+  return bestMatch?.project ?? null
+}
+
+export function extractPathFromDirective(text: string | null | undefined): string | null {
+  if (!text) return null
+  const m = text.match(/<workspace_context\s+[^>]*path="([^"]+)"/i)
+  return m ? m[1].trim() : null
+}
+
+export function getSessionCwdMap(sessionIds: string[], stateDb = getStateDbPath()): Map<string, string> {
+  const map = new Map<string, string>()
+  if (sessionIds.length === 0) return map
+  if (!existsSync(stateDb)) return map
+
+  try {
+    const inList = sessionIds.map(sqliteQuote).join(', ')
+    const raw = runSqlite(stateDb, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
+    if (raw) {
+      const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
+      for (const row of rows) {
+        if (row.cwd && row.cwd.trim()) {
+          map.set(row.id, row.cwd.trim())
+        }
+      }
+    }
+  } catch {}
+  return map
+}
+
+export function setSessionProject(
+  sessionId: string,
+  projectId: string | null,
+  projectsDb = getProjectsDbPath(),
+  stateDb = getStateDbPath(),
+): {
+  success: boolean
+  cwd: string | null
+  projectId: string | null
+  projectName: string
+} {
+  let targetPath: string | null = null
+  let projectName = 'Personal Sandbox'
+
+  if (projectId) {
+    const proj = getProject(projectId, projectsDb)
+    if (!proj) {
+      throw new Error(`Project not found: ${projectId}`)
+    }
+    targetPath = proj.primary_path
+    projectName = proj.name
+    setActiveProject(proj.id, projectsDb)
+  } else {
+    setActiveProject(null, projectsDb)
+    targetPath = '/workspace'
+    projectName = 'Personal Sandbox'
+  }
+
+  if (existsSync(stateDb)) {
+    const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
+    runSqliteExec(stateDb, sql)
+  }
+
+  return {
+    success: true,
+    cwd: targetPath,
+    projectId: projectId || null,
+    projectName,
+  }
+}

@@ -148,6 +148,7 @@ function NativeSessionRow({
             )}
           </span>
           <span className="block truncate text-xs text-primary-500">
+            {typeof session.projectName === 'string' && session.projectName ? `${session.projectName} · ` : ''}
             {model ? `${formatModelName(model)} · ` : ''}
             {typeof count === 'number'
               ? `${count} ${count === 1 ? 'message' : 'messages'}`

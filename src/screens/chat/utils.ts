@@ -266,6 +266,10 @@ export function normalizeSessions(
         typeof session.preview === 'string'
           ? cleanUserText(session.preview) || session.preview.trim() || null
           : session.preview ?? null,
+      cwd: session.cwd ?? null,
+      projectId: session.projectId ?? null,
+      projectName: session.projectName ?? null,
+      projectSlug: session.projectSlug ?? null,
     }
   })
 }
