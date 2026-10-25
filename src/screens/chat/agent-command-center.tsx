@@ -271,7 +271,10 @@ export function AgentCommandCenter({
   const sessionsQuery = useQuery({
     queryKey: ['command-center-sessions'],
     queryFn: fetchSessions,
+    staleTime: 10_000,
     refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previousData) => previousData,
   })
 
   const runtimes = runtimesQuery.data?.runtimes ?? []

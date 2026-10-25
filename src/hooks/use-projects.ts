@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Project, CreateProjectInput } from '@/server/projects-backend'
+import type { SessionMeta } from '@/screens/chat/types'
 
 export type { Project, CreateProjectInput }
 
@@ -90,7 +91,27 @@ export function useSetActiveProject() {
       const data = await res.json()
       return data.active_id ?? null
     },
-    onSuccess: () => {
+    onMutate: async (newActiveId: string | null) => {
+      await queryClient.cancelQueries({ queryKey: PROJECTS_QUERY_KEY })
+      const previous = queryClient.getQueryData<{ projects: Project[]; active_id: string | null }>(PROJECTS_QUERY_KEY)
+      if (previous) {
+        queryClient.setQueryData(PROJECTS_QUERY_KEY, {
+          ...previous,
+          active_id: newActiveId,
+          projects: previous.projects.map((p) => ({
+            ...p,
+            is_active: p.id === newActiveId,
+          })),
+        })
+      }
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(PROJECTS_QUERY_KEY, context.previous)
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
     },
   })
@@ -272,7 +293,59 @@ export function useSetSessionProject() {
       const data = await res.json()
       return data.entry
     },
-    onSuccess: () => {
+    onMutate: async ({ sessionKey, projectId }) => {
+      await queryClient.cancelQueries({ queryKey: ['chat', 'sessions'] })
+      await queryClient.cancelQueries({ queryKey: PROJECTS_QUERY_KEY })
+
+      const prevSessions = queryClient.getQueryData<SessionMeta[]>(['chat', 'sessions'])
+      const prevProjects = queryClient.getQueryData<{ projects: Project[]; active_id: string | null }>(PROJECTS_QUERY_KEY)
+
+      const targetProject = prevProjects?.projects.find((p) => p.id === projectId)
+      const targetName = targetProject ? targetProject.name : 'Personal Sandbox'
+      const targetSlug = targetProject ? targetProject.slug : null
+      const targetCwd = targetProject ? targetProject.primary_path : '/workspace'
+
+      if (prevSessions) {
+        queryClient.setQueryData<SessionMeta[]>(['chat', 'sessions'], (old) => {
+          if (!old) return old
+          return old.map((s) => {
+            const sid = s.key || s.friendlyId || (s as any).id
+            if (sid === sessionKey || s.friendlyId === sessionKey || s.key === sessionKey) {
+              return {
+                ...s,
+                projectId,
+                projectName: targetName,
+                projectSlug: targetSlug,
+                cwd: targetCwd,
+              }
+            }
+            return s
+          })
+        })
+      }
+
+      if (prevProjects) {
+        queryClient.setQueryData(PROJECTS_QUERY_KEY, {
+          ...prevProjects,
+          active_id: projectId,
+          projects: prevProjects.projects.map((p) => ({
+            ...p,
+            is_active: p.id === projectId,
+          })),
+        })
+      }
+
+      return { prevSessions, prevProjects }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prevSessions) {
+        queryClient.setQueryData(['chat', 'sessions'], context.prevSessions)
+      }
+      if (context?.prevProjects) {
+        queryClient.setQueryData(PROJECTS_QUERY_KEY, context.prevProjects)
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
       queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },

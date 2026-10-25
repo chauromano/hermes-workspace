@@ -86,6 +86,21 @@ export function slugify(name: string): string {
   return s.slice(0, 64) || 'project'
 }
 
+type CachedProjectsResult = {
+  projects: Project[]
+  active_id: string | null
+  timestamp: number
+}
+
+let cachedProjects: CachedProjectsResult | null = null
+let cachedProjectsArchived: CachedProjectsResult | null = null
+const PROJECTS_CACHE_TTL_MS = 15_000
+
+export function invalidateProjectsCache(): void {
+  cachedProjects = null
+  cachedProjectsArchived = null
+}
+
 export function getActiveProjectId(dbPath = getProjectsDbPath()): string | null {
   if (!existsSync(dbPath)) return null
   try {
@@ -104,6 +119,15 @@ export function listProjects(
   const dbPath = options.dbPath ?? getProjectsDbPath()
   if (!existsSync(dbPath)) {
     return { projects: [], active_id: null }
+  }
+
+  const isDefaultDb = dbPath === getProjectsDbPath()
+  const now = Date.now()
+  if (isDefaultDb) {
+    const cache = options.includeArchived ? cachedProjectsArchived : cachedProjects
+    if (cache && now - cache.timestamp < PROJECTS_CACHE_TTL_MS) {
+      return { projects: cache.projects, active_id: cache.active_id }
+    }
   }
 
   const activeId = getActiveProjectId(dbPath)
@@ -175,7 +199,17 @@ export function listProjects(
     }
   })
 
-  return { projects, active_id: activeId }
+  const result = { projects, active_id: activeId }
+  if (isDefaultDb) {
+    const cachedEntry = { ...result, timestamp: now }
+    if (options.includeArchived) {
+      cachedProjectsArchived = cachedEntry
+    } else {
+      cachedProjects = cachedEntry
+    }
+  }
+
+  return result
 }
 
 export function getProject(
@@ -273,6 +307,7 @@ export function createProject(
   statements.push('COMMIT;')
 
   runSqliteExec(dbPath, statements.join('\n'))
+  invalidateProjectsCache()
 
   const created = getProject(id, dbPath)
   if (!created) {
@@ -290,6 +325,7 @@ export function setActiveProject(
       dbPath,
       `DELETE FROM project_meta WHERE key = 'active_id';`,
     )
+    invalidateProjectsCache()
     return { active_id: null }
   }
 
@@ -302,6 +338,7 @@ export function setActiveProject(
     dbPath,
     `INSERT INTO project_meta (key, value) VALUES ('active_id', ${sqliteQuote(proj.id)}) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
   )
+  invalidateProjectsCache()
 
   return { active_id: proj.id }
 }
@@ -365,6 +402,7 @@ export function updateProject(
 
   statements.push('COMMIT;')
   runSqliteExec(dbPath, statements.join('\n'))
+  invalidateProjectsCache()
 
   const updated = getProject(proj.id, dbPath)
   if (!updated) throw new Error('Failed to retrieve updated project')
@@ -401,6 +439,7 @@ export function addProjectFolder(
   )
 
   runSqliteExec(dbPath, statements.join('\n'))
+  invalidateProjectsCache()
   const updated = getProject(proj.id, dbPath)
   if (!updated) throw new Error('Failed to retrieve project after adding folder')
   return updated
@@ -421,6 +460,7 @@ export function removeProjectFolder(
     dbPath,
     `DELETE FROM project_folders WHERE project_id = ${sqliteQuote(proj.id)} AND path = ${sqliteQuote(cleanPath)};`,
   )
+  invalidateProjectsCache()
 
   const updated = getProject(proj.id, dbPath)
   if (!updated) throw new Error('Failed to retrieve project after removing folder')
@@ -441,6 +481,7 @@ export function archiveProject(
     dbPath,
     `UPDATE projects SET archived = ${archive ? 1 : 0} WHERE id = ${sqliteQuote(proj.id)};`,
   )
+  invalidateProjectsCache()
 
   const updated = getProject(proj.id, dbPath)
   if (!updated) throw new Error('Failed to retrieve archived project')
@@ -463,6 +504,7 @@ export function deleteProject(
   ]
 
   runSqliteExec(dbPath, statements.join('\n'))
+  invalidateProjectsCache()
   return true
 }
 
@@ -546,23 +588,55 @@ export function extractPathFromDirective(text: string | null | undefined): strin
   return m ? m[1].trim() : null
 }
 
+const sessionCwdCache = new Map<string, { cwd: string; timestamp: number }>()
+const CWD_CACHE_TTL_MS = 30_000
+
+export function invalidateSessionCwd(sessionId?: string): void {
+  if (sessionId) {
+    sessionCwdCache.delete(sessionId)
+  } else {
+    sessionCwdCache.clear()
+  }
+}
+
 export function getSessionCwdMap(sessionIds: string[], stateDb = getStateDbPath()): Map<string, string> {
   const map = new Map<string, string>()
   if (sessionIds.length === 0) return map
-  if (!existsSync(stateDb)) return map
 
-  try {
-    const inList = sessionIds.map(sqliteQuote).join(', ')
-    const raw = runSqlite(stateDb, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
-    if (raw) {
-      const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
-      for (const row of rows) {
-        if (row.cwd && row.cwd.trim()) {
-          map.set(row.id, row.cwd.trim())
+  const now = Date.now()
+  const missingIds: string[] = []
+
+  for (const id of sessionIds) {
+    const cached = sessionCwdCache.get(id)
+    if (cached && now - cached.timestamp < CWD_CACHE_TTL_MS) {
+      if (cached.cwd) map.set(id, cached.cwd)
+    } else {
+      missingIds.push(id)
+    }
+  }
+
+  if (missingIds.length > 0 && existsSync(stateDb)) {
+    try {
+      const inList = missingIds.map(sqliteQuote).join(', ')
+      const raw = runSqlite(stateDb, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
+      if (raw) {
+        const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
+        const found = new Set<string>()
+        for (const row of rows) {
+          found.add(row.id)
+          const cwd = row.cwd && row.cwd.trim() ? row.cwd.trim() : ''
+          sessionCwdCache.set(row.id, { cwd, timestamp: now })
+          if (cwd) map.set(row.id, cwd)
+        }
+        for (const id of missingIds) {
+          if (!found.has(id)) {
+            sessionCwdCache.set(id, { cwd: '', timestamp: now })
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
+
   return map
 }
 
@@ -598,6 +672,9 @@ export function setSessionProject(
     const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
     runSqliteExec(stateDb, sql)
   }
+
+  sessionCwdCache.set(sessionId, { cwd: targetPath || '', timestamp: Date.now() })
+  invalidateProjectsCache()
 
   return {
     success: true,

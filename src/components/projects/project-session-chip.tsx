@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowDown01Icon,
@@ -41,39 +41,54 @@ export function ProjectSessionChip({
   compact = false,
 }: ProjectSessionChipProps) {
   const [modalOpen, setModalOpen] = useState(false)
+  const [overrideTarget, setOverrideTarget] = useState<{ id: string | null; name: string } | null>(null)
   const { projects, activeId } = useProjects()
   const setSessionProjectMutation = useSetSessionProject()
   const setActiveProjectMutation = useSetActiveProject()
 
+  useEffect(() => {
+    setOverrideTarget(null)
+  }, [projectId, sessionKey])
+
   // Find assigned project or match against active project for new sessions
-  const effectiveProjectId = projectId !== undefined ? projectId : activeId
+  const effectiveProjectId = overrideTarget ? overrideTarget.id : (projectId !== undefined ? projectId : activeId)
   const currentProject = projects.find((p) => p.id === effectiveProjectId)
-  const displayName = currentProject?.name ?? projectName ?? 'Personal Sandbox'
+  const displayName = overrideTarget?.name ?? currentProject?.name ?? projectName ?? 'Personal Sandbox'
   const isPersonalSandbox = !effectiveProjectId
 
-  const handleSelect = async (targetId: string | null) => {
+  const handleSelect = (targetId: string | null) => {
     hapticTap()
+    const targetName = targetId ? (projects.find((p) => p.id === targetId)?.name ?? 'Project') : 'Personal Sandbox'
+    setOverrideTarget({ id: targetId, name: targetName })
+
     if (!sessionKey || sessionKey === 'new') {
-      // For unsaved/new chat, directly switch active project
       setActiveProjectMutation.mutate(targetId, {
         onSuccess: () => {
-          const name = targetId ? projects.find((p) => p.id === targetId)?.name : 'Personal Sandbox'
-          toast.success(`Active project set to: ${name}`)
+          toast.success(`Active project set to: ${targetName}`)
+        },
+        onError: (err: unknown) => {
+          setOverrideTarget(null)
+          toast.error(err instanceof Error ? err.message : 'Failed to switch project')
         },
       })
       return
     }
 
-    try {
-      await setSessionProjectMutation.mutateAsync({
+    setSessionProjectMutation.mutate(
+      {
         sessionKey,
         projectId: targetId,
-      })
-      const targetName = targetId ? projects.find((p) => p.id === targetId)?.name : 'Personal Sandbox'
-      toast.success(`Session moved to: ${targetName}`)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to change project')
-    }
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Session moved to: ${targetName}`)
+        },
+        onError: (err: unknown) => {
+          setOverrideTarget(null)
+          toast.error(err instanceof Error ? err.message : 'Failed to change project')
+        },
+      },
+    )
   }
 
   return (

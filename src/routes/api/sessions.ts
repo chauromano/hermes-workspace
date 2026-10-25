@@ -247,9 +247,7 @@ export const Route = createFileRoute('/api/sessions')({
             const targetProjectId = typeof body.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : null
             const projectRes = setSessionProject(sessionKey, targetProjectId)
             if (projectRes.cwd) {
-              try {
-                await saveWorkspaceSelection({ path: projectRes.cwd, name: projectRes.projectName })
-              } catch {}
+              void saveWorkspaceSelection({ path: projectRes.cwd, name: projectRes.projectName }).catch(() => {})
             }
             return json({
               ok: true,
