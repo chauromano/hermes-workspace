@@ -24,6 +24,7 @@ import { hapticTap } from '@/lib/haptics'
 import {
   useCreateProject,
   useCreateWorkspaceFolder,
+  useProjects,
   useWorkspaceFolders,
   type Project,
 } from '@/hooks/use-projects'
@@ -52,13 +53,20 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
   const [browseSubpath, setBrowseSubpath] = useState('')
   const [setActive, setSetActive] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [folderCreateError, setFolderCreateError] = useState<string | null>(null)
 
+  const { projects: existingProjects } = useProjects({ includeArchived: true })
   const createProject = useCreateProject()
   const createFolder = useCreateWorkspaceFolder()
   const { data: folderItems, isLoading: loadingFolders } = useWorkspaceFolders(browseSubpath)
+
+  const isSlugTaken = useMemo(() => {
+    if (!slug) return false
+    return existingProjects.some((p) => p.slug.toLowerCase() === slug.toLowerCase())
+  }, [slug, existingProjects])
 
   const resetForm = useCallback(() => {
     setName('')
@@ -69,6 +77,7 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     setBrowseSubpath('')
     setSetActive(true)
     setError(null)
+    setIsSubmitting(false)
     setIsCreatingFolder(false)
     setNewFolderName('')
     setFolderCreateError(null)
@@ -145,6 +154,7 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmitting || createProject.isPending) return
     setError(null)
 
     if (!name.trim()) {
@@ -157,10 +167,12 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     }
 
     try {
+      setIsSubmitting(true)
       hapticTap()
       const project = await createProject.mutateAsync({
         name: name.trim(),
         slug: slug.trim() || undefined,
+        slug_customized: slugEdited,
         primary_path: primaryPath.trim(),
         description: description.trim() || undefined,
         set_active: setActive,
@@ -172,6 +184,8 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -237,9 +251,16 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[var(--theme-muted)] mb-1">
-                  Project Slug (ID)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-[var(--theme-muted)]">
+                    Project Slug (ID)
+                  </label>
+                  {isSlugTaken && (
+                    <span className="text-[10px] text-amber-500 font-medium">
+                      ID in use (auto-number will be added if unchanged)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   placeholder="express-architecture-hub"
@@ -248,7 +269,12 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
                     setSlug(e.target.value)
                     setSlugEdited(true)
                   }}
-                  className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-1.5 text-xs font-mono text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 transition-all"
+                  className={cn(
+                    'w-full rounded-xl border bg-[var(--theme-bg)] px-3 py-1.5 text-xs font-mono text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none transition-all',
+                    isSlugTaken
+                      ? 'border-amber-500/50 focus:border-amber-500'
+                      : 'border-[var(--theme-border)] focus:border-accent-500',
+                  )}
                 />
               </div>
             </div>
@@ -528,10 +554,10 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
                 type="submit"
                 variant="default"
                 size="sm"
-                disabled={createProject.isPending}
+                disabled={isSubmitting || createProject.isPending}
                 className="min-w-28 bg-accent-600 hover:bg-accent-700 text-white font-medium"
               >
-                {createProject.isPending ? (
+                {isSubmitting || createProject.isPending ? (
                   <span className="flex items-center gap-1.5">
                     <HugeiconsIcon icon={Loading03Icon} size={14} className="animate-spin" />
                     Creating...

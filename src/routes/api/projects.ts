@@ -153,6 +153,7 @@ export const Route = createFileRoute('/api/projects')({
           const input: CreateProjectInput = {
             name: body.name,
             slug: typeof body.slug === 'string' ? body.slug : undefined,
+            slug_customized: body.slug_customized === true,
             primary_path: body.primary_path,
             description: typeof body.description === 'string' ? body.description : undefined,
             icon: typeof body.icon === 'string' ? body.icon : undefined,

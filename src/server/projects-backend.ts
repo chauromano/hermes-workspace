@@ -30,6 +30,7 @@ export type Project = {
 export type CreateProjectInput = {
   name: string
   slug?: string
+  slug_customized?: boolean
   primary_path: string
   description?: string
   icon?: string
@@ -84,6 +85,23 @@ export function slugify(name: string): string {
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^[-_]+|[-_]+$/g, '')
   return s.slice(0, 64) || 'project'
+}
+
+export function generateUniqueSlug(
+  candidate: string,
+  dbPath = getProjectsDbPath(),
+): string {
+  const base = slugify(candidate)
+  let slug = base
+  let counter = 1
+
+  while (getProject(slug, dbPath) !== null) {
+    counter += 1
+    const suffix = `-${counter}`
+    slug = `${base.slice(0, 64 - suffix.length).replace(/[-_]+$/, '')}${suffix}`
+  }
+
+  return slug
 }
 
 type CachedProjectsResult = {
@@ -265,7 +283,7 @@ export function createProject(
   }
 
   const name = input.name.trim()
-  const slug = slugify(input.slug || name)
+  const rawCandidate = slugify(input.slug || name)
   const primaryPath = resolve(input.primary_path.trim()).replace(/\\/g, '/')
   const now = Math.floor(Date.now() / 1000)
 
@@ -278,11 +296,55 @@ export function createProject(
     console.warn(`[projects] Warning: Could not create directory ${primaryPath}:`, err)
   }
 
-  // Verify slug uniqueness
-  const existingBySlug = getProject(slug, dbPath)
-  const id = existingBySlug
-    ? `p_${slug}_${randomBytes(2).toString('hex')}`
-    : `p_${slug}`
+  // Check existing project with this slug
+  const existingBySlug = getProject(rawCandidate, dbPath)
+
+  // 1. Idempotent double-submit retry check: if duplicate request within 30s with same target, return existing
+  if (
+    existingBySlug &&
+    !existingBySlug.archived &&
+    existingBySlug.name.toLowerCase() === name.toLowerCase() &&
+    existingBySlug.primary_path === primaryPath &&
+    now - existingBySlug.created_at < 30
+  ) {
+    if (input.set_active) {
+      setActiveProject(existingBySlug.id, dbPath)
+    }
+    return existingBySlug
+  }
+
+  // 2. Archived project restoration: if an archived project with this slug exists, restore and update it
+  if (existingBySlug && existingBySlug.archived) {
+    updateProject(
+      existingBySlug.id,
+      {
+        name,
+        description: input.description,
+        primary_path: primaryPath,
+        icon: input.icon,
+        color: input.color,
+        board_slug: input.board_slug,
+      },
+      dbPath,
+    )
+    archiveProject(existingBySlug.id, false, dbPath)
+    if (input.set_active) {
+      setActiveProject(existingBySlug.id, dbPath)
+    }
+    const restored = getProject(existingBySlug.id, dbPath)
+    if (restored) return restored
+  }
+
+  // 3. Resolve slug collision
+  let slug = rawCandidate
+  if (existingBySlug && !existingBySlug.archived) {
+    if (input.slug_customized) {
+      throw new Error(`A project with ID "${rawCandidate}" already exists. Please choose a different ID or delete the existing project.`)
+    }
+    slug = generateUniqueSlug(rawCandidate, dbPath)
+  }
+
+  const id = `p_${slug}`
 
   const descVal = input.description ? sqliteQuote(input.description.trim()) : 'NULL'
   const iconVal = input.icon ? sqliteQuote(input.icon.trim()) : 'NULL'

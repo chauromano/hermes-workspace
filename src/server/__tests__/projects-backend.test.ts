@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   slugify,
+  generateUniqueSlug,
   listProjects,
   getProject,
   createProject,
   setActiveProject,
   deleteProject,
+  archiveProject,
   createWorkspaceDirectory,
 } from '../projects-backend'
 import { execFileSync } from 'node:child_process'
@@ -176,6 +178,64 @@ describe('projects-backend', () => {
       if (existsSync(testTargetDir)) {
         try {
           rmSync(testTargetDir, { recursive: true, force: true })
+        } catch {}
+      }
+    }
+  })
+
+  it('handles slug collisions gracefully and auto-deduplicates without UNIQUE constraint failure', () => {
+    initTestDb(testDb)
+    const testDir = join(tmpdir(), `test_dir_collision_${Date.now()}`)
+    mkdirSync(testDir, { recursive: true })
+
+    try {
+      // 1. Create first project with name "My App" -> slug "my-app"
+      const p1 = createProject({ name: 'My App', primary_path: testDir }, testDb)
+      expect(p1.slug).toBe('my-app')
+      expect(p1.id).toBe('p_my-app')
+
+      // 2. Immediate idempotent retry (same name, path, within 30s) should return p1
+      const p1Retry = createProject({ name: 'My App', primary_path: testDir }, testDb)
+      expect(p1Retry.id).toBe(p1.id)
+      expect(p1Retry.slug).toBe(p1.slug)
+
+      // 3. Create second project with same name but different path -> auto-deduplicates to "my-app-2"
+      const testDir2 = join(tmpdir(), `test_dir_collision2_${Date.now()}`)
+      mkdirSync(testDir2, { recursive: true })
+      const p2 = createProject({ name: 'My App', primary_path: testDir2 }, testDb)
+      expect(p2.slug).toBe('my-app-2')
+      expect(p2.id).toBe('p_my-app-2')
+
+      // 4. If slug is explicitly customized and already taken, throws clear error
+      expect(() => {
+        createProject(
+          {
+            name: 'Another App',
+            slug: 'my-app',
+            slug_customized: true,
+            primary_path: testDir2,
+          },
+          testDb,
+        )
+      }).toThrow(/already exists/)
+
+      // 5. Test generateUniqueSlug directly
+      expect(generateUniqueSlug('my-app', testDb)).toBe('my-app-3')
+
+      // 6. Test restoring an archived project with same slug
+      archiveProject(p1.id, true, testDb)
+      const pArchived = getProject(p1.id, testDb)
+      expect(pArchived?.archived).toBe(true)
+
+      const pRestored = createProject({ name: 'My App Restored', slug: 'my-app', primary_path: testDir }, testDb)
+      expect(pRestored.id).toBe(p1.id)
+      expect(pRestored.slug).toBe('my-app')
+      expect(pRestored.archived).toBe(false)
+      expect(pRestored.name).toBe('My App Restored')
+    } finally {
+      if (existsSync(testDir)) {
+        try {
+          rmSync(testDir, { recursive: true, force: true })
         } catch {}
       }
     }
