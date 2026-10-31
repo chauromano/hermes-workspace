@@ -51,6 +51,35 @@ export function useWorkspaceFolders(subpath = '') {
   })
 }
 
+export function useCreateWorkspaceFolder() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      subpath = '',
+      name,
+    }: {
+      subpath?: string
+      name: string
+    }): Promise<{ name: string; path: string }> => {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create_folder', subpath, name }),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || `Failed to create folder (${res.status})`)
+      }
+      const data = await res.json()
+      return data.folder
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: FOLDERS_QUERY_KEY })
+    },
+  })
+}
+
 export function useCreateProject() {
   const queryClient = useQueryClient()
 

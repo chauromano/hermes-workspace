@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { getHermesRoot } from './claude-paths'
@@ -269,6 +269,15 @@ export function createProject(
   const primaryPath = resolve(input.primary_path.trim()).replace(/\\/g, '/')
   const now = Math.floor(Date.now() / 1000)
 
+  // Ensure primaryPath exists on disk
+  try {
+    if (!existsSync(primaryPath)) {
+      mkdirSync(primaryPath, { recursive: true })
+    }
+  } catch (err) {
+    console.warn(`[projects] Warning: Could not create directory ${primaryPath}:`, err)
+  }
+
   // Verify slug uniqueness
   const existingBySlug = getProject(slug, dbPath)
   const id = existingBySlug
@@ -291,6 +300,13 @@ export function createProject(
       if (!folder.path || !folder.path.trim()) continue
       const fPath = resolve(folder.path.trim()).replace(/\\/g, '/')
       if (fPath === primaryPath) continue
+      try {
+        if (!existsSync(fPath)) {
+          mkdirSync(fPath, { recursive: true })
+        }
+      } catch (err) {
+        console.warn(`[projects] Warning: Could not create folder ${fPath}:`, err)
+      }
       const labelVal = folder.label ? sqliteQuote(folder.label.trim()) : 'NULL'
       statements.push(
         `INSERT OR IGNORE INTO project_folders (project_id, path, label, is_primary, added_at) VALUES (${sqliteQuote(id)}, ${sqliteQuote(fPath)}, ${labelVal}, 0, ${now});`,
@@ -385,6 +401,13 @@ export function updateProject(
 
   if (typeof updates.primary_path === 'string' && updates.primary_path.trim()) {
     const primary = resolve(updates.primary_path.trim()).replace(/\\/g, '/')
+    try {
+      if (!existsSync(primary)) {
+        mkdirSync(primary, { recursive: true })
+      }
+    } catch (err) {
+      console.warn(`[projects] Warning: Could not create directory ${primary}:`, err)
+    }
     setClauses.push(`primary_path = ${sqliteQuote(primary)}`)
     const now = Math.floor(Date.now() / 1000)
     // Clear existing is_primary flags and set or insert this one
@@ -422,6 +445,13 @@ export function addProjectFolder(
   }
 
   const cleanPath = resolve(folderPath.trim()).replace(/\\/g, '/')
+  try {
+    if (!existsSync(cleanPath)) {
+      mkdirSync(cleanPath, { recursive: true })
+    }
+  } catch (err) {
+    console.warn(`[projects] Warning: Could not create folder ${cleanPath}:`, err)
+  }
   const labelVal = label.trim() ? sqliteQuote(label.trim()) : 'NULL'
   const now = Math.floor(Date.now() / 1000)
 
@@ -539,6 +569,61 @@ export function listWorkspaceDirectories(
     return dirs.sort((a, b) => a.name.localeCompare(b.name))
   } catch {
     return []
+  }
+}
+
+export function createWorkspaceDirectory(
+  subpath = '',
+  folderName: string,
+): { name: string; path: string } {
+  if (!folderName || !folderName.trim()) {
+    throw new Error('Folder name is required')
+  }
+
+  const cleanName = folderName.trim()
+
+  // Disallow directory traversal or illegal characters
+  if (
+    cleanName === '.' ||
+    cleanName === '..' ||
+    /[/\\:*?"<>|\x00-\x1F]/.test(cleanName)
+  ) {
+    throw new Error(`Invalid folder name: "${cleanName}"`)
+  }
+
+  const workspaceRoot = process.env.HERMES_WORKSPACE_DIR || '/workspace'
+  const resolvedRoot = resolve(workspaceRoot)
+
+  // Clean subpath
+  const cleanSub = subpath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  const parentDir = cleanSub ? resolve(workspaceRoot, cleanSub) : resolvedRoot
+
+  // Security: Ensure parentDir is inside workspaceRoot
+  const normParent = parentDir.replace(/\\/g, '/')
+  const normRoot = resolvedRoot.replace(/\\/g, '/')
+  if (normParent !== normRoot && !normParent.startsWith(normRoot + '/')) {
+    throw new Error('Target directory must be within the workspace root')
+  }
+
+  if (!existsSync(parentDir)) {
+    mkdirSync(parentDir, { recursive: true })
+  }
+
+  const targetDir = resolve(parentDir, cleanName)
+  const normTarget = targetDir.replace(/\\/g, '/')
+
+  // Security: Ensure targetDir is inside workspaceRoot
+  if (!normTarget.startsWith(normRoot + '/')) {
+    throw new Error('Target directory must be within the workspace root')
+  }
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true })
+  }
+
+  return {
+    name: cleanName,
+    path: normTarget,
   }
 }
 

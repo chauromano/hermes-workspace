@@ -6,9 +6,10 @@ import {
   createProject,
   setActiveProject,
   deleteProject,
+  createWorkspaceDirectory,
 } from '../projects-backend'
 import { execFileSync } from 'node:child_process'
-import { existsSync, unlinkSync } from 'node:fs'
+import { existsSync, unlinkSync, rmSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -117,5 +118,66 @@ describe('projects-backend', () => {
     const afterDel = listProjects({ dbPath: testDb })
     expect(afterDel.projects).toHaveLength(1)
     expect(afterDel.projects[0].id).toBe('p_homelab')
+  })
+
+  it('creates workspace directories safely and rejects traversal', () => {
+    const testWorkspaceRoot = join(tmpdir(), `test_ws_${Date.now()}`)
+    mkdirSync(testWorkspaceRoot, { recursive: true })
+    const oldEnv = process.env.HERMES_WORKSPACE_DIR
+    process.env.HERMES_WORKSPACE_DIR = testWorkspaceRoot
+
+    try {
+      // 1. Create a root-level folder in workspace
+      const f1 = createWorkspaceDirectory('', 'my-new-app')
+      expect(f1.name).toBe('my-new-app')
+      expect(existsSync(f1.path)).toBe(true)
+
+      // 2. Create nested subfolder
+      const f2 = createWorkspaceDirectory('my-new-app', 'packages')
+      expect(f2.name).toBe('packages')
+      expect(existsSync(f2.path)).toBe(true)
+
+      // 3. Reject directory traversal attempts
+      expect(() => createWorkspaceDirectory('../outside', 'bad')).toThrow()
+      expect(() => createWorkspaceDirectory('', '../outside')).toThrow()
+      expect(() => createWorkspaceDirectory('', '..')).toThrow()
+      expect(() => createWorkspaceDirectory('', '.')).toThrow()
+      expect(() => createWorkspaceDirectory('', 'foo/bar')).toThrow()
+
+      // 4. Reject empty name
+      expect(() => createWorkspaceDirectory('', '')).toThrow()
+    } finally {
+      process.env.HERMES_WORKSPACE_DIR = oldEnv
+      if (existsSync(testWorkspaceRoot)) {
+        try {
+          rmSync(testWorkspaceRoot, { recursive: true, force: true })
+        } catch {}
+      }
+    }
+  })
+
+  it('automatically ensures project primary path directory exists on disk', () => {
+    initTestDb(testDb)
+    const testTargetDir = join(tmpdir(), `test_proj_dir_${Date.now()}`)
+    expect(existsSync(testTargetDir)).toBe(false)
+
+    try {
+      const p = createProject(
+        {
+          name: 'Auto Dir Project',
+          primary_path: testTargetDir,
+        },
+        testDb,
+      )
+
+      expect(p.id).toBe('p_auto-dir-project')
+      expect(existsSync(testTargetDir)).toBe(true)
+    } finally {
+      if (existsSync(testTargetDir)) {
+        try {
+          rmSync(testTargetDir, { recursive: true, force: true })
+        } catch {}
+      }
+    }
   })
 })

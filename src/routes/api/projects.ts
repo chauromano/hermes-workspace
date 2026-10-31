@@ -10,6 +10,7 @@ import {
   archiveProject,
   deleteProject,
   listWorkspaceDirectories,
+  createWorkspaceDirectory,
   type CreateProjectInput,
 } from '../../server/projects-backend'
 
@@ -51,6 +52,21 @@ export const Route = createFileRoute('/api/projects')({
         try {
           const body = (await request.json()) as Record<string, unknown>
           const action = typeof body.action === 'string' ? body.action : 'create'
+
+          if (action === 'create_folder') {
+            const subpath = typeof body.subpath === 'string' ? body.subpath : ''
+            const name =
+              typeof body.name === 'string'
+                ? body.name
+                : typeof body.folder_name === 'string'
+                  ? body.folder_name
+                  : ''
+            if (!name || !name.trim()) {
+              return jsonResponse({ error: 'Folder name is required' }, 400)
+            }
+            const folder = createWorkspaceDirectory(subpath, name)
+            return jsonResponse({ success: true, folder }, 201)
+          }
 
           if (action === 'set_active') {
             const ident = typeof body.id === 'string' ? body.id : null

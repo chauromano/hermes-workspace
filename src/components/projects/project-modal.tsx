@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
 import {
   useCreateProject,
+  useCreateWorkspaceFolder,
   useWorkspaceFolders,
   type Project,
 } from '@/hooks/use-projects'
@@ -51,8 +52,12 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
   const [browseSubpath, setBrowseSubpath] = useState('')
   const [setActive, setSetActive] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [folderCreateError, setFolderCreateError] = useState<string | null>(null)
 
   const createProject = useCreateProject()
+  const createFolder = useCreateWorkspaceFolder()
   const { data: folderItems, isLoading: loadingFolders } = useWorkspaceFolders(browseSubpath)
 
   const resetForm = useCallback(() => {
@@ -64,6 +69,9 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     setBrowseSubpath('')
     setSetActive(true)
     setError(null)
+    setIsCreatingFolder(false)
+    setNewFolderName('')
+    setFolderCreateError(null)
   }, [])
 
   useEffect(() => {
@@ -107,6 +115,32 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     const nextSub = parts.slice(0, index + 1).join('/')
     setBrowseSubpath(nextSub)
     setPrimaryPath(`/workspace/${nextSub}`)
+  }
+
+  const handleCreateFolder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    setFolderCreateError(null)
+
+    const trimmed = newFolderName.trim()
+    if (!trimmed) {
+      setFolderCreateError('Folder name is required')
+      return
+    }
+
+    try {
+      hapticTap()
+      const created = await createFolder.mutateAsync({
+        subpath: browseSubpath,
+        name: trimmed,
+      })
+      toast.success(`Created folder "${created.name}"`)
+      setPrimaryPath(created.path)
+      setIsCreatingFolder(false)
+      setNewFolderName('')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setFolderCreateError(msg)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -274,17 +308,107 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
                   <span className="text-[11px] font-medium text-[var(--theme-muted)]">
                     Browse folders under /workspace:
                   </span>
-                  {browseSubpath && (
+                  <div className="flex items-center gap-2">
+                    {browseSubpath && (
+                      <button
+                        type="button"
+                        onClick={handleNavigateUp}
+                        className="flex items-center gap-1 text-[11px] text-accent-600 hover:underline"
+                      >
+                        <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
+                        <span>Back up</span>
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleNavigateUp}
-                      className="flex items-center gap-1 text-[11px] text-accent-600 hover:underline"
+                      onClick={() => {
+                        hapticTap()
+                        setIsCreatingFolder((v) => !v)
+                        setFolderCreateError(null)
+                      }}
+                      className={cn(
+                        'flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
+                        isCreatingFolder
+                          ? 'bg-accent-500/20 text-accent-600'
+                          : 'text-accent-600 hover:bg-accent-500/10',
+                      )}
                     >
-                      <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
-                      <span>Back up</span>
+                      <HugeiconsIcon icon={PlusSignIcon} size={12} strokeWidth={2.2} />
+                      <span>New Folder</span>
                     </button>
-                  )}
+                  </div>
                 </div>
+
+                {/* Inline Folder Creation */}
+                {isCreatingFolder && (
+                  <div className="rounded-lg border border-accent-500/30 bg-accent-500/5 p-2 space-y-1.5 transition-all">
+                    <div className="flex items-center justify-between text-[11px] font-medium text-[var(--theme-text)]">
+                      <span>Create folder in {browseSubpath ? `/${browseSubpath}` : '/workspace'}:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingFolder(false)
+                          setFolderCreateError(null)
+                        }}
+                        className="text-[var(--theme-muted)] hover:text-[var(--theme-text)]"
+                      >
+                        <HugeiconsIcon icon={Cancel01Icon} size={12} />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Folder name (e.g. my-project)"
+                        value={newFolderName}
+                        onChange={(e) => setNewFolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            handleCreateFolder()
+                          } else if (e.key === 'Escape') {
+                            setIsCreatingFolder(false)
+                            setFolderCreateError(null)
+                          }
+                        }}
+                        className="flex-1 rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 font-mono transition-all"
+                      />
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="default"
+                        disabled={createFolder.isPending || !newFolderName.trim()}
+                        onClick={() => handleCreateFolder()}
+                        className="bg-accent-600 hover:bg-accent-700 text-white text-[11px] px-2.5 py-1 h-auto"
+                      >
+                        {createFolder.isPending ? (
+                          <HugeiconsIcon icon={Loading03Icon} size={12} className="animate-spin" />
+                        ) : (
+                          'Create'
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsCreatingFolder(false)
+                          setFolderCreateError(null)
+                        }}
+                        className="text-[11px] px-2 py-1 h-auto"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+
+                    {folderCreateError && (
+                      <div className="text-[10px] text-red-500 font-medium">
+                        {folderCreateError}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="max-h-36 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
                   {loadingFolders ? (
@@ -293,8 +417,21 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
                       Loading folders...
                     </div>
                   ) : !folderItems || folderItems.length === 0 ? (
-                    <div className="py-3 text-center text-xs text-[var(--theme-muted)]">
-                      No subfolders found in this directory
+                    <div className="py-3 text-center text-xs text-[var(--theme-muted)] space-y-1">
+                      <div>No subfolders found in this directory</div>
+                      {!isCreatingFolder && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            hapticTap()
+                            setIsCreatingFolder(true)
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] text-accent-600 hover:underline font-medium"
+                        >
+                          <HugeiconsIcon icon={PlusSignIcon} size={12} />
+                          <span>Create a folder here</span>
+                        </button>
+                      )}
                     </div>
                   ) : (
                     folderItems.map((item) => {
@@ -344,9 +481,14 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
 
                 {/* Direct Path Input */}
                 <div className="pt-1.5 border-t border-[var(--theme-border)]">
-                  <span className="block text-[10px] text-[var(--theme-muted)] mb-1">
-                    Selected Path:
-                  </span>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="block text-[10px] text-[var(--theme-muted)]">
+                      Selected Path:
+                    </span>
+                    <span className="text-[9px] text-[var(--theme-muted)] font-mono">
+                      (will be created if it does not exist)
+                    </span>
+                  </div>
                   <input
                     type="text"
                     value={primaryPath}
