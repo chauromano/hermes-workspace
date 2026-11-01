@@ -38,6 +38,11 @@ import {
 } from '@/hooks/use-chat-settings'
 import { cn } from '@/lib/utils'
 import { CHAT_SUBMIT_SELECTION_EVENT } from '@/screens/chat/chat-events'
+import { GenUiRenderer } from '@/components/gen-ui/registry'
+import {
+  parseInlineGenUiBlocks,
+  splitGenUiToolSections,
+} from '@/components/gen-ui/parser'
 
 const WORDS_PER_TICK = 4
 const TICK_INTERVAL_MS = 50
@@ -1478,6 +1483,7 @@ type InlineArtifact = {
   type: string
   title: string
   content: string
+  inline?: boolean
 }
 
 type InlineArtifactParseResult = {
@@ -1508,10 +1514,19 @@ export function parseInlineArtifacts(text: string): InlineArtifactParseResult {
       const attributes = parseArtifactAttributes(rawAttributes || '')
       const content = typeof rawContent === 'string' ? rawContent.trim() : ''
       if (!content) return ''
+      const type = (attributes.type || 'html').trim().toLowerCase()
+      const inlineAttr = (attributes.inline || '').trim().toLowerCase()
+      const inline =
+        inlineAttr === 'true'
+          ? true
+          : inlineAttr === 'false'
+            ? false
+            : type === 'html' || type === 'svg'
       artifacts.push({
-        type: (attributes.type || 'html').trim().toLowerCase(),
+        type,
         title: (attributes.title || 'Artifact').trim() || 'Artifact',
         content,
+        inline,
       })
       return ''
     },
@@ -1537,17 +1552,87 @@ function artifactLanguage(type: string): string {
   return type
 }
 
-function ArtifactPreviewBody({ artifact }: { artifact: InlineArtifact }) {
+function buildEnhancedArtifactSrcDoc(artifact: InlineArtifact, artifactId: string): string {
+  const bridgeScript = `<style>
+    :root {
+      color-scheme: dark light;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 12px;
+      background: transparent;
+      color: #e5e7eb;
+    }
+  </style>
+  <script>
+    window.hermes = {
+      sendAction: function(text) {
+        window.parent.postMessage({ type: 'hermes-artifact-action', id: ${JSON.stringify(artifactId)}, text: String(text || '') }, '*');
+      }
+    };
+    window.addEventListener('DOMContentLoaded', function() {
+      var reportHeight = function() {
+        var h = document.documentElement.scrollHeight || document.body.scrollHeight || 260;
+        window.parent.postMessage({ type: 'hermes-artifact-resize', id: ${JSON.stringify(artifactId)}, height: h }, '*');
+      };
+      reportHeight();
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(reportHeight).observe(document.body);
+      }
+    });
+  </script>`
+  if (artifact.type === 'svg' && !artifact.content.toLowerCase().includes('<html')) {
+    return `<!doctype html><html><head>${bridgeScript}</head><body style="display:flex;justify-content:center;align-items:center;">${artifact.content}</body></html>`
+  }
+  if (artifact.content.toLowerCase().includes('</head>')) {
+    return artifact.content.replace(/<\/head>/i, `${bridgeScript}</head>`)
+  }
+  return `<!doctype html><html><head>${bridgeScript}</head><body>${artifact.content}</body></html>`
+}
+
+function ArtifactPreviewBody({
+  artifact,
+  inlineMode = false,
+}: {
+  artifact: InlineArtifact
+  inlineMode?: boolean
+}) {
+  const artifactId = useMemo(
+    () => `artifact-${artifact.title.replace(/\W+/g, '-')}-${artifact.content.length}`,
+    [artifact.title, artifact.content.length],
+  )
+  const [iframeHeight, setIframeHeight] = useState(280)
+
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      const data = event.data
+      if (!data || typeof data !== 'object' || data.id !== artifactId) return
+      if (data.type === 'hermes-artifact-resize' && typeof data.height === 'number') {
+        setIframeHeight(Math.min(620, Math.max(140, data.height + 16)))
+      } else if (
+        data.type === 'hermes-artifact-action' &&
+        typeof data.text === 'string' &&
+        data.text.trim()
+      ) {
+        dispatchSelectionCardReply(data.text.trim())
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [artifactId])
+
   if (artifact.type === 'html' || artifact.type === 'svg') {
     return (
       <iframe
         title={artifact.title}
         sandbox="allow-scripts"
-        srcDoc={artifact.content}
-        className="h-[60vh] w-full rounded-lg border"
+        srcDoc={buildEnhancedArtifactSrcDoc(artifact, artifactId)}
+        className={cn('w-full rounded-lg border', !inlineMode && 'h-[60vh]')}
         style={{
           borderColor: 'var(--theme-border)',
-          background: 'white',
+          background: 'var(--theme-bg)',
+          height: inlineMode ? `${iframeHeight}px` : undefined,
         }}
       />
     )
@@ -1575,7 +1660,9 @@ function ArtifactPreviewBody({ artifact }: { artifact: InlineArtifact }) {
 
 function InlineArtifactCard({ artifact }: { artifact: InlineArtifact }) {
   const [open, setOpen] = useState(false)
+  const [showInline, setShowInline] = useState(Boolean(artifact.inline))
   const summary = summarizeArtifactContent(artifact)
+  const canRenderInline = artifact.type === 'html' || artifact.type === 'svg'
 
   return (
     <>
@@ -1601,14 +1688,30 @@ function InlineArtifactCard({ artifact }: { artifact: InlineArtifact }) {
                 {artifact.type}
               </span>
             </div>
-            {summary ? (
+            {!showInline && summary ? (
               <p className="mt-2 text-xs opacity-80">{summary}</p>
             ) : null}
           </div>
-          <Button type="button" variant="outline" onClick={() => setOpen(true)}>
-            Open
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {canRenderInline ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowInline((prev) => !prev)}
+              >
+                {showInline ? 'Collapse' : 'Preview'}
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+              Expand
+            </Button>
+          </div>
         </div>
+        {showInline && canRenderInline ? (
+          <div className="mt-3">
+            <ArtifactPreviewBody artifact={artifact} inlineMode />
+          </div>
+        ) : null}
       </div>
       <DialogRoot open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(1100px,96vw)] max-h-[92vh]">
@@ -2185,12 +2288,21 @@ function MessageItemComponent({
     () => parseInlineArtifacts(assistantDisplayText),
     [assistantDisplayText],
   )
+  const parsedGenUi = useMemo(
+    () =>
+      parseInlineGenUiBlocks(
+        parsedInlineArtifacts.cleanedText,
+        effectiveIsStreaming,
+      ),
+    [parsedInlineArtifacts.cleanedText, effectiveIsStreaming],
+  )
   const standaloneMarkdownDocument = useMemo(
     () =>
-      parsedInlineArtifacts.artifacts.length === 0
-        ? extractStandaloneMarkdownFence(parsedInlineArtifacts.cleanedText)
+      parsedInlineArtifacts.artifacts.length === 0 &&
+      parsedGenUi.blocks.length === 0
+        ? extractStandaloneMarkdownFence(parsedGenUi.cleanedText)
         : null,
-    [parsedInlineArtifacts],
+    [parsedInlineArtifacts.artifacts.length, parsedGenUi],
   )
 
   useEffect(() => {
@@ -2486,7 +2598,7 @@ function MessageItemComponent({
   // When streaming is done, force all tool sections to completed state
   // Prevents stuck timers from race conditions where tool.completed SSE
   // arrives after the done event or phase wasn't properly updated
-  const finalToolSections = useMemo(() => {
+  const rawFinalToolSections = useMemo(() => {
     if (effectiveIsStreaming) return inlineToolSections
     return inlineToolSections.map((section) =>
       section.state === 'input-available' || section.state === 'input-streaming'
@@ -2494,6 +2606,15 @@ function MessageItemComponent({
         : section,
     )
   }, [inlineToolSections, effectiveIsStreaming])
+  const { regularToolSections: finalToolSections, toolGenUiBlocks } = useMemo(
+    () => splitGenUiToolSections(rawFinalToolSections),
+    [rawFinalToolSections],
+  )
+  const allGenUiBlocks = useMemo(
+    () => [...toolGenUiBlocks, ...parsedGenUi.blocks],
+    [toolGenUiBlocks, parsedGenUi.blocks],
+  )
+  const hasGenUiBlocks = allGenUiBlocks.length > 0
   const inlineRenderPlan = useMemo(
     () => buildInlineToolRenderPlan(message, finalToolSections),
     [message, finalToolSections],
@@ -2508,6 +2629,7 @@ function MessageItemComponent({
     hasAttachments ||
     hasInlineImages ||
     hasSelectionCards ||
+    hasGenUiBlocks ||
     (effectiveIsStreaming && hasRevealedText)
 
   // 'queued' = delivered to server, waiting for response (busy/backlogged)
@@ -2850,7 +2972,7 @@ function MessageItemComponent({
                   ) : null}
                   {standaloneMarkdownDocument ? (
                     <MarkdownMessageCard content={standaloneMarkdownDocument} />
-                  ) : parsedInlineArtifacts.cleanedText ? (
+                  ) : parsedGenUi.cleanedText ? (
                     <MessageContent
                       markdown
                       className={cn(
@@ -2858,8 +2980,15 @@ function MessageItemComponent({
                         effectiveIsStreaming && 'chat-streaming-content',
                       )}
                     >
-                      {parsedInlineArtifacts.cleanedText}
+                      {parsedGenUi.cleanedText}
                     </MessageContent>
+                  ) : null}
+                  {allGenUiBlocks.length > 0 ? (
+                    <div className="mt-3 flex flex-col gap-3">
+                      {allGenUiBlocks.map((block) => (
+                        <GenUiRenderer key={block.id} block={block} />
+                      ))}
+                    </div>
                   ) : null}
                   {parsedInlineArtifacts.artifacts.length > 0 ? (
                     <div className="mt-3 flex flex-col gap-3">
@@ -2871,9 +3000,15 @@ function MessageItemComponent({
                       ))}
                     </div>
                   ) : null}
-                  {effectiveIsStreaming && parsedInlineArtifacts.cleanedText ? (
+                  {effectiveIsStreaming && parsedGenUi.cleanedText ? (
                     <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent-500 align-text-bottom" />
                   ) : null}
+                </div>
+              ) : hasGenUiBlocks ? (
+                <div className="mt-1 flex flex-col gap-3">
+                  {allGenUiBlocks.map((block) => (
+                    <GenUiRenderer key={block.id} block={block} />
+                  ))}
                 </div>
               ) : null)}
             {/* Sent indicator — message delivered, waiting for response */}
