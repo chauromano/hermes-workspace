@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { getTheme, setTheme } from '@/lib/theme'
+import { getTheme, isValidTheme, setTheme, syncAppearanceToServer } from '@/lib/theme'
 
 export type SettingsThemeMode = 'system' | 'light' | 'dark'
 export type AccentColor = 'orange' | 'purple' | 'blue' | 'green'
@@ -73,6 +73,17 @@ export const useSettingsStore = create<SettingsState>()(
               },
             }
           })
+          if (
+            updates.interfaceFont !== undefined ||
+            updates.interfaceDensity !== undefined ||
+            updates.accentColor !== undefined
+          ) {
+            syncAppearanceToServer({
+              interfaceFont: updates.interfaceFont,
+              interfaceDensity: updates.interfaceDensity,
+              accentColor: updates.accentColor,
+            })
+          }
         },
       }
     },
@@ -113,18 +124,71 @@ export function resolveTheme(theme: SettingsThemeMode): 'light' | 'dark' {
 
 export function applyInterfacePreferences(settings: Partial<StudioSettings>) {
   if (typeof document === 'undefined') return
-  document.documentElement.dataset.interfaceFont = settings.interfaceFont ?? 'system'
-  document.documentElement.dataset.interfaceDensity = settings.interfaceDensity ?? 'comfortable'
+  if (settings.interfaceFont) {
+    document.documentElement.dataset.interfaceFont = settings.interfaceFont
+  }
+  if (settings.interfaceDensity) {
+    document.documentElement.dataset.interfaceDensity = settings.interfaceDensity
+  }
+  if (settings.accentColor) {
+    document.documentElement.setAttribute('data-accent', settings.accentColor)
+  }
 }
 
 export function applyTheme(_theme?: SettingsThemeMode) {
   setTheme(getTheme())
-  document.documentElement.setAttribute('data-accent', 'orange')
   applyInterfacePreferences(useSettingsStore.getState().settings)
 }
 
-export function initializeSettingsAppearance() {
-  setTheme(getTheme())
-  document.documentElement.setAttribute('data-accent', 'orange')
+export async function initializeSettingsAppearance() {
+  if (typeof window === 'undefined') return
+
+  // 1. Instant local render without flicker
+  const localTheme = getTheme()
+  setTheme(localTheme, { skipServerSync: true })
   applyInterfacePreferences(useSettingsStore.getState().settings)
+
+  // 2. Hydrate local store
+  await useSettingsStore.persist.rehydrate()
+  applyInterfacePreferences(useSettingsStore.getState().settings)
+
+  // 3. Reconcile with server-persisted appearance settings
+  try {
+    const res = await fetch('/api/appearance')
+    if (res.ok) {
+      const server = (await res.json()) as {
+        theme?: string
+        interfaceFont?: InterfaceFont
+        interfaceDensity?: InterfaceDensity
+        accentColor?: AccentColor
+      }
+
+      if (server.theme && isValidTheme(server.theme)) {
+        if (server.theme !== localTheme) {
+          setTheme(server.theme, { skipServerSync: true })
+        }
+      } else if (localTheme) {
+        syncAppearanceToServer({ theme: localTheme })
+      }
+
+      const updates: Partial<StudioSettings> = {}
+      if (server.interfaceFont) updates.interfaceFont = server.interfaceFont
+      if (server.interfaceDensity) updates.interfaceDensity = server.interfaceDensity
+      if (server.accentColor) updates.accentColor = server.accentColor
+
+      if (Object.keys(updates).length > 0) {
+        useSettingsStore.getState().updateSettings(updates)
+        applyInterfacePreferences(useSettingsStore.getState().settings)
+      } else {
+        const state = useSettingsStore.getState().settings
+        syncAppearanceToServer({
+          interfaceFont: state.interfaceFont,
+          interfaceDensity: state.interfaceDensity,
+          accentColor: state.accentColor,
+        })
+      }
+    }
+  } catch {
+    // Non-fatal if offline
+  }
 }

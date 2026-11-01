@@ -104,7 +104,7 @@ const LIGHT_THEME_MAP: Record<
   'claude-official': 'claude-official-light',
   'claude-classic': 'claude-classic-light',
   'claude-slate': 'claude-slate-light',
-  'scifi': 'scifi-light',
+  scifi: 'scifi-light',
 }
 const DARK_THEME_MAP: Record<
   Extract<ThemeId, `${string}-light`>,
@@ -152,13 +152,32 @@ export function getThemeVariant(
     : DARK_THEME_MAP[theme as keyof typeof DARK_THEME_MAP]
 }
 
+export function syncAppearanceToServer(updates: {
+  theme?: ThemeId
+  interfaceFont?: string
+  interfaceDensity?: string
+  accentColor?: string
+}) {
+  if (typeof window === 'undefined') return
+  fetch('/api/appearance', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  }).catch(() => {
+    // Non-fatal if offline
+  })
+}
+
 export function getTheme(): ThemeId {
   if (typeof window === 'undefined') return DEFAULT_THEME
   const stored = localStorage.getItem(STORAGE_KEY)
   return isValidTheme(stored) ? stored : DEFAULT_THEME
 }
 
-export function setTheme(theme: ThemeId): void {
+export function setTheme(
+  theme: ThemeId,
+  options?: { skipServerSync?: boolean },
+): void {
   const root = document.documentElement
   root.setAttribute('data-theme', theme)
   root.classList.remove('light', 'dark', 'system')
@@ -166,4 +185,7 @@ export function setTheme(theme: ThemeId): void {
   root.classList.add(nextMode)
   root.style.setProperty('color-scheme', nextMode)
   localStorage.setItem(STORAGE_KEY, theme)
+  if (!options?.skipServerSync) {
+    syncAppearanceToServer({ theme })
+  }
 }

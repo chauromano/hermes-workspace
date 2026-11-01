@@ -9,8 +9,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import appCss from '../styles.css?url'
 import { getRootSurfaceState } from './-root-layout-state'
-import {  fetchClaudeAuthStatus } from '@/lib/claude-auth'
-import type {AuthStatus} from '@/lib/claude-auth';
+import { fetchClaudeAuthStatus } from '@/lib/claude-auth'
+import type { AuthStatus } from '@/lib/claude-auth'
 import { SearchModal } from '@/components/search/search-modal'
 import { UsageMeter } from '@/components/usage-meter'
 import { TerminalShortcutListener } from '@/components/terminal-shortcut-listener'
@@ -45,12 +45,16 @@ const DEFAULT_THEME = 'claude-nous'
 const VALID_THEMES = [
   'claude-nous',
   'claude-nous-light',
+  'matrix',
+  'matrix-light',
   'claude-official',
   'claude-official-light',
   'claude-classic',
   'claude-classic-light',
   'claude-slate',
   'claude-slate-light',
+  'scifi',
+  'scifi-light',
 ]
 
 const themeScript = `
@@ -61,7 +65,7 @@ const themeScript = `
     const root = document.documentElement
     const storedTheme = localStorage.getItem('${THEME_STORAGE_KEY}')
     const theme = ${JSON.stringify(VALID_THEMES)}.includes(storedTheme) ? storedTheme : '${DEFAULT_THEME}'
-    const lightThemes = ['claude-nous-light', 'claude-official-light', 'claude-classic-light', 'claude-slate-light']
+    const lightThemes = ['claude-nous-light', 'matrix-light', 'claude-official-light', 'claude-classic-light', 'claude-slate-light', 'scifi-light']
     const isDark = !lightThemes.includes(theme)
     root.classList.remove('light', 'dark', 'system')
     root.classList.add(isDark ? 'dark' : 'light')
@@ -86,15 +90,19 @@ const themeColorScript = `
     const colors = {
       'claude-nous': '#031A1A',
       'claude-nous-light': '#F8FAF8',
+      'matrix': '#020804',
+      'matrix-light': '#F4FFF6',
       'claude-official': '#0A0E1A',
       'claude-official-light': '#F7F7F1',
       'claude-classic': '#0d0f12',
       'claude-classic-light': '#F5F2ED',
       'claude-slate': '#0d1117',
       'claude-slate-light': '#F6F8FA',
+      'scifi': '#060b18',
+      'scifi-light': '#EEF1F5',
     }
     const nextColor = colors[theme] || colors['${DEFAULT_THEME}']
-    const isDark = !['claude-nous-light', 'claude-official-light', 'claude-classic-light', 'claude-slate-light'].includes(String(theme))
+    const isDark = !['claude-nous-light', 'matrix-light', 'claude-official-light', 'claude-classic-light', 'claude-slate-light', 'scifi-light'].includes(String(theme))
 
     let meta = document.querySelector('meta[name="theme-color"]')
     if (!meta) {
@@ -445,44 +453,33 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             try {
               var theme = localStorage.getItem('${THEME_STORAGE_KEY}') || '${DEFAULT_THEME}';
               if (theme === 'claude-nous') {
-                bg = '#031A1A';
-                txt = '#F8F1E3';
-                muted = '#9CB2AE';
-                accent = '#FFAC02';
+                bg = '#031A1A'; txt = '#F8F1E3'; muted = '#9CB2AE'; accent = '#FFAC02';
               } else if (theme === 'claude-nous-light') {
-                bg = '#F8FAF8';
-                txt = '#16315F';
-                muted = '#6F7D96';
-                accent = '#2557B7';
-              } else if (theme === 'claude-classic') {
-                bg = '#0d0f12';
-                txt = '#eceff4';
-                muted = '#7f8a96';
-                accent = '#b98a44';
+                bg = '#F8FAF8'; txt = '#16315F'; muted = '#6F7D96'; accent = '#2557B7';
+              } else if (theme === 'matrix') {
+                bg = '#020804'; txt = '#D8FFE3'; muted = '#00FF41'; accent = '#00FF41';
+              } else if (theme === 'matrix-light') {
+                bg = '#F4FFF6'; txt = '#062A12'; muted = '#008F2D'; accent = '#008F2D';
+              } else if (theme === 'claude-official') {
+                bg = '#0A0E1A'; txt = '#E6EAF2'; muted = '#94A3B8'; accent = '#6366F1';
               } else if (theme === 'claude-official-light') {
-                bg = '#F7F7F1';
-                txt = '#16315F';
-                muted = '#6F7D96';
-                accent = '#2557B7';
+                bg = '#F7F7F1'; txt = '#16315F'; muted = '#6F7D96'; accent = '#2557B7';
+              } else if (theme === 'claude-classic') {
+                bg = '#0d0f12'; txt = '#eceff4'; muted = '#7f8a96'; accent = '#b98a44';
               } else if (theme === 'claude-classic-light') {
-                bg = '#F5F2ED';
-                txt = '#1a1f26';
-                muted = '#6F675E';
-                accent = '#b98a44';
+                bg = '#F5F2ED'; txt = '#1a1f26'; muted = '#6F675E'; accent = '#b98a44';
               } else if (theme === 'claude-slate') {
-                bg = '#0d1117';
-                txt = '#c9d1d9';
-                muted = '#8b949e';
-                accent = '#7eb8f6';
+                bg = '#0d1117'; txt = '#c9d1d9'; muted = '#8b949e'; accent = '#7eb8f6';
               } else if (theme === 'claude-slate-light') {
-                bg = '#F6F8FA';
-                txt = '#24292f';
-                muted = '#57606A';
-                accent = '#3b82f6';
+                bg = '#F6F8FA'; txt = '#24292f'; muted = '#57606A'; accent = '#3b82f6';
+              } else if (theme === 'scifi') {
+                bg = '#060b18'; txt = '#e0f7fa'; muted = '#00bcd4'; accent = '#00f0ff';
+              } else if (theme === 'scifi-light') {
+                bg = '#EEF1F5'; txt = '#0A1628'; muted = '#607D8B'; accent = '#0097A7';
               }
             } catch(e){}
 
-            var isDark = !['claude-nous-light','claude-official-light','claude-classic-light','claude-slate-light'].includes(theme);
+            var isDark = !['claude-nous-light','matrix-light','claude-official-light','claude-classic-light','claude-slate-light','scifi-light'].includes(theme);
             var quips = ["Consulting the oracle...","Loading ancient knowledge...","Warming up the messenger...","Calibrating tool chain...","Summoning your agent...","Preparing the workspace...","Bridging realms...","Initializing agent runtime..."];
             var quip = quips[Math.floor(Math.random() * quips.length)];
 
