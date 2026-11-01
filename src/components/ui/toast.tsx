@@ -34,6 +34,30 @@ export function toast(
   listeners.forEach((fn) => fn(item))
 }
 
+toast.info = (
+  message: string,
+  opts?: { duration?: number; icon?: string },
+) => toast(message, { ...opts, type: 'info' })
+
+toast.success = (
+  message: string,
+  opts?: { duration?: number; icon?: string },
+) => toast(message, { ...opts, type: 'success' })
+
+toast.warning = (
+  message: string,
+  opts?: { duration?: number; icon?: string },
+) => toast(message, { ...opts, type: 'warning' })
+
+toast.error = (
+  message: string,
+  opts?: { duration?: number; icon?: string },
+) => toast(message, { ...opts, type: 'error' })
+
+toast.dismiss = () => {
+  // no-op or handled by duration
+}
+
 const typeStyles: Record<ToastType, string> = {
   info: 'bg-accent-600 text-white',
   success: 'bg-green-600 text-white',

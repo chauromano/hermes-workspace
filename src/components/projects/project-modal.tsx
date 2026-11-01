@@ -206,7 +206,11 @@ export function ProjectModal({
           set_active: setActive,
         })
 
-        toast.success(`Project "${updated.name}" updated successfully`)
+        try {
+          toast.success(`Project "${updated.name}" updated successfully`)
+        } catch {
+          // ignore notification error
+        }
         onUpdated?.(updated)
         onOpenChange(false)
       } else {
@@ -219,7 +223,11 @@ export function ProjectModal({
           set_active: setActive,
         })
 
-        toast.success(`Project "${created.name}" created successfully`)
+        try {
+          toast.success(`Project "${created.name}" created successfully`)
+        } catch {
+          // ignore notification error
+        }
         onCreated?.(created)
         onOpenChange(false)
       }
