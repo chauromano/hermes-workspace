@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -17,11 +17,34 @@ import {
   YAxis,
 } from 'recharts'
 import {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+  useEdgesState,
+  useNodesState,
+} from '@xyflow/react'
+import type { Node, Edge } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import dagre from '@dagrejs/dagre'
+import { Markmap } from 'markmap-view'
+import { Transformer } from 'markmap-lib'
+import plantumlEncoder from 'plantuml-encoder'
+import Form from '@rjsf/core'
+import validator from '@rjsf/validator-ajv8'
+
+import {
+  ArchitectureCanvasPropsSchema,
+  C4DiagramPropsSchema,
   ChartPropsSchema,
   ComparisonCardsPropsSchema,
   DataTablePropsSchema,
   InteractiveFormPropsSchema,
   KpiGridPropsSchema,
+  MindmapPropsSchema,
+  PlantUMLPropsSchema,
+  SchemaFormPropsSchema,
 } from './schemas'
 import type { A2UINode, GenUiBlock } from './schemas'
 import { CHAT_SUBMIT_SELECTION_EVENT } from '@/screens/chat/chat-events'
@@ -474,7 +497,7 @@ function KpiGridWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Comparison Cards Widget (ADRs, Architecture Options, Tradeoffs)
+// 4. Comparison Cards Widget
 // ---------------------------------------------------------------------------
 function ComparisonCardsWidget({
   rawProps,
@@ -712,7 +735,7 @@ function InteractiveFormWidget({
 }
 
 // ---------------------------------------------------------------------------
-// 6. A2UI Declarative Surface Renderer (Google / CopilotKit A2UI Pattern)
+// 6. A2UI Declarative Surface Renderer
 // ---------------------------------------------------------------------------
 function A2UINodeView({ node }: { node: A2UINode }) {
   const [activeTab, setActiveTab] = useState(0)
@@ -876,6 +899,314 @@ function A2UISurfaceWidget({ rawProps }: { rawProps: Record<string, unknown> }) 
 }
 
 // ---------------------------------------------------------------------------
+// 7. Interactive Architecture Canvas (@xyflow/react + dagre)
+// ---------------------------------------------------------------------------
+function CustomArchitectureNode({ data }: { data: any }) {
+  const typeColors: Record<string, string> = {
+    system: 'border-indigo-500/50 bg-indigo-500/10 text-indigo-300',
+    container: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300',
+    database: 'border-amber-500/50 bg-amber-500/10 text-amber-300',
+    external: 'border-purple-500/50 bg-purple-500/10 text-purple-300',
+    user: 'border-sky-500/50 bg-sky-500/10 text-sky-300',
+    default: 'border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-text)]',
+  }
+  const colorClass = typeColors[data.type || 'default'] || typeColors.default
+
+  return (
+    <div
+      onClick={() => {
+        if (data.actionPrompt) dispatchGenUiAction(data.actionPrompt)
+      }}
+      className={cn(
+        'min-w-[150px] max-w-[220px] rounded-xl border p-2.5 shadow-md cursor-pointer transition-transform hover:scale-105',
+        colorClass,
+      )}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-[var(--theme-accent)]" />
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[10px] uppercase font-bold tracking-wider opacity-70">
+          {data.type || 'component'}
+        </span>
+        {data.status ? <StatusBadge text={data.status} status={data.status} /> : null}
+      </div>
+      <div className="mt-1 text-xs font-semibold text-[var(--theme-text)] truncate">
+        {data.label}
+      </div>
+      {data.technology ? (
+        <div className="mt-0.5 text-[10px] text-[var(--theme-muted)] truncate">
+          [{data.technology}]
+        </div>
+      ) : null}
+      {data.description ? (
+        <div className="mt-1 text-[11px] opacity-80 line-clamp-2">
+          {data.description}
+        </div>
+      ) : null}
+      <Handle type="source" position={Position.Bottom} className="!bg-[var(--theme-accent)]" />
+    </div>
+  )
+}
+
+const nodeTypes = {
+  default: CustomArchitectureNode,
+  system: CustomArchitectureNode,
+  container: CustomArchitectureNode,
+  database: CustomArchitectureNode,
+  external: CustomArchitectureNode,
+  user: CustomArchitectureNode,
+}
+
+function ArchitectureCanvasWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
+  const parsed = ArchitectureCanvasPropsSchema.safeParse(rawProps)
+  if (!parsed.success || parsed.data.nodes.length === 0) {
+    return <FallbackJsonView data={rawProps} reason="Architecture nodes are empty" />
+  }
+
+  const { direction, nodes: inputNodes, edges: inputEdges, height } = parsed.data
+
+  const { initialNodes, initialEdges } = useMemo(() => {
+    const g = new dagre.graphlib.Graph()
+    g.setDefaultEdgeLabel(() => ({}))
+    g.setGraph({ rankdir: direction, nodesep: 60, ranksep: 70 })
+
+    inputNodes.forEach((node) => {
+      g.setNode(node.id, { width: 180, height: 90 })
+    })
+
+    inputEdges.forEach((edge) => {
+      g.setEdge(edge.source, edge.target)
+    })
+
+    dagre.layout(g)
+
+    const layoutedNodes: Node[] = inputNodes.map((node) => {
+      const nodeWithPosition = g.node(node.id)
+      return {
+        id: node.id,
+        type: node.type || 'default',
+        position: {
+          x: nodeWithPosition ? nodeWithPosition.x - 90 : 0,
+          y: nodeWithPosition ? nodeWithPosition.y - 45 : 0,
+        },
+        data: {
+          label: node.label,
+          type: node.type,
+          technology: node.technology,
+          description: node.description,
+          status: node.status,
+          actionPrompt: node.actionPrompt || `Inspect component ${node.label}`,
+        },
+      }
+    })
+
+    const layoutedEdges: Edge[] = inputEdges.map((edge, idx) => ({
+      id: edge.id || `e-${edge.source}-${edge.target}-${idx}`,
+      source: edge.source,
+      target: edge.target,
+      label: edge.label,
+      animated: edge.animated,
+      style: { stroke: 'var(--theme-accent, #6366f1)', strokeWidth: 1.5 },
+      labelStyle: { fill: 'var(--theme-muted)', fontSize: 11 },
+    }))
+
+    return { initialNodes: layoutedNodes, initialEdges: layoutedEdges }
+  }, [inputNodes, inputEdges, direction])
+
+  const [nodes, , onNodesChange] = useNodesState(initialNodes)
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges)
+
+  return (
+    <div
+      style={{ height: height || 420 }}
+      className="relative w-full overflow-hidden rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)]"
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        fitView
+      >
+        <Background color="var(--theme-border)" gap={16} />
+        <Controls className="!bg-[var(--theme-card)] !border-[var(--theme-border)] !fill-[var(--theme-text)]" />
+      </ReactFlow>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 8. Mind Map Widget (markmap-view + markmap-lib)
+// ---------------------------------------------------------------------------
+const markmapTransformer = new Transformer()
+
+function MindmapWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
+  const parsed = MindmapPropsSchema.safeParse(rawProps)
+  const markdownText = parsed.success
+    ? (parsed.data.markdown || parsed.data.content || '').trim()
+    : ''
+  const height = parsed.success ? parsed.data.height : 380
+
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const mmRef = useRef<Markmap | null>(null)
+
+  useEffect(() => {
+    if (svgRef.current && !mmRef.current) {
+      mmRef.current = Markmap.create(svgRef.current, {
+        autoFit: true,
+        duration: 300,
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mmRef.current && markdownText) {
+      const { root } = markmapTransformer.transform(markdownText)
+      mmRef.current.setData(root)
+      mmRef.current.fit()
+    }
+  }, [markdownText])
+
+  if (!markdownText) {
+    return <FallbackJsonView data={rawProps} reason="Mindmap markdown is empty" />
+  }
+
+  return (
+    <div
+      style={{ height }}
+      className="w-full overflow-hidden rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-2"
+    >
+      <svg ref={svgRef} className="size-full" />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 9. C4 Diagram / Flowchart Widget (mermaid)
+// ---------------------------------------------------------------------------
+function C4DiagramWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
+  const parsed = C4DiagramPropsSchema.safeParse(rawProps)
+  const definition = parsed.success
+    ? (parsed.data.chartDefinition || parsed.data.code || '').trim()
+    : ''
+
+  const uniqueId = useId().replace(/:/g, '')
+  const [svgContent, setSvgContent] = useState<string>('')
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isMounted = true
+    async function renderMermaid() {
+      if (!definition) return
+      try {
+        const mermaid = (await import('mermaid')).default
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'dark',
+          securityLevel: 'loose',
+        })
+        const { svg } = await mermaid.render(`c4-svg-${uniqueId}`, definition)
+        if (isMounted) setSvgContent(svg)
+      } catch (err) {
+        if (isMounted) setError(err instanceof Error ? err.message : 'Mermaid render error')
+      }
+    }
+    renderMermaid()
+    return () => {
+      isMounted = false
+    }
+  }, [definition, uniqueId])
+
+  if (!definition) {
+    return <FallbackJsonView data={rawProps} reason="Diagram definition is empty" />
+  }
+
+  if (error) {
+    return <FallbackJsonView data={definition} reason={error} />
+  }
+
+  return (
+    <div
+      className="w-full overflow-auto rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-4 flex justify-center"
+      dangerouslySetInnerHTML={{ __html: svgContent }}
+    />
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 10. PlantUML Diagram Widget (plantuml-encoder)
+// ---------------------------------------------------------------------------
+function PlantUMLWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
+  const parsed = PlantUMLPropsSchema.safeParse(rawProps)
+  const code = parsed.success ? (parsed.data.code || '').trim() : ''
+  const server = parsed.success ? parsed.data.server : 'https://www.plantuml.com/plantuml'
+
+  if (!code) {
+    return <FallbackJsonView data={rawProps} reason="PlantUML code is empty" />
+  }
+
+  try {
+    const encoded = plantumlEncoder.encode(code)
+    const svgUrl = `${server}/svg/${encoded}`
+
+    return (
+      <div className="w-full overflow-auto rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3 flex flex-col items-center gap-2">
+        <img src={svgUrl} alt="PlantUML Diagram" className="max-h-[500px] object-contain" />
+        <div className="flex justify-end w-full">
+          <a
+            href={svgUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[var(--theme-accent)] hover:underline"
+          >
+            Open Full SVG ↗
+          </a>
+        </div>
+      </div>
+    )
+  } catch (err) {
+    return <FallbackJsonView data={code} reason="Failed to encode PlantUML string" />
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 11. Schema Form Widget (@rjsf/core)
+// ---------------------------------------------------------------------------
+function SchemaFormWidget({ rawProps }: { rawProps: Record<string, unknown> }) {
+  const parsed = SchemaFormPropsSchema.safeParse(rawProps)
+  if (!parsed.success) {
+    return <FallbackJsonView data={rawProps} reason="Invalid JSON Schema" />
+  }
+
+  const { schema, uiSchema, formData, submitLabel } = parsed.data
+
+  function handleSubmit({ formData }: any) {
+    dispatchGenUiAction(`Submitted Configuration:\n${JSON.stringify(formData, null, 2)}`)
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-4 text-xs">
+      <Form
+        schema={schema as any}
+        uiSchema={uiSchema as any}
+        formData={formData}
+        validator={validator}
+        onSubmit={handleSubmit}
+      >
+        <div className="flex justify-end pt-2">
+          <button
+            type="submit"
+            className="rounded-lg bg-[var(--theme-accent)] px-3.5 py-1.5 text-xs font-semibold text-primary-950 hover:opacity-90"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </Form>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Fallback & Top-Level Dispatcher (<GenUiRenderer />)
 // ---------------------------------------------------------------------------
 function FallbackJsonView({
@@ -940,6 +1271,16 @@ export function GenUiRenderer({ block }: { block: GenUiBlock }) {
           <ComparisonCardsWidget rawProps={block.props} />
         ) : componentType === 'interactive_form' || componentType === 'form' ? (
           <InteractiveFormWidget rawProps={block.props} title={block.title} />
+        ) : componentType === 'architecture_canvas' || componentType === 'canvas' ? (
+          <ArchitectureCanvasWidget rawProps={block.props} />
+        ) : componentType === 'mindmap' || componentType === 'mind_map' ? (
+          <MindmapWidget rawProps={block.props} />
+        ) : componentType === 'c4_diagram' || componentType === 'mermaid' ? (
+          <C4DiagramWidget rawProps={block.props} />
+        ) : componentType === 'plantuml' ? (
+          <PlantUMLWidget rawProps={block.props} />
+        ) : componentType === 'schema_form' || componentType === 'rjsf' ? (
+          <SchemaFormWidget rawProps={block.props} />
         ) : (
           <A2UISurfaceWidget rawProps={block.props} />
         )}

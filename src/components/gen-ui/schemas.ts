@@ -7,6 +7,11 @@ export const GEN_UI_COMPONENTS = [
   'comparison_cards',
   'interactive_form',
   'a2ui_surface',
+  'architecture_canvas',
+  'mindmap',
+  'c4_diagram',
+  'plantuml',
+  'schema_form',
 ] as const
 
 export type GenUiComponentType = (typeof GEN_UI_COMPONENTS)[number]
@@ -109,7 +114,7 @@ export const InteractiveFormPropsSchema = z.object({
 
 export type InteractiveFormProps = z.infer<typeof InteractiveFormPropsSchema>
 
-// 6. A2UI Declarative Surface Schema (Recursive Node Spec)
+// 6. A2UI Declarative Surface Schema
 export type A2UINode = {
   type:
     | 'card'
@@ -143,6 +148,76 @@ export const A2UISurfacePropsSchema = z.object({
   nodes: z.array(z.record(z.string(), z.unknown())).optional(),
 })
 
+// 7. Interactive Architecture Canvas Schema (@xyflow/react + dagre)
+export const ArchitectureNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  type: z
+    .enum(['default', 'system', 'container', 'database', 'external', 'user'])
+    .optional()
+    .default('default'),
+  technology: z.string().optional(),
+  description: z.string().optional(),
+  status: z.enum(['healthy', 'warning', 'error', 'info']).optional(),
+  actionPrompt: z.string().optional(),
+})
+
+export const ArchitectureEdgeSchema = z.object({
+  id: z.string().optional(),
+  source: z.string(),
+  target: z.string(),
+  label: z.string().optional(),
+  animated: z.boolean().optional().default(false),
+})
+
+export const ArchitectureCanvasPropsSchema = z.object({
+  direction: z.enum(['TB', 'LR', 'BT', 'RL']).optional().default('TB'),
+  nodes: z.array(ArchitectureNodeSchema).default([]),
+  edges: z.array(ArchitectureEdgeSchema).default([]),
+  height: z.number().min(240).max(800).optional().default(420),
+})
+
+export type ArchitectureCanvasProps = z.infer<typeof ArchitectureCanvasPropsSchema>
+
+// 8. Mind Map Schema (markmap-view)
+export const MindmapPropsSchema = z.object({
+  markdown: z.string().optional(),
+  content: z.string().optional(),
+  height: z.number().min(200).max(800).optional().default(380),
+})
+
+export type MindmapProps = z.infer<typeof MindmapPropsSchema>
+
+// 9. C4 Diagram & Flowchart Schema (mermaid)
+export const C4DiagramPropsSchema = z.object({
+  chartDefinition: z.string().optional(),
+  code: z.string().optional(),
+  diagramType: z
+    .enum(['C4Context', 'C4Container', 'C4Component', 'C4Deployment', 'flowchart', 'sequenceDiagram'])
+    .optional(),
+  height: z.number().min(180).max(800).optional(),
+})
+
+export type C4DiagramProps = z.infer<typeof C4DiagramPropsSchema>
+
+// 10. PlantUML Diagram Schema (plantuml-encoder)
+export const PlantUMLPropsSchema = z.object({
+  code: z.string().optional(),
+  server: z.string().optional().default('https://www.plantuml.com/plantuml'),
+})
+
+export type PlantUMLProps = z.infer<typeof PlantUMLPropsSchema>
+
+// 11. Schema Form Schema (@rjsf/core)
+export const SchemaFormPropsSchema = z.object({
+  schema: z.record(z.string(), z.unknown()),
+  uiSchema: z.record(z.string(), z.unknown()).optional(),
+  formData: z.record(z.string(), z.unknown()).optional(),
+  submitLabel: z.string().optional().default('Submit Form'),
+})
+
+export type SchemaFormProps = z.infer<typeof SchemaFormPropsSchema>
+
 export type GenUiBlock = {
   id: string
   component: GenUiComponentType | string
@@ -158,12 +233,22 @@ export function safeParseGenUiJson(
 ): { ok: true; data: Record<string, unknown> } | { ok: false; error: string } {
   const trimmed = raw
     .trim()
-    .replace(/^```(?:json|gen-ui|a2ui)?\s*/i, '')
+    .replace(/^```(?:json|gen-ui|a2ui|mermaid|plantuml)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim()
 
   if (!trimmed) {
     return { ok: false, error: 'Empty payload' }
+  }
+
+  // Handle bare markdown or raw plantuml/mermaid strings
+  if (
+    trimmed.startsWith('@startuml') ||
+    trimmed.startsWith('C4') ||
+    trimmed.startsWith('flowchart') ||
+    trimmed.startsWith('graph ')
+  ) {
+    return { ok: true, data: { code: trimmed, chartDefinition: trimmed } }
   }
 
   try {
