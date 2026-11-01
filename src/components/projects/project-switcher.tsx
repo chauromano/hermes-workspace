@@ -6,6 +6,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   CheckmarkCircle01Icon,
+  Edit01Icon,
   Folder01Icon,
   PlusSignIcon,
   FolderOpenIcon,
@@ -19,7 +20,7 @@ import {
 } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
-import { useProjects, useSetActiveProject } from '@/hooks/use-projects'
+import { useProjects, useSetActiveProject, type Project } from '@/hooks/use-projects'
 import { ProjectModal } from './project-modal'
 
 export type ProjectSwitcherProps = {
@@ -34,6 +35,7 @@ export function ProjectSwitcher({
   isCollapsed = false,
 }: ProjectSwitcherProps) {
   const [modalOpen, setModalOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   const { projects, activeProject } = useProjects()
   const setActiveMutation = useSetActiveProject()
 
@@ -111,23 +113,25 @@ export function ProjectSwitcher({
             {projects.map((p) => {
               const isSelected = activeProject?.id === p.id
               return (
-                <MenuItem
+                <div
                   key={p.id}
-                  onClick={() => handleSelectProject(p.id)}
                   className={cn(
-                    'flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer',
+                    'group/item flex items-center justify-between gap-1 rounded-lg px-2.5 py-1.5 text-xs transition-colors',
                     isSelected
                       ? 'bg-accent-500/15 text-accent-700 dark:text-accent-300 font-semibold'
                       : 'hover:bg-[var(--theme-hover)] text-[var(--theme-text)]',
                   )}
                 >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <MenuItem
+                    onClick={() => handleSelectProject(p.id)}
+                    className="flex items-center gap-2 min-w-0 flex-1 p-0 hover:bg-transparent bg-transparent cursor-pointer"
+                  >
                     <HugeiconsIcon
                       icon={Folder01Icon}
                       size={14}
                       className={isSelected ? 'text-accent-600' : 'text-[var(--theme-muted)] shrink-0'}
                     />
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 text-left">
                       <span className="block truncate">{p.name}</span>
                       {p.primary_path && (
                         <span className="block truncate text-[10px] text-[var(--theme-muted)] font-mono">
@@ -135,15 +139,30 @@ export function ProjectSwitcher({
                         </span>
                       )}
                     </div>
+                  </MenuItem>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        hapticTap()
+                        setEditingProject(p)
+                      }}
+                      className="opacity-0 group-hover/item:opacity-100 hover:text-accent-600 p-1 rounded transition-opacity text-[var(--theme-muted)] hover:bg-[var(--theme-card)]"
+                      title="Edit project"
+                    >
+                      <HugeiconsIcon icon={Edit01Icon} size={13} />
+                    </button>
+                    {isSelected && (
+                      <HugeiconsIcon
+                        icon={CheckmarkCircle01Icon}
+                        size={14}
+                        className="text-accent-600 shrink-0"
+                      />
+                    )}
                   </div>
-                  {isSelected && (
-                    <HugeiconsIcon
-                      icon={CheckmarkCircle01Icon}
-                      size={14}
-                      className="text-accent-600 shrink-0"
-                    />
-                  )}
-                </MenuItem>
+                </div>
               )
             })}
 
@@ -176,8 +195,21 @@ export function ProjectSwitcher({
             </MenuItem>
           </div>
 
-          {/* New Project & Manage Actions */}
+          {/* Actions */}
           <div className="border-t border-[var(--theme-border)] mt-1.5 pt-1 space-y-0.5">
+            {activeProject && (
+              <button
+                type="button"
+                onClick={() => {
+                  hapticTap()
+                  setEditingProject(activeProject)
+                }}
+                className="flex items-center gap-2 w-full rounded-lg px-2.5 py-1.5 text-xs text-[var(--theme-text)] hover:bg-[var(--theme-hover)] transition-colors"
+              >
+                <HugeiconsIcon icon={Edit01Icon} size={14} className="text-[var(--theme-muted)]" />
+                <span className="truncate">Edit "{activeProject.name}"</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -205,6 +237,16 @@ export function ProjectSwitcher({
 
       {/* Creation Modal */}
       <ProjectModal open={modalOpen} onOpenChange={setModalOpen} />
+
+      {/* Edit Modal */}
+      <ProjectModal
+        open={Boolean(editingProject)}
+        onOpenChange={(open) => {
+          if (!open) setEditingProject(null)
+        }}
+        project={editingProject}
+        onUpdated={() => setEditingProject(null)}
+      />
     </>
   )
 }

@@ -80,12 +80,32 @@ export const Route = createFileRoute('/api/projects')({
               return jsonResponse({ error: 'Project ID is required' }, 400)
             }
             const project = updateProject(ident, {
-              name: typeof body.name === 'string' ? body.name : undefined,
-              description: body.description !== undefined ? String(body.description) : undefined,
-              primary_path: typeof body.primary_path === 'string' ? body.primary_path : undefined,
-              icon: body.icon !== undefined ? String(body.icon) : undefined,
-              color: body.color !== undefined ? String(body.color) : undefined,
-              board_slug: body.board_slug !== undefined ? String(body.board_slug) : undefined,
+              name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : undefined,
+              description:
+                body.description === null || body.description === ''
+                  ? null
+                  : typeof body.description === 'string'
+                    ? body.description
+                    : undefined,
+              primary_path: typeof body.primary_path === 'string' && body.primary_path.trim() ? body.primary_path.trim() : undefined,
+              icon:
+                body.icon === null || body.icon === ''
+                  ? null
+                  : typeof body.icon === 'string'
+                    ? body.icon
+                    : undefined,
+              color:
+                body.color === null || body.color === ''
+                  ? null
+                  : typeof body.color === 'string'
+                    ? body.color
+                    : undefined,
+              board_slug:
+                body.board_slug === null || body.board_slug === ''
+                  ? null
+                  : typeof body.board_slug === 'string'
+                    ? body.board_slug
+                    : undefined,
             })
             return jsonResponse({ success: true, project })
           }

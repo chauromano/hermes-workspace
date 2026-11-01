@@ -5,6 +5,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Cancel01Icon,
   CheckmarkCircle01Icon,
+  Edit01Icon,
   Folder01Icon,
   PlusSignIcon,
   ArrowRight01Icon,
@@ -23,6 +24,8 @@ import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
 import {
   useCreateProject,
+  useUpdateProject,
+  useSetActiveProject,
   useCreateWorkspaceFolder,
   useProjects,
   useWorkspaceFolders,
@@ -32,7 +35,9 @@ import {
 export type ProjectModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  project?: Project | null
   onCreated?: (project: Project) => void
+  onUpdated?: (project: Project) => void
 }
 
 function autoSlug(text: string): string {
@@ -44,7 +49,14 @@ function autoSlug(text: string): string {
     .slice(0, 64)
 }
 
-export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProps) {
+export function ProjectModal({
+  open,
+  onOpenChange,
+  project,
+  onCreated,
+  onUpdated,
+}: ProjectModalProps) {
+  const isEdit = Boolean(project)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugEdited, setSlugEdited] = useState(false)
@@ -60,28 +72,45 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
 
   const { projects: existingProjects } = useProjects({ includeArchived: true })
   const createProject = useCreateProject()
+  const updateProject = useUpdateProject()
+  const setActiveProject = useSetActiveProject()
   const createFolder = useCreateWorkspaceFolder()
   const { data: folderItems, isLoading: loadingFolders } = useWorkspaceFolders(browseSubpath)
 
   const isSlugTaken = useMemo(() => {
-    if (!slug) return false
+    if (isEdit || !slug) return false
     return existingProjects.some((p) => p.slug.toLowerCase() === slug.toLowerCase())
-  }, [slug, existingProjects])
+  }, [isEdit, slug, existingProjects])
 
   const resetForm = useCallback(() => {
-    setName('')
-    setSlug('')
-    setSlugEdited(false)
-    setDescription('')
-    setPrimaryPath('/workspace')
-    setBrowseSubpath('')
-    setSetActive(true)
+    if (project) {
+      setName(project.name || '')
+      setSlug(project.slug || '')
+      setSlugEdited(true)
+      setDescription(project.description || '')
+      const initialPath = project.primary_path || '/workspace'
+      setPrimaryPath(initialPath)
+      if (initialPath.startsWith('/workspace/') && initialPath.length > '/workspace/'.length) {
+        setBrowseSubpath(initialPath.slice('/workspace/'.length))
+      } else {
+        setBrowseSubpath('')
+      }
+      setSetActive(Boolean(project.is_active))
+    } else {
+      setName('')
+      setSlug('')
+      setSlugEdited(false)
+      setDescription('')
+      setPrimaryPath('/workspace')
+      setBrowseSubpath('')
+      setSetActive(true)
+    }
     setError(null)
     setIsSubmitting(false)
     setIsCreatingFolder(false)
     setNewFolderName('')
     setFolderCreateError(null)
-  }, [])
+  }, [project])
 
   useEffect(() => {
     if (open) {
@@ -91,7 +120,7 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
 
   const handleNameChange = (val: string) => {
     setName(val)
-    if (!slugEdited) {
+    if (!isEdit && !slugEdited) {
       setSlug(autoSlug(val))
     }
   }
@@ -154,7 +183,7 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isSubmitting || createProject.isPending) return
+    if (isSubmitting || createProject.isPending || updateProject.isPending) return
     setError(null)
 
     if (!name.trim()) {
@@ -169,18 +198,38 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
     try {
       setIsSubmitting(true)
       hapticTap()
-      const project = await createProject.mutateAsync({
-        name: name.trim(),
-        slug: slug.trim() || undefined,
-        slug_customized: slugEdited,
-        primary_path: primaryPath.trim(),
-        description: description.trim() || undefined,
-        set_active: setActive,
-      })
 
-      toast.success(`Project "${project.name}" created successfully`)
-      onCreated?.(project)
-      onOpenChange(false)
+      if (isEdit && project) {
+        const updated = await updateProject.mutateAsync({
+          id: project.id,
+          name: name.trim(),
+          description: description.trim() || null,
+          primary_path: primaryPath.trim(),
+        })
+
+        if (setActive && !project.is_active) {
+          await setActiveProject.mutateAsync(project.id)
+        } else if (!setActive && project.is_active) {
+          await setActiveProject.mutateAsync(null)
+        }
+
+        toast.success(`Project "${updated.name}" updated successfully`)
+        onUpdated?.(updated)
+        onOpenChange(false)
+      } else {
+        const created = await createProject.mutateAsync({
+          name: name.trim(),
+          slug: slug.trim() || undefined,
+          slug_customized: slugEdited,
+          primary_path: primaryPath.trim(),
+          description: description.trim() || undefined,
+          set_active: setActive,
+        })
+
+        toast.success(`Project "${created.name}" created successfully`)
+        onCreated?.(created)
+        onOpenChange(false)
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
@@ -201,66 +250,80 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
           'border border-[var(--theme-border)] bg-[var(--theme-card)] shadow-2xl',
         )}
       >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-[var(--theme-border)] px-5 py-4">
-            <div className="flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-accent-500/15 text-accent-600">
-                <HugeiconsIcon icon={Folder01Icon} size={18} strokeWidth={2} />
-              </span>
-              <div>
-                <DialogTitle className="text-base font-semibold leading-tight text-[var(--theme-text)]">
-                  Create Project
-                </DialogTitle>
-                <DialogDescription className="text-xs text-[var(--theme-muted)]">
-                  Anchor workspaces, tasks, and agents to a codebase or folder
-                </DialogDescription>
-              </div>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[var(--theme-border)] px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-xl bg-accent-500/15 text-accent-600">
+              <HugeiconsIcon icon={isEdit ? Edit01Icon : Folder01Icon} size={18} strokeWidth={2} />
+            </span>
+            <div>
+              <DialogTitle className="text-base font-semibold leading-tight text-[var(--theme-text)]">
+                {isEdit ? 'Edit Project' : 'Create Project'}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-[var(--theme-muted)]">
+                {isEdit
+                  ? 'Update project details, folder attachment, or active context'
+                  : 'Anchor workspaces, tasks, and agents to a codebase or folder'}
+              </DialogDescription>
             </div>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="rounded-lg p-1.5 text-[var(--theme-muted)] hover:bg-[var(--theme-hover)] hover:text-[var(--theme-text)] transition-colors"
-              aria-label="Close"
-            >
-              <HugeiconsIcon icon={Cancel01Icon} size={16} />
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="rounded-lg p-1.5 text-[var(--theme-muted)] hover:bg-[var(--theme-hover)] hover:text-[var(--theme-text)] transition-colors"
+            aria-label="Close"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={16} />
+          </button>
+        </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
-            {error && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-600 dark:text-red-400">
-                {error}
-              </div>
-            )}
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          {error && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-600 dark:text-red-400">
+              {error}
+            </div>
+          )}
 
-            {/* Name & Slug */}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-[var(--theme-text)] mb-1">
-                  Project Name <span className="text-red-500">*</span>
+          {/* Name & Slug */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--theme-text)] mb-1">
+                Project Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Express Architecture Hub"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-sm text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-all"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-[var(--theme-muted)]">
+                  {isEdit ? 'Project Identifier (Slug)' : 'Project Slug (ID)'}
                 </label>
+                {isEdit ? (
+                  <span className="text-[10px] text-[var(--theme-muted)] font-mono">
+                    Permanent ID (read-only)
+                  </span>
+                ) : isSlugTaken ? (
+                  <span className="text-[10px] text-amber-500 font-medium">
+                    ID in use (auto-number will be added if unchanged)
+                  </span>
+                ) : null}
+              </div>
+              {isEdit ? (
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. Express Architecture Hub"
-                  value={name}
-                  onChange={(e) => handleNameChange(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-sm text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500 transition-all"
+                  disabled
+                  value={slug}
+                  className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)]/60 px-3 py-1.5 text-xs font-mono text-[var(--theme-muted)] cursor-not-allowed select-all"
                 />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-medium text-[var(--theme-muted)]">
-                    Project Slug (ID)
-                  </label>
-                  {isSlugTaken && (
-                    <span className="text-[10px] text-amber-500 font-medium">
-                      ID in use (auto-number will be added if unchanged)
-                    </span>
-                  )}
-                </div>
+              ) : (
                 <input
                   type="text"
                   placeholder="express-architecture-hub"
@@ -276,302 +339,307 @@ export function ProjectModal({ open, onOpenChange, onCreated }: ProjectModalProp
                       : 'border-[var(--theme-border)] focus:border-accent-500',
                   )}
                 />
-              </div>
+              )}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--theme-text)] mb-1">
+              Description (Optional)
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Brief purpose, architecture scope, or milestones..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-xs text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 transition-all resize-none"
+            />
+          </div>
+
+          {/* Primary Workspace Folder Selection */}
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-[var(--theme-text)]">
+              Primary Workspace Folder <span className="text-red-500">*</span>
+            </label>
+
+            {/* Breadcrumb Navigation */}
+            <div className="flex items-center gap-1 overflow-x-auto py-1 text-xs text-[var(--theme-muted)] scrollbar-none">
+              <button
+                type="button"
+                onClick={() => handleBreadcrumbClick(-1)}
+                className={cn(
+                  'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors',
+                  browseSubpath === '' ? 'font-semibold text-accent-600 dark:text-accent-400' : '',
+                )}
+              >
+                workspace
+              </button>
+              {breadcrumbs.map((b, idx) => (
+                <span key={idx} className="flex items-center gap-1 shrink-0">
+                  <span className="opacity-40">/</span>
+                  <button
+                    type="button"
+                    onClick={() => handleBreadcrumbClick(idx)}
+                    className={cn(
+                      'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors',
+                      idx === breadcrumbs.length - 1 ? 'font-semibold text-accent-600 dark:text-accent-400' : '',
+                    )}
+                  >
+                    {b}
+                  </button>
+                </span>
+              ))}
             </div>
 
-            {/* Description */}
-            <div>
-              <label className="block text-xs font-medium text-[var(--theme-text)] mb-1">
-                Description (Optional)
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Brief purpose, architecture scope, or milestones..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-xs text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 transition-all resize-none"
-              />
-            </div>
-
-            {/* Primary Workspace Folder Selection */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-[var(--theme-text)]">
-                Primary Workspace Folder <span className="text-red-500">*</span>
-              </label>
-
-              {/* Breadcrumb Navigation */}
-              <div className="flex items-center gap-1 overflow-x-auto py-1 text-xs text-[var(--theme-muted)] scrollbar-none">
-                <button
-                  type="button"
-                  onClick={() => handleBreadcrumbClick(-1)}
-                  className={cn(
-                    'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors',
-                    browseSubpath === '' ? 'font-semibold text-accent-600 dark:text-accent-400' : '',
-                  )}
-                >
-                  workspace
-                </button>
-                {breadcrumbs.map((b, idx) => (
-                  <span key={idx} className="flex items-center gap-1 shrink-0">
-                    <span className="opacity-40">/</span>
+            {/* Folder Browser Card */}
+            <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-2 space-y-1.5">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-medium text-[var(--theme-muted)]">
+                  Browse folders under /workspace:
+                </span>
+                <div className="flex items-center gap-2">
+                  {browseSubpath && (
                     <button
                       type="button"
-                      onClick={() => handleBreadcrumbClick(idx)}
-                      className={cn(
-                        'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors',
-                        idx === breadcrumbs.length - 1 ? 'font-semibold text-accent-600 dark:text-accent-400' : '',
-                      )}
+                      onClick={handleNavigateUp}
+                      className="flex items-center gap-1 text-[11px] text-accent-600 hover:underline"
                     >
-                      {b}
+                      <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
+                      <span>Back up</span>
                     </button>
-                  </span>
-                ))}
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hapticTap()
+                      setIsCreatingFolder((v) => !v)
+                      setFolderCreateError(null)
+                    }}
+                    className={cn(
+                      'flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
+                      isCreatingFolder
+                        ? 'bg-accent-500/20 text-accent-600'
+                        : 'text-accent-600 hover:bg-accent-500/10',
+                    )}
+                  >
+                    <HugeiconsIcon icon={PlusSignIcon} size={12} strokeWidth={2.2} />
+                    <span>New Folder</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Folder Browser Card */}
-              <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-2 space-y-1.5">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-medium text-[var(--theme-muted)]">
-                    Browse folders under /workspace:
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {browseSubpath && (
-                      <button
-                        type="button"
-                        onClick={handleNavigateUp}
-                        className="flex items-center gap-1 text-[11px] text-accent-600 hover:underline"
-                      >
-                        <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
-                        <span>Back up</span>
-                      </button>
-                    )}
+              {/* Inline Folder Creation */}
+              {isCreatingFolder && (
+                <div className="rounded-lg border border-accent-500/30 bg-accent-500/5 p-2 space-y-1.5 transition-all">
+                  <div className="flex items-center justify-between text-[11px] font-medium text-[var(--theme-text)]">
+                    <span>Create folder in {browseSubpath ? `/${browseSubpath}` : '/workspace'}:</span>
                     <button
                       type="button"
                       onClick={() => {
-                        hapticTap()
-                        setIsCreatingFolder((v) => !v)
+                        setIsCreatingFolder(false)
                         setFolderCreateError(null)
                       }}
-                      className={cn(
-                        'flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
-                        isCreatingFolder
-                          ? 'bg-accent-500/20 text-accent-600'
-                          : 'text-accent-600 hover:bg-accent-500/10',
-                      )}
+                      className="text-[var(--theme-muted)] hover:text-[var(--theme-text)]"
                     >
-                      <HugeiconsIcon icon={PlusSignIcon} size={12} strokeWidth={2.2} />
-                      <span>New Folder</span>
+                      <HugeiconsIcon icon={Cancel01Icon} size={12} />
                     </button>
                   </div>
-                </div>
 
-                {/* Inline Folder Creation */}
-                {isCreatingFolder && (
-                  <div className="rounded-lg border border-accent-500/30 bg-accent-500/5 p-2 space-y-1.5 transition-all">
-                    <div className="flex items-center justify-between text-[11px] font-medium text-[var(--theme-text)]">
-                      <span>Create folder in {browseSubpath ? `/${browseSubpath}` : '/workspace'}:</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Folder name (e.g. my-project)"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleCreateFolder()
+                        } else if (e.key === 'Escape') {
+                          setIsCreatingFolder(false)
+                          setFolderCreateError(null)
+                        }
+                      }}
+                      className="flex-1 rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 font-mono transition-all"
+                    />
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="default"
+                      disabled={createFolder.isPending || !newFolderName.trim()}
+                      onClick={() => handleCreateFolder()}
+                      className="bg-accent-600 hover:bg-accent-700 text-white text-[11px] px-2.5 py-1 h-auto"
+                    >
+                      {createFolder.isPending ? (
+                        <HugeiconsIcon icon={Loading03Icon} size={12} className="animate-spin" />
+                      ) : (
+                        'Create'
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        setIsCreatingFolder(false)
+                        setFolderCreateError(null)
+                      }}
+                      className="text-[11px] px-2 py-1 h-auto"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+
+                  {folderCreateError && (
+                    <div className="text-[10px] text-red-500 font-medium">
+                      {folderCreateError}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="max-h-36 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                {loadingFolders ? (
+                  <div className="flex items-center justify-center py-4 text-xs text-[var(--theme-muted)]">
+                    <HugeiconsIcon icon={Loading03Icon} size={16} className="animate-spin mr-1.5" />
+                    Loading folders...
+                  </div>
+                ) : !folderItems || folderItems.length === 0 ? (
+                  <div className="py-3 text-center text-xs text-[var(--theme-muted)] space-y-1">
+                    <div>No subfolders found in this directory</div>
+                    {!isCreatingFolder && (
                       <button
                         type="button"
                         onClick={() => {
-                          setIsCreatingFolder(false)
-                          setFolderCreateError(null)
+                          hapticTap()
+                          setIsCreatingFolder(true)
                         }}
-                        className="text-[var(--theme-muted)] hover:text-[var(--theme-text)]"
+                        className="inline-flex items-center gap-1 text-[11px] text-accent-600 hover:underline font-medium"
                       >
-                        <HugeiconsIcon icon={Cancel01Icon} size={12} />
+                        <HugeiconsIcon icon={PlusSignIcon} size={12} />
+                        <span>Create a folder here</span>
                       </button>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        autoFocus
-                        placeholder="Folder name (e.g. my-project)"
-                        value={newFolderName}
-                        onChange={(e) => setNewFolderName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            handleCreateFolder()
-                          } else if (e.key === 'Escape') {
-                            setIsCreatingFolder(false)
-                            setFolderCreateError(null)
-                          }
-                        }}
-                        className="flex-1 rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] placeholder-[var(--theme-muted)] outline-none focus:border-accent-500 font-mono transition-all"
-                      />
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="default"
-                        disabled={createFolder.isPending || !newFolderName.trim()}
-                        onClick={() => handleCreateFolder()}
-                        className="bg-accent-600 hover:bg-accent-700 text-white text-[11px] px-2.5 py-1 h-auto"
-                      >
-                        {createFolder.isPending ? (
-                          <HugeiconsIcon icon={Loading03Icon} size={12} className="animate-spin" />
-                        ) : (
-                          'Create'
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="ghost"
-                        onClick={() => {
-                          setIsCreatingFolder(false)
-                          setFolderCreateError(null)
-                        }}
-                        className="text-[11px] px-2 py-1 h-auto"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-
-                    {folderCreateError && (
-                      <div className="text-[10px] text-red-500 font-medium">
-                        {folderCreateError}
-                      </div>
                     )}
                   </div>
-                )}
-
-                <div className="max-h-36 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
-                  {loadingFolders ? (
-                    <div className="flex items-center justify-center py-4 text-xs text-[var(--theme-muted)]">
-                      <HugeiconsIcon icon={Loading03Icon} size={16} className="animate-spin mr-1.5" />
-                      Loading folders...
-                    </div>
-                  ) : !folderItems || folderItems.length === 0 ? (
-                    <div className="py-3 text-center text-xs text-[var(--theme-muted)] space-y-1">
-                      <div>No subfolders found in this directory</div>
-                      {!isCreatingFolder && (
+                ) : (
+                  folderItems.map((item) => {
+                    const isSelected = primaryPath === item.path
+                    return (
+                      <div
+                        key={item.path}
+                        className={cn(
+                          'group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors',
+                          isSelected
+                            ? 'bg-accent-500/15 text-accent-700 dark:text-accent-300 font-medium'
+                            : 'hover:bg-[var(--theme-hover)] text-[var(--theme-text)]',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleDrillFolder(item.name)}
+                          className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                        >
+                          <HugeiconsIcon
+                            icon={Folder01Icon}
+                            size={14}
+                            className={isSelected ? 'text-accent-500' : 'text-[var(--theme-muted)]'}
+                          />
+                          <span className="truncate">{item.name}</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             hapticTap()
-                            setIsCreatingFolder(true)
+                            setPrimaryPath(item.path)
                           }}
-                          className="inline-flex items-center gap-1 text-[11px] text-accent-600 hover:underline font-medium"
-                        >
-                          <HugeiconsIcon icon={PlusSignIcon} size={12} />
-                          <span>Create a folder here</span>
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    folderItems.map((item) => {
-                      const isSelected = primaryPath === item.path
-                      return (
-                        <div
-                          key={item.path}
                           className={cn(
-                            'group flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors',
+                            'text-[10px] px-2 py-0.5 rounded transition-all',
                             isSelected
-                              ? 'bg-accent-500/15 text-accent-700 dark:text-accent-300 font-medium'
-                              : 'hover:bg-[var(--theme-hover)] text-[var(--theme-text)]',
+                              ? 'bg-accent-500 text-white font-medium'
+                              : 'opacity-0 group-hover:opacity-100 hover:bg-accent-500/20 text-accent-600',
                           )}
                         >
-                          <button
-                            type="button"
-                            onClick={() => handleDrillFolder(item.name)}
-                            className="flex items-center gap-2 min-w-0 flex-1 text-left"
-                          >
-                            <HugeiconsIcon
-                              icon={Folder01Icon}
-                              size={14}
-                              className={isSelected ? 'text-accent-500' : 'text-[var(--theme-muted)]'}
-                            />
-                            <span className="truncate">{item.name}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              hapticTap()
-                              setPrimaryPath(item.path)
-                            }}
-                            className={cn(
-                              'text-[10px] px-2 py-0.5 rounded transition-all',
-                              isSelected
-                                ? 'bg-accent-500 text-white font-medium'
-                                : 'opacity-0 group-hover:opacity-100 hover:bg-accent-500/20 text-accent-600',
-                            )}
-                          >
-                            {isSelected ? 'Selected' : 'Select'}
-                          </button>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
+                          {isSelected ? 'Selected' : 'Select'}
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
 
-                {/* Direct Path Input */}
-                <div className="pt-1.5 border-t border-[var(--theme-border)]">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="block text-[10px] text-[var(--theme-muted)]">
-                      Selected Path:
-                    </span>
-                    <span className="text-[9px] text-[var(--theme-muted)] font-mono">
-                      (will be created if it does not exist)
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={primaryPath}
-                    onChange={(e) => setPrimaryPath(e.target.value)}
-                    className="w-full rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-2.5 py-1.5 text-xs font-mono text-[var(--theme-text)] outline-none focus:border-accent-500 transition-all"
-                  />
+              {/* Direct Path Input */}
+              <div className="pt-1.5 border-t border-[var(--theme-border)]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-[10px] text-[var(--theme-muted)]">
+                    Selected Path:
+                  </span>
+                  <span className="text-[9px] text-[var(--theme-muted)] font-mono">
+                    (will be created if it does not exist)
+                  </span>
                 </div>
+                <input
+                  type="text"
+                  value={primaryPath}
+                  onChange={(e) => setPrimaryPath(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-2.5 py-1.5 text-xs font-mono text-[var(--theme-text)] outline-none focus:border-accent-500 transition-all"
+                />
               </div>
             </div>
+          </div>
 
-            {/* Set as Active */}
-            <div className="flex items-center gap-2.5 pt-1">
-              <input
-                type="checkbox"
-                id="set-active-checkbox"
-                checked={setActive}
-                onChange={(e) => setSetActive(e.target.checked)}
-                className="size-4 rounded border-[var(--theme-border)] text-accent-600 focus:ring-accent-500 accent-accent-600 cursor-pointer"
-              />
-              <label htmlFor="set-active-checkbox" className="text-xs text-[var(--theme-text)] cursor-pointer select-none">
-                Make this the active project immediately
-              </label>
-            </div>
+          {/* Set as Active */}
+          <div className="flex items-center gap-2.5 pt-1">
+            <input
+              type="checkbox"
+              id="set-active-checkbox"
+              checked={setActive}
+              onChange={(e) => setSetActive(e.target.checked)}
+              className="size-4 rounded border-[var(--theme-border)] text-accent-600 focus:ring-accent-500 accent-accent-600 cursor-pointer"
+            />
+            <label htmlFor="set-active-checkbox" className="text-xs text-[var(--theme-text)] cursor-pointer select-none">
+              Make this the active project immediately
+            </label>
+          </div>
 
-            {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--theme-border)]">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-                disabled={createProject.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="default"
-                size="sm"
-                disabled={isSubmitting || createProject.isPending}
-                className="min-w-28 bg-accent-600 hover:bg-accent-700 text-white font-medium"
-              >
-                {isSubmitting || createProject.isPending ? (
-                  <span className="flex items-center gap-1.5">
-                    <HugeiconsIcon icon={Loading03Icon} size={14} className="animate-spin" />
-                    Creating...
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5">
-                    <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2.2} />
-                    Create Project
-                  </span>
-                )}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
+          {/* Footer Buttons */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--theme-border)]">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              disabled={createProject.isPending || updateProject.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
+              size="sm"
+              disabled={isSubmitting || createProject.isPending || updateProject.isPending}
+              className="min-w-28 bg-accent-600 hover:bg-accent-700 text-white font-medium"
+            >
+              {isSubmitting || createProject.isPending || updateProject.isPending ? (
+                <span className="flex items-center gap-1.5">
+                  <HugeiconsIcon icon={Loading03Icon} size={14} className="animate-spin" />
+                  {isEdit ? 'Saving...' : 'Creating...'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <HugeiconsIcon
+                    icon={isEdit ? CheckmarkCircle01Icon : PlusSignIcon}
+                    size={14}
+                    strokeWidth={2.2}
+                  />
+                  {isEdit ? 'Save Changes' : 'Create Project'}
+                </span>
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
     </DialogRoot>
   )
 }

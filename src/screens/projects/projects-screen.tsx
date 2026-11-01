@@ -357,6 +357,14 @@ export function ProjectsScreen() {
                     <Button
                       size="icon-xs"
                       variant="ghost"
+                      onClick={() => setEditingProject(proj)}
+                      title="Edit project"
+                    >
+                      <HugeiconsIcon icon={Edit01Icon} size={13} />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
                       onClick={() => handleArchiveToggle(proj)}
                       title={proj.archived ? 'Restore' : 'Archive'}
                     >
@@ -381,6 +389,16 @@ export function ProjectsScreen() {
 
       {/* Creation Modal */}
       <ProjectModal open={modalOpen} onOpenChange={setModalOpen} />
+
+      {/* Edit Modal */}
+      <ProjectModal
+        open={Boolean(editingProject)}
+        onOpenChange={(open) => {
+          if (!open) setEditingProject(null)
+        }}
+        project={editingProject}
+        onUpdated={() => setEditingProject(null)}
+      />
 
       {/* Add Folder Modal */}
       {addingFolderProject && (
