@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, statSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
 import { getHermesRoot } from './claude-paths'
 
 export type ProjectFolder = {
@@ -54,26 +54,37 @@ function sqliteQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
+const dbCache = new Map<string, DatabaseSync>()
+
+function getDatabase(dbPath: string): DatabaseSync {
+  let db = dbCache.get(dbPath)
+  if (!db) {
+    db = new DatabaseSync(dbPath)
+    db.exec('PRAGMA busy_timeout = 5000;')
+    dbCache.set(dbPath, db)
+  }
+  return db
+}
+
 function runSqlite(dbPath: string, sql: string): string {
   try {
-    return execFileSync('sqlite3', [dbPath, '-json', sql], {
-      encoding: 'utf8',
-      timeout: 15_000,
-    }).trim()
+    const db = getDatabase(dbPath)
+    const rows = db.prepare(sql).all()
+    return JSON.stringify(rows)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[projects-backend] runSqlite error:', message, '\nSQL:\n', sql)
     throw new Error(`Failed to query projects.db: ${message}`)
   }
 }
 
 function runSqliteExec(dbPath: string, sql: string): void {
   try {
-    execFileSync('sqlite3', [dbPath, sql], {
-      encoding: 'utf8',
-      timeout: 15_000,
-    })
+    const db = getDatabase(dbPath)
+    db.exec(sql)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[projects-backend] runSqliteExec error:', message, '\nSQL:\n', sql)
     throw new Error(`Failed to update projects.db: ${message}`)
   }
 }
@@ -430,6 +441,7 @@ export function updateProject(
     icon?: string | null
     color?: string | null
     board_slug?: string | null
+    set_active?: boolean
   },
   dbPath = getProjectsDbPath(),
 ): Project {
@@ -482,6 +494,16 @@ export function updateProject(
   if (setClauses.length > 0) {
     statements.push(
       `UPDATE projects SET ${setClauses.join(', ')} WHERE id = ${sqliteQuote(proj.id)};`,
+    )
+  }
+
+  if (updates.set_active === true) {
+    statements.push(
+      `INSERT INTO project_meta (key, value) VALUES ('active_id', ${sqliteQuote(proj.id)}) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+    )
+  } else if (updates.set_active === false) {
+    statements.push(
+      `DELETE FROM project_meta WHERE key = 'active_id' AND value = ${sqliteQuote(proj.id)};`,
     )
   }
 

@@ -25,7 +25,6 @@ import { hapticTap } from '@/lib/haptics'
 import {
   useCreateProject,
   useUpdateProject,
-  useSetActiveProject,
   useCreateWorkspaceFolder,
   useProjects,
   useWorkspaceFolders,
@@ -73,7 +72,6 @@ export function ProjectModal({
   const { projects: existingProjects } = useProjects({ includeArchived: true })
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
-  const setActiveProject = useSetActiveProject()
   const createFolder = useCreateWorkspaceFolder()
   const { data: folderItems, isLoading: loadingFolders } = useWorkspaceFolders(browseSubpath)
 
@@ -205,13 +203,8 @@ export function ProjectModal({
           name: name.trim(),
           description: description.trim() || null,
           primary_path: primaryPath.trim(),
+          set_active: setActive,
         })
-
-        if (setActive && !project.is_active) {
-          await setActiveProject.mutateAsync(project.id)
-        } else if (!setActive && project.is_active) {
-          await setActiveProject.mutateAsync(null)
-        }
 
         toast.success(`Project "${updated.name}" updated successfully`)
         onUpdated?.(updated)

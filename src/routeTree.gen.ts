@@ -116,6 +116,7 @@ import { Route as ApiChatEventsRouteImport } from './routes/api/chat-events'
 import { Route as ApiAuthCheckRouteImport } from './routes/api/auth-check'
 import { Route as ApiAuthRouteImport } from './routes/api/auth'
 import { Route as ApiArtifactsRouteImport } from './routes/api/artifacts'
+import { Route as ApiAppearanceRouteImport } from './routes/api/appearance'
 import { Route as ApiAgentBusRouteImport } from './routes/api/agent-bus'
 import { Route as ChatHarnessRuntimeIdRouteImport } from './routes/chat/harness/$runtimeId'
 import { Route as ChatExternalConversationIdRouteImport } from './routes/chat/external/$conversationId'
@@ -716,6 +717,11 @@ const ApiArtifactsRoute = ApiArtifactsRouteImport.update({
   path: '/api/artifacts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAppearanceRoute = ApiAppearanceRouteImport.update({
+  id: '/api/appearance',
+  path: '/api/appearance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAgentBusRoute = ApiAgentBusRouteImport.update({
   id: '/api/agent-bus',
   path: '/api/agent-bus',
@@ -1064,6 +1070,7 @@ export interface FileRoutesByFullPath {
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
+  '/api/appearance': typeof ApiAppearanceRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
   '/api/auth': typeof ApiAuthRoute
   '/api/auth-check': typeof ApiAuthCheckRoute
@@ -1234,6 +1241,7 @@ export interface FileRoutesByTo {
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
+  '/api/appearance': typeof ApiAppearanceRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
   '/api/auth': typeof ApiAuthRoute
   '/api/auth-check': typeof ApiAuthCheckRoute
@@ -1406,6 +1414,7 @@ export interface FileRoutesById {
   '/vt-capital': typeof VtCapitalRoute
   '/world': typeof WorldRoute
   '/api/agent-bus': typeof ApiAgentBusRoute
+  '/api/appearance': typeof ApiAppearanceRoute
   '/api/artifacts': typeof ApiArtifactsRouteWithChildren
   '/api/auth': typeof ApiAuthRoute
   '/api/auth-check': typeof ApiAuthCheckRoute
@@ -1579,6 +1588,7 @@ export interface FileRouteTypes {
     | '/vt-capital'
     | '/world'
     | '/api/agent-bus'
+    | '/api/appearance'
     | '/api/artifacts'
     | '/api/auth'
     | '/api/auth-check'
@@ -1749,6 +1759,7 @@ export interface FileRouteTypes {
     | '/vt-capital'
     | '/world'
     | '/api/agent-bus'
+    | '/api/appearance'
     | '/api/artifacts'
     | '/api/auth'
     | '/api/auth-check'
@@ -1920,6 +1931,7 @@ export interface FileRouteTypes {
     | '/vt-capital'
     | '/world'
     | '/api/agent-bus'
+    | '/api/appearance'
     | '/api/artifacts'
     | '/api/auth'
     | '/api/auth-check'
@@ -2092,6 +2104,7 @@ export interface RootRouteChildren {
   VtCapitalRoute: typeof VtCapitalRoute
   WorldRoute: typeof WorldRoute
   ApiAgentBusRoute: typeof ApiAgentBusRoute
+  ApiAppearanceRoute: typeof ApiAppearanceRoute
   ApiArtifactsRoute: typeof ApiArtifactsRouteWithChildren
   ApiAuthRoute: typeof ApiAuthRoute
   ApiAuthCheckRoute: typeof ApiAuthCheckRoute
@@ -2955,6 +2968,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiArtifactsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/appearance': {
+      id: '/api/appearance'
+      path: '/api/appearance'
+      fullPath: '/api/appearance'
+      preLoaderRoute: typeof ApiAppearanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/agent-bus': {
       id: '/api/agent-bus'
       path: '/api/agent-bus'
@@ -3661,6 +3681,7 @@ const rootRouteChildren: RootRouteChildren = {
   VtCapitalRoute: VtCapitalRoute,
   WorldRoute: WorldRoute,
   ApiAgentBusRoute: ApiAgentBusRoute,
+  ApiAppearanceRoute: ApiAppearanceRoute,
   ApiArtifactsRoute: ApiArtifactsRouteWithChildren,
   ApiAuthRoute: ApiAuthRoute,
   ApiAuthCheckRoute: ApiAuthCheckRoute,

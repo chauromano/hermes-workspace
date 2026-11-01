@@ -75,7 +75,7 @@ export const Route = createFileRoute('/api/projects')({
           }
 
           if (action === 'update') {
-            const ident = typeof body.id === 'string' ? body.id : ''
+            const ident = typeof body.id === 'string' ? body.id.trim() : ''
             if (!ident) {
               return jsonResponse({ error: 'Project ID is required' }, 400)
             }
@@ -106,6 +106,7 @@ export const Route = createFileRoute('/api/projects')({
                   : typeof body.board_slug === 'string'
                     ? body.board_slug
                     : undefined,
+              set_active: typeof body.set_active === 'boolean' ? body.set_active : undefined,
             })
             return jsonResponse({ success: true, project })
           }
@@ -186,6 +187,7 @@ export const Route = createFileRoute('/api/projects')({
           const project = createProject(input)
           return jsonResponse({ success: true, project }, 201)
         } catch (err: unknown) {
+          console.error('[api/projects POST error]:', err)
           const message = err instanceof Error ? err.message : String(err)
           return jsonResponse({ error: message }, 500)
         }

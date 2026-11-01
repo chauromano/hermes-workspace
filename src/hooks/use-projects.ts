@@ -180,6 +180,7 @@ export function useUpdateProject() {
       icon?: string | null
       color?: string | null
       board_slug?: string | null
+      set_active?: boolean
     }): Promise<Project> => {
       const res = await fetch('/api/projects', {
         method: 'POST',
