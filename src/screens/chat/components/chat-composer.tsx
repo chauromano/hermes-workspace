@@ -64,6 +64,7 @@ import {
 } from '@/hooks/use-search-modal'
 import { setLocalModelOverride } from '@/screens/chat/local-model-override'
 import { formatModelName } from '@/lib/format-model-name'
+import { ProjectSessionChip } from '@/components/projects/project-session-chip'
 
 type ChatComposerAttachment = {
   id: string
@@ -98,6 +99,8 @@ type ChatComposerProps = {
   thinkingLevel?: ThinkingLevel
   /** Called when user changes thinking level */
   onThinkingLevelChange?: (level: ThinkingLevel) => void
+  /** Called when user changes model */
+  onModelChange?: (model: string) => void
   onAbort?: () => void
   /** Embedded inside another surface (e.g. Operations card), so mobile composer
    * must stay inline instead of docking fixed to the viewport bottom. */
@@ -891,6 +894,7 @@ function ChatComposerComponent({
   webSearchEnabled,
   thinkingLevel: externalThinkingLevel,
   onThinkingLevelChange,
+  onModelChange,
   onAbort,
   embedded = false,
   hideModelSelector = false,
@@ -1185,6 +1189,7 @@ function ChatComposerComponent({
   // Drives both the composer label and the model passed to startStreaming.
   // Replaces an earlier flow that PATCHed ~/.hermes/config.yaml — that path
   // 404s and would clobber the global default for every channel anyway.
+  const [composerModelOverride, setComposerModelOverride] = useState<string>('')
   const persistedSessionModel = useSessionModelStore((s) =>
     s.getModel(sessionKey),
   )
@@ -1226,16 +1231,29 @@ function ChatComposerComponent({
       }
       setModelNotice(null)
       const resolved = getResolvedModelKey(model, provider)
-      // Per-session, browser-local persistence. No global config write —
-      // picking a model here only affects this chat. The actual model is
-      // passed on each request via the chat-completion `model` field.
+      setComposerModelOverride(resolved)
       setPersistedSessionModel(normalizedSessionKey || 'draft', resolved)
+      if (normalizedSessionKey && normalizedSessionKey !== 'draft') {
+        setPersistedSessionModel('draft', resolved)
+      }
+      if (currentSession?.id) {
+        setPersistedSessionModel(currentSession.id, resolved)
+      }
+      if (currentSession?.key) {
+        setPersistedSessionModel(currentSession.key, resolved)
+      }
+      if (onModelChange) {
+        onModelChange(resolved)
+      }
       setIsModelMenuOpen(false)
     },
     [
+      currentSession?.id,
+      currentSession?.key,
       gatewayModeQuery.data,
       isAgyMode,
       isAgyModelId,
+      onModelChange,
       sessionKey,
       setPersistedSessionModel,
       zeroForkModelInfoFlags,
@@ -1299,6 +1317,9 @@ function ChatComposerComponent({
     persistedSessionModel || currentModel || configuredModel || '⚕ Hermes Agent'
   const modelButtonLabel = useMemo(() => {
     if (isAgyMode) {
+      if (composerModelOverride && isAgyModelId(composerModelOverride)) {
+        return composerModelOverride
+      }
       if (persistedSessionModel && isAgyModelId(persistedSessionModel)) {
         return persistedSessionModel
       }
@@ -1308,10 +1329,11 @@ function ChatComposerComponent({
       if (currentModel && isAgyModelId(currentModel)) {
         return currentModel
       }
-      return 'antigravity/gemini-3.8-flash-high'
+      return 'antigravity/gemini-3.8-flash'
     }
     return rawModelLabel
   }, [
+    composerModelOverride,
     isAgyMode,
     persistedSessionModel,
     currentSession?.model,
@@ -2502,18 +2524,16 @@ function ChatComposerComponent({
                   </div>
                 )}
 
-                {/* 1b. Locked Workspace Folder Pill for Antigravity Session */}
-                {isAntigravitySession && lockedSessionFolder && (
-                  <div
-                    className="inline-flex h-7 md:h-8 max-w-[8rem] sm:max-w-[11rem] items-center gap-1 md:gap-1.5 rounded-full bg-primary-100/70 dark:bg-neutral-800/80 border border-primary-200/60 dark:border-neutral-700/60 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-primary-700 dark:text-neutral-300 shrink-0 select-none"
-                    title={`Workspace folder locked to: ${currentSession?.cwd || lockedSessionFolder}`}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary-500 shrink-0" aria-hidden="true">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    <span className="truncate">{lockedSessionFolder}</span>
-                  </div>
+                {/* 1b. Project Selector Chip for Antigravity Session */}
+                {isAntigravitySession && (
+                  <ProjectSessionChip
+                    sessionKey={sessionKey || currentSession?.key || currentSession?.id}
+                    projectId={currentSession?.projectId}
+                    projectName={lockedSessionFolder}
+                    source="antigravity"
+                    compact
+                    className="h-7 md:h-8 shrink-0"
+                  />
                 )}
 
                           <div
@@ -2648,15 +2668,35 @@ function ChatComposerComponent({
                                           return { id: mId, name: mName, provider: mProvider, isLocal }
                                         })
                                         .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
+
+                                      let displayModels = parsed
+                                      if (isAgyMode) {
+                                        const seen = new Set<string>()
+                                        const deduped: typeof parsed = []
+                                        for (const m of parsed) {
+                                          const rawBase = m.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                                          if (!seen.has(rawBase)) {
+                                            seen.add(rawBase)
+                                            deduped.push({
+                                              id: `antigravity/${rawBase}`,
+                                              name: formatModelName(rawBase),
+                                              provider: 'antigravity',
+                                              isLocal: false,
+                                            })
+                                          }
+                                        }
+                                        displayModels = deduped
+                                      }
+
                                       const query = modelSearchQuery.trim().toLowerCase()
                                       const filtered = query
-                                        ? parsed.filter(
+                                        ? displayModels.filter(
                                             (m) =>
                                               m.name.toLowerCase().includes(query) ||
                                               m.id.toLowerCase().includes(query) ||
                                               m.provider.toLowerCase().includes(query),
                                           )
-                                        : parsed
+                                        : displayModels
                                       if (filtered.length === 0) {
                                         return (
                                           <div className="p-4 text-center text-xs text-neutral-500">
@@ -2690,11 +2730,15 @@ function ChatComposerComponent({
                                         return !hasActive
                                       }
                                       const renderEntry = (entry: (typeof parsed)[0]) => {
-                                        const isActive = isCurrentModel(
-                                          activeModelId,
-                                          entry.id,
-                                          entry.provider,
-                                        )
+                                        const activeRawBase = (modelButtonLabel || '').replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                                        const entryRawBase = entry.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                                        const isActive = isAgyMode
+                                          ? activeRawBase === entryRawBase
+                                          : isCurrentModel(
+                                              activeModelId,
+                                              entry.id,
+                                              entry.provider,
+                                            )
                                         return (
                                           <div key={entry.id} className="group relative flex items-center">
                                             <button
@@ -3001,18 +3045,37 @@ function ChatComposerComponent({
                             })
                             .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
 
+                          let displayModels = parsed
+                          if (isAgyMode) {
+                            const seen = new Set<string>()
+                            const deduped: typeof parsed = []
+                            for (const m of parsed) {
+                              const rawBase = m.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                              if (!seen.has(rawBase)) {
+                                seen.add(rawBase)
+                                deduped.push({
+                                  id: `antigravity/${rawBase}`,
+                                  name: formatModelName(rawBase),
+                                  provider: 'antigravity',
+                                  isLocal: false,
+                                })
+                              }
+                            }
+                            displayModels = deduped
+                          }
+
                           // Providers list for quick pill filter
                           const providerNames = Array.from(new Set(parsed.map((m) => m.provider))).filter(Boolean).sort()
 
                           const query = modelSearchQuery.trim().toLowerCase()
                           let filtered = query
-                            ? parsed.filter(
+                            ? displayModels.filter(
                                 (m) =>
                                   m.name.toLowerCase().includes(query) ||
                                   m.id.toLowerCase().includes(query) ||
                                   m.provider.toLowerCase().includes(query),
                               )
-                            : parsed
+                            : displayModels
 
                           if (mobileProviderFilter !== 'all') {
                             filtered = filtered.filter((m) => m.provider === mobileProviderFilter)
@@ -3036,11 +3099,15 @@ function ChatComposerComponent({
                           }
 
                           const renderEntry = (entry: (typeof parsed)[0]) => {
-                            const isActive = isCurrentModel(
-                              activeModelId,
-                              entry.id,
-                              entry.provider,
-                            )
+                            const activeRawBase = (modelButtonLabel || '').replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                            const entryRawBase = entry.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                            const isActive = isAgyMode
+                              ? activeRawBase === entryRawBase
+                              : isCurrentModel(
+                                  activeModelId,
+                                  entry.id,
+                                  entry.provider,
+                                )
                             const onSelect = (e: React.SyntheticEvent) => {
                               e.preventDefault()
                               e.stopPropagation()

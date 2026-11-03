@@ -616,7 +616,7 @@ export const Route = createFileRoute('/api/send-stream')({
                   effectiveAgyModel = existingSessionModel
                 }
                 if (!effectiveAgyModel) {
-                  effectiveAgyModel = 'antigravity/gemini-3.8-flash-high'
+                  effectiveAgyModel = 'antigravity/gemini-3.8-flash'
                 }
 
                 let currentSessionKey = sessionKey

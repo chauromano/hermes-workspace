@@ -541,6 +541,7 @@ export function ChatScreen({
     return stored === null ? true : stored === 'true'
   })
   const { isMobile } = useChatMobile(queryClient)
+  const [sessionModelOverride, setSessionModelOverride] = useState<string>('')
   const mobileKeyboardInset = useWorkspaceStore((s) => s.mobileKeyboardInset)
   const mobileComposerFocused = useWorkspaceStore(
     (s) => s.mobileComposerFocused,
@@ -1092,9 +1093,9 @@ export function ChatScreen({
       l.includes('gpt-oss-120b')
     )
   }
-  const baseModel = _localModelOverride || sessionModel || gatewayModel
+  const baseModel = sessionModelOverride || _localModelOverride || sessionModel || gatewayModel
   const currentModel = isAntigravitySession
-    ? (isAgyModel(baseModel) ? baseModel : (activeSession?.model || 'antigravity/gemini-3.8-flash-high'))
+    ? (isAgyModel(baseModel) ? baseModel : (activeSession?.model || 'antigravity/gemini-3.8-flash'))
     : baseModel
 
   // Ref so sendMessage can always read latest thinkingLevel without being in deps
@@ -2983,6 +2984,7 @@ export function ChatScreen({
               focusKey={`${isNewChat ? 'new' : activeFriendlyId}:${activeCanonicalKey ?? ''}`}
               thinkingLevel={thinkingLevel}
               onThinkingLevelChange={handleThinkingLevelChange}
+              onModelChange={setSessionModelOverride}
             />
           ) : null}
         </main>

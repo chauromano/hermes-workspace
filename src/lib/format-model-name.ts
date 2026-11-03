@@ -32,16 +32,27 @@ const MODEL_MAP: Record<string, string> = {
   'MiniMax-M3': 'MiniMax M3',
   'MiniMax-M2.7': 'MiniMax M2.7',
   'MiniMax-M2.7-Lightning': 'MiniMax M2.7 Lightning',
-  'gemini-4-argon-high': 'Gemini 3.1 Pro (High)',
-  'gemini-4-argon-low': 'Gemini 3.1 Pro (Low)',
-  'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
-  'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
-  'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
+  'gemini-4-argon': 'Gemini 4 Argon',
+  'gemini-4-argon-high': 'Gemini 4 Argon',
+  'gemini-4-argon-medium': 'Gemini 4 Argon',
+  'gemini-4-argon-low': 'Gemini 4 Argon',
   'gemini-3.8-flash': 'Gemini 3.8 Flash',
+  'gemini-3.8-flash-high': 'Gemini 3.8 Flash',
+  'gemini-3.8-flash-medium': 'Gemini 3.8 Flash',
+  'gemini-3.8-flash-low': 'Gemini 3.8 Flash',
+  'claude-opus-5-5': 'Claude Opus 5.5',
+  'claude-opus-5-5-high': 'Claude Opus 5.5',
+  'claude-opus-5-5-medium': 'Claude Opus 5.5',
+  'claude-opus-5-5-low': 'Claude Opus 5.5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-sonnet-5-5-high': 'Claude Sonnet 5.5',
+  'claude-sonnet-5-5-medium': 'Claude Sonnet 5.5',
+  'claude-sonnet-5-5-low': 'Claude Sonnet 5.5',
+  'gpt-oss-120b': 'GPT-OSS 120B',
+  'gpt-oss-120b-medium': 'GPT-OSS 120B',
   'gemini-3-flash-agent': 'Gemini 3 Flash',
   'claude-sonnet-4-6-thinking': 'Claude Sonnet 4.6 (Thinking)',
   'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
-  'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -62,21 +73,23 @@ export function formatModelName(raw: string | undefined | null): string {
 
   // Split provider/model
   const slashIdx = raw.indexOf('/')
-  if (slashIdx === -1) {
-    // No provider prefix — check model map
-    return MODEL_MAP[raw] || titleCase(raw)
-  }
+  const provider = slashIdx === -1 ? '' : raw.slice(0, slashIdx)
+  const model = slashIdx === -1 ? raw : raw.slice(slashIdx + 1)
+  const cleanModel = model.replace(/-(low|medium|high)$/, '')
 
-  const provider = raw.slice(0, slashIdx)
-  const model = raw.slice(slashIdx + 1)
-
-  // Check model map first
+  // Check model map first (with or without effort suffix)
   if (MODEL_MAP[model]) {
-    // Special case: codex provider
     if (provider === 'openai-codex' && !MODEL_MAP[model].startsWith('Codex')) {
       return `Codex (${MODEL_MAP[model]})`
     }
     return MODEL_MAP[model]
+  }
+
+  if (MODEL_MAP[cleanModel]) {
+    if (provider === 'openai-codex' && !MODEL_MAP[cleanModel].startsWith('Codex')) {
+      return `Codex (${MODEL_MAP[cleanModel]})`
+    }
+    return MODEL_MAP[cleanModel]
   }
 
   // Local models (ollama, lmstudio)
