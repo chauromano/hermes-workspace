@@ -4,24 +4,29 @@ import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { requireJsonContentType } from '../../server/rate-limit'
 import {
-  pinServerSession,
   readPinnedSessions,
   toggleServerPinnedSession,
-  unpinServerSession,
   writePinnedSessions,
 } from '../../server/pinned-sessions-store'
 import {
-  SESSIONS_API_UNAVAILABLE_MESSAGE,
   createSession,
   deleteSession,
   ensureGatewayProbed,
-  getGatewayCapabilities,
   listSessions,
   toSessionSummary,
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
-import { findProjectForPath, getSessionCwdMap, extractPathFromDirective, listProjects, setSessionProject, readSessionsFromStateDb } from '../../server/projects-backend'
+import {
+  findProjectForPath,
+  getSessionCwdMap,
+  extractPathFromDirective,
+  listProjects,
+  setSessionProject,
+  readSessionsFromStateDb,
+  getSessionActivityMetaMap,
+} from '../../server/projects-backend'
+import { listAllActiveRuns } from '../../server/run-store'
 import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
@@ -29,42 +34,93 @@ import {
   listLocalSessions,
   updateLocalSessionTitle,
 } from '../../server/local-session-store'
+import {
+  deleteAntigravitySession,
+  isAntigravitySession,
+  listAntigravitySessions,
+  updateAntigravitySession,
+} from '../../server/antigravity-bridge'
 
 export const Route = createFileRoute('/api/sessions')({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Auth check
         if (!isAuthenticated(request)) {
           return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
         }
 
-        // Trigger background reprobe without blocking the request
         void ensureGatewayProbed().catch(() => {})
 
         try {
           let gatewaySessions: any[] = []
 
-          // 1. Try listing sessions via gateway API (with 2.5s timeout)
-          try {
-            const listPromise = listSessions(50, 0)
-            const timeoutPromise = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('Gateway listSessions timeout')), 2500)
-            )
-            const sessions = await Promise.race([listPromise, timeoutPromise])
-            gatewaySessions = (sessions || []).map(toSessionSummary)
-          } catch {}
+          // Fetch Hermes gateway sessions and Antigravity bridge sessions in parallel
+          const [hermesResult, agySessions] = await Promise.all([
+            (async () => {
+              try {
+                const listPromise = listSessions(200, 0)
+                const timeoutPromise = new Promise<never>((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error('Gateway listSessions timeout')),
+                    2500,
+                  ),
+                )
+                const sessions = await Promise.race([
+                  listPromise,
+                  timeoutPromise,
+                ])
+                return (sessions || []).map(toSessionSummary)
+              } catch {
+                return []
+              }
+            })(),
+            listAntigravitySessions(250).catch(() => []),
+          ])
 
-          // 2. If gateway failed, timed out, or returned 0 items, read directly from state.db
-          if (gatewaySessions.length === 0) {
-            gatewaySessions = readSessionsFromStateDb(50) as any[]
+          gatewaySessions = hermesResult
+          const gatewayIds = new Set(
+            gatewaySessions.map((s: any) => s.key || s.id),
+          )
+          // Merge all profile & root state.db sessions so sessions across every Hermes profile are visible
+          const dbSessions = readSessionsFromStateDb(250) as any[]
+          const existingMap = new Map<string, any>()
+          for (const gs of gatewaySessions) {
+            const sid = gs.key || gs.id
+            if (sid) existingMap.set(sid, gs)
+          }
+          for (const dbs of dbSessions) {
+            const sid = dbs.key || dbs.id
+            if (sid) {
+              if (!gatewayIds.has(sid)) {
+                gatewayIds.add(sid)
+                gatewaySessions.push(dbs)
+              } else {
+                const existing = existingMap.get(sid)
+                if (existing) {
+                  if (!existing.cwd && dbs.cwd) existing.cwd = dbs.cwd
+                  if (!existing.agentProfile && dbs.agentProfile) {
+                    existing.agentProfile = dbs.agentProfile
+                  }
+                }
+              }
+            }
+          }
+
+          // Merge Antigravity sessions
+          for (const asess of agySessions) {
+            if (!gatewayIds.has(asess.id)) {
+              gatewayIds.add(asess.id)
+              gatewaySessions.push({
+                ...asess,
+              })
+            }
           }
 
           // Merge local portable sessions (Ollama, Atomic Chat, etc.)
           const localSessions = listLocalSessions()
-          const gatewayIds = new Set(gatewaySessions.map((s: any) => s.key || s.id))
           for (const ls of localSessions) {
             if (!gatewayIds.has(ls.id)) {
+              gatewayIds.add(ls.id)
               gatewaySessions.push({
                 key: ls.id,
                 id: ls.id,
@@ -91,31 +147,75 @@ export const Route = createFileRoute('/api/sessions')({
               pinnedSet.has(s.id)
           }
 
-          const sessionIds = gatewaySessions.map((s: any) => String(s.key || s.friendlyId || s.id))
-          const cwdMap = getSessionCwdMap(sessionIds)
-          const { projects: allProjects } = listProjects({ includeArchived: true })
+          const hermesSessionIds = gatewaySessions
+            .filter((s: any) => s.source !== 'antigravity')
+            .map((s: any) => String(s.key || s.friendlyId || s.id))
+          const cwdMap = getSessionCwdMap(hermesSessionIds)
+          const activityMap = getSessionActivityMetaMap(hermesSessionIds)
+          const activeRuns = await Promise.race([
+            listAllActiveRuns().catch(() => []),
+            new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 500)),
+          ])
+          const activeRunSessionIds = new Set(
+            activeRuns
+              .filter((r) => r.status === 'accepted' || r.status === 'active')
+              .map((r) => r.sessionKey),
+          )
+          const { projects: allProjects } = listProjects({
+            includeArchived: true,
+          })
 
           for (const s of gatewaySessions as any[]) {
             const sid = String(s.key || s.friendlyId || s.id)
-            const cwd = s.cwd || cwdMap.get(sid) || extractPathFromDirective(s.preview) || null
+            const cwd =
+              s.cwd ||
+              cwdMap.get(sid) ||
+              extractPathFromDirective(s.preview) ||
+              null
             const project = findProjectForPath(cwd, allProjects)
             s.cwd = cwd
             s.projectId = project?.id ?? null
             s.projectName = project?.name ?? null
             s.projectSlug = project?.slug ?? null
+
+            const actMeta = activityMap.get(sid)
+            s.lastPromptAt =
+              actMeta?.lastPromptAt ??
+              s.lastPromptAt ??
+              s.updatedAt ??
+              s.startedAt ??
+              null
+            const isRunActive =
+              activeRunSessionIds.has(sid) ||
+              Boolean(actMeta?.hasActiveLease) ||
+              s.status === 'active'
+            s.status = isRunActive ? 'active' : 'idle'
           }
+
+          gatewaySessions.sort(
+            (a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0),
+          )
 
           return json({ sessions: gatewaySessions, pinnedSessionKeys })
         } catch (err) {
-          // Robust fallback to state.db even on unexpected processing errors
           try {
-            const fallbackSessions = readSessionsFromStateDb(50) as any[]
-            const { projects: allProjects } = listProjects({ includeArchived: true })
+            const fallbackSessions = readSessionsFromStateDb(200) as any[]
+            const fallbackIds = fallbackSessions.map((s: any) =>
+              String(s.key || s.friendlyId || s.id),
+            )
+            const activityMap = getSessionActivityMetaMap(fallbackIds)
+            const { projects: allProjects } = listProjects({
+              includeArchived: true,
+            })
             for (const s of fallbackSessions) {
               const project = findProjectForPath(s.cwd, allProjects)
               s.projectId = project?.id ?? null
               s.projectName = project?.name ?? null
               s.projectSlug = project?.slug ?? null
+              const actMeta = activityMap.get(String(s.id))
+              s.lastPromptAt =
+                actMeta?.lastPromptAt ?? s.updatedAt ?? s.startedAt ?? null
+              s.status = actMeta?.hasActiveLease ? 'active' : 'idle'
             }
             return json({ sessions: fallbackSessions, pinnedSessionKeys: [] })
           } catch {}
@@ -157,7 +257,9 @@ export const Route = createFileRoute('/api/sessions')({
           }
 
           if (Array.isArray(body.pinnedSessionKeys)) {
-            const finalKeys = writePinnedSessions(body.pinnedSessionKeys as string[])
+            const finalKeys = writePinnedSessions(
+              body.pinnedSessionKeys as string[],
+            )
             return json({ ok: true, pinnedSessionKeys: finalKeys })
           }
 
@@ -265,11 +367,24 @@ export const Route = createFileRoute('/api/sessions')({
             )
           }
 
+          const isAgy = await isAntigravitySession(sessionKey)
+
           if (body.projectId !== undefined) {
-            const targetProjectId = typeof body.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : null
+            const targetProjectId =
+              typeof body.projectId === 'string' && body.projectId.trim()
+                ? body.projectId.trim()
+                : null
             const projectRes = setSessionProject(sessionKey, targetProjectId)
+            if (isAgy && projectRes.cwd) {
+              await updateAntigravitySession(sessionKey, {
+                cwd: projectRes.cwd,
+              })
+            }
             if (projectRes.cwd) {
-              void saveWorkspaceSelection({ path: projectRes.cwd, name: projectRes.projectName }).catch(() => {})
+              void saveWorkspaceSelection({
+                path: projectRes.cwd,
+                name: projectRes.projectName,
+              }).catch(() => {})
             }
             return json({
               ok: true,
@@ -281,6 +396,28 @@ export const Route = createFileRoute('/api/sessions')({
                 ...projectRes,
               },
               updated: true,
+            })
+          }
+
+          if (isAgy) {
+            if (label) {
+              await updateAntigravitySession(sessionKey, { title: label })
+            }
+            return json({
+              ok: true,
+              sessionKey,
+              friendlyId: rawFriendlyId || sessionKey,
+              entry: {
+                key: sessionKey,
+                id: sessionKey,
+                title: label || sessionKey,
+                label: label || sessionKey,
+                derivedTitle: label || sessionKey,
+                updatedAt: Date.now(),
+                source: 'antigravity',
+              },
+              updated: true,
+              source: 'antigravity',
             })
           }
 
@@ -359,8 +496,11 @@ export const Route = createFileRoute('/api/sessions')({
           )
         }
 
-        // Local sessions live in the workspace portable store, not the
-        // gateway. Delete them locally without hitting the gateway.
+        if (await isAntigravitySession(sessionKey)) {
+          await deleteAntigravitySession(sessionKey)
+          return json({ ok: true, sessionKey, source: 'antigravity' })
+        }
+
         if (getLocalSession(sessionKey)) {
           deleteLocalSession(sessionKey)
           return json({ ok: true, sessionKey, source: 'local' })

@@ -64,7 +64,6 @@ import {
 import { applyTheme, useSettingsStore } from '@/hooks/use-settings'
 import { fetchExternalRuntimes } from '@/lib/external-harness-api'
 import { useHarnessVisibility } from '@/screens/chat/harness-visibility'
-import { ProjectSwitcher } from '@/components/projects/project-switcher'
 
 type WorkspaceStats = Record<string, unknown>
 
@@ -1161,11 +1160,6 @@ function ChatSidebarComponent({
         </TooltipProvider>
       </motion.div>
 
-      {/* ── Active Project Switcher ─────────────────────────────────── */}
-      <div className="px-2 pb-1.5">
-        <ProjectSwitcher variant="sidebar" isCollapsed={isVisuallyCollapsed} />
-      </div>
-
       {/* ── Search (ChatGPT-style, above sections) ─────────────────── */}
       <div className="px-2 pb-1">
         <motion.div
@@ -1260,7 +1254,6 @@ function ChatSidebarComponent({
         {/* Sessions list */}
         <div
           className={cn('shrink-0 mt-1', isMobile && 'order-1')}
-          hidden={!showNativeSessions}
         >
           <AnimatePresence initial={false}>
             {!isVisuallyCollapsed && (
@@ -1427,6 +1420,10 @@ function areSessionsEqual(
     if (prev.title !== next.title) return false
     if (prev.derivedTitle !== next.derivedTitle) return false
     if (prev.updatedAt !== next.updatedAt) return false
+    if (prev.lastPromptAt !== next.lastPromptAt) return false
+    if (prev.projectId !== next.projectId) return false
+    if (prev.projectName !== next.projectName) return false
+    if (prev.status !== next.status) return false
     if (prev.titleStatus !== next.titleStatus) return false
     if (prev.titleSource !== next.titleSource) return false
     if (prev.titleError !== next.titleError) return false

@@ -97,6 +97,11 @@ export type SessionSummary = {
   projectId?: string | null
   projectName?: string | null
   projectSlug?: string | null
+  lastPromptAt?: number | null
+  status?: 'active' | 'idle' | 'blocked' | string
+  source?: string | null
+  surface?: string | null
+  model?: string | null
 }
 
 export type SessionListResponse = {
@@ -125,6 +130,11 @@ export type SessionMeta = {
   projectId?: string | null
   projectName?: string | null
   projectSlug?: string | null
+  lastPromptAt?: number | null
+  status?: 'active' | 'idle' | 'blocked' | string
+  source?: string | null
+  surface?: string | null
+  model?: string | null
 }
 
 export type PathsPayload = {

@@ -28,6 +28,8 @@ import {
 } from './chat-composer-model-switch'
 import { ContextBar } from './context-bar'
 import type { CSSProperties, Ref } from 'react'
+import type { SessionMeta } from '../types'
+import { chatQueryKeys, fetchSessions } from '../chat-queries'
 
 import type { ModelCatalogEntry, ModelSwitchResponse } from '@/lib/model-types'
 import type {
@@ -85,6 +87,7 @@ type ChatComposerProps = {
   isLoading: boolean
   disabled: boolean
   sessionKey?: string
+  session?: SessionMeta | null
   wrapperRef?: Ref<HTMLDivElement>
   composerRef?: Ref<ChatComposerHandle>
   focusKey?: string
@@ -871,6 +874,7 @@ function ChatComposerComponent({
   isLoading,
   disabled,
   sessionKey,
+  session,
   wrapperRef,
   composerRef,
   focusKey,
@@ -921,10 +925,14 @@ function ChatComposerComponent({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false)
-  const [isControlsMenuOpen, setIsControlsMenuOpen] = useState(false)
+  const [isAgyModeMenuOpen, setIsAgyModeMenuOpen] = useState(false)
+  const [agyMode, setAgyMode] = useState<'auto' | 'accept_edits' | 'plan'>(() => {
+    if (typeof window === 'undefined') return 'auto'
+    const saved = window.localStorage.getItem('hermes-agy-mode')
+    return saved === 'accept_edits' || saved === 'plan' ? saved : 'auto'
+  })
   const [isProviderSwitcherExpanded, setIsProviderSwitcherExpanded] =
     useState(false)
-  const [isMobileActionsMenuOpen, setIsMobileActionsMenuOpen] = useState(false)
   const [isWebSearchMode, _setIsWebSearchMode] = useState(false)
   const [isSlashMenuDismissed, setIsSlashMenuDismissed] = useState(false)
   const [modelNotice, setModelNotice] = useState<ModelSwitchNotice | null>(null)
@@ -955,7 +963,7 @@ function ChatComposerComponent({
   const modelSelectorRef = useRef<HTMLDivElement | null>(null)
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null)
-  const controlsMenuRef = useRef<HTMLDivElement | null>(null)
+  const agyModeMenuRef = useRef<HTMLDivElement | null>(null)
   const composerWrapperRef = useRef<HTMLDivElement | null>(null)
   const focusFrameRef = useRef<number | null>(null)
 
@@ -1106,6 +1114,72 @@ function ChatComposerComponent({
   // Phase 4.2: (pinned model tracking kept for future use)
   void modelsQuery.data
 
+  const sessionsQuery = useQuery({
+    queryKey: chatQueryKeys.sessions,
+    queryFn: fetchSessions,
+    staleTime: 5_000,
+  })
+
+  const currentSession =
+    session ??
+    (sessionKey
+      ? sessionsQuery.data?.find(
+          (s) => s.key === sessionKey || s.friendlyId === sessionKey,
+        )
+      : null)
+
+  const isAntigravitySession = Boolean(
+    currentSession?.source === 'antigravity' ||
+      (typeof sessionKey === 'string' && sessionKey.startsWith('agy_')) ||
+      (typeof sessionKey === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          sessionKey,
+        ) &&
+        (currentSession ? currentSession.source === 'antigravity' : true)),
+  )
+
+  const isAgyModelId = useCallback((id: string, prov?: string) => {
+    const p = (prov || '').toLowerCase()
+    if (p === 'antigravity' || p === 'google-antigravity') return true
+    const lower = (id || '').toLowerCase()
+    return (
+      lower.startsWith('antigravity/') ||
+      lower.startsWith('google-antigravity/') ||
+      lower.includes('gemini-4-argon') ||
+      lower.includes('gemini-3.8-flash') ||
+      lower.includes('claude-opus-5-5') ||
+      lower.includes('claude-sonnet-5-5') ||
+      lower.includes('gpt-oss-120b')
+    )
+  }, [])
+
+  const rawActiveProfileName =
+    profilesQuery.data?.activeProfile ||
+    profilesQuery.data?.profiles?.find((profile) => profile.active)?.name ||
+    'default'
+  const activeProfileName = isAntigravitySession
+    ? 'antigravity'
+    : rawActiveProfileName
+  const isAgyMode = isAntigravitySession || activeProfileName === 'antigravity'
+
+  const activeProfile = profilesQuery.data?.profiles?.find(
+    (profile) => profile.name === activeProfileName,
+  )
+  const workspaceEntries = workspaceContextQuery.data?.workspaces ?? []
+  const detectedWorkspacePath = workspaceContextQuery.data?.path ?? ''
+  const activeWorkspace = workspaceEntries.find(
+    (workspace) => workspace.path === detectedWorkspacePath,
+  )
+  const workspaceButtonLabel =
+    activeWorkspace?.name ||
+    workspaceContextQuery.data?.folderName ||
+    shortPathLabel(detectedWorkspacePath) ||
+    'Workspace'
+
+  const lockedSessionFolder =
+    currentSession?.projectName ||
+    (currentSession?.cwd ? shortPathLabel(currentSession.cwd) : null)
+
   // Per-session model override, persisted to localStorage keyed by sessionKey.
   // Drives both the composer label and the model passed to startStreaming.
   // Replaces an earlier flow that PATCHed ~/.hermes/config.yaml — that path
@@ -1125,11 +1199,21 @@ function ChatComposerComponent({
     function handleModelSelect(nextModel: string, provider?: string) {
       const model = nextModel.trim()
       if (!model) return
+
+      if (isAgyMode && !isAgyModelId(model, provider)) {
+        toast('Only Antigravity models can be used in this session')
+        setIsModelMenuOpen(false)
+        return
+      }
+
       const normalizedSessionKey =
         typeof sessionKey === 'string' && sessionKey.trim().length > 0
           ? sessionKey.trim()
           : undefined
+      const isAgyTarget =
+        provider === 'antigravity' || model.startsWith('antigravity/')
       if (
+        !isAgyTarget &&
         shouldBlockZeroForkModelSwitch(
           gatewayModeQuery.data,
           zeroForkModelInfoFlags,
@@ -1149,6 +1233,8 @@ function ChatComposerComponent({
     },
     [
       gatewayModeQuery.data,
+      isAgyMode,
+      isAgyModelId,
       sessionKey,
       setPersistedSessionModel,
       zeroForkModelInfoFlags,
@@ -1171,24 +1257,6 @@ function ChatComposerComponent({
     setIsWorkspaceMenuOpen(false)
     emitSearchModalEvent(SEARCH_MODAL_EVENTS.TOGGLE_FILE_EXPLORER)
   }, [])
-
-  const activeProfileName =
-    profilesQuery.data?.activeProfile ||
-    profilesQuery.data?.profiles?.find((profile) => profile.active)?.name ||
-    'default'
-  const activeProfile = profilesQuery.data?.profiles?.find(
-    (profile) => profile.name === activeProfileName,
-  )
-  const workspaceEntries = workspaceContextQuery.data?.workspaces ?? []
-  const detectedWorkspacePath = workspaceContextQuery.data?.path ?? ''
-  const activeWorkspace = workspaceEntries.find(
-    (workspace) => workspace.path === detectedWorkspacePath,
-  )
-  const workspaceButtonLabel =
-    activeWorkspace?.name ||
-    workspaceContextQuery.data?.folderName ||
-    shortPathLabel(detectedWorkspacePath) ||
-    'Workspace'
 
   const currentModel = currentModelQuery.data ?? ''
 
@@ -1226,8 +1294,30 @@ function ChatComposerComponent({
   }, [modelsQuery.data])
   // Derive the label directly from the store so navigation between sessions
   // updates without a render-window flash from a stale React-state mirror.
-  const modelButtonLabel =
+  const rawModelLabel =
     persistedSessionModel || currentModel || configuredModel || '⚕ Hermes Agent'
+  const modelButtonLabel = useMemo(() => {
+    if (isAgyMode) {
+      if (persistedSessionModel && isAgyModelId(persistedSessionModel)) {
+        return persistedSessionModel
+      }
+      if (currentSession?.model && isAgyModelId(currentSession.model)) {
+        return currentSession.model
+      }
+      if (currentModel && isAgyModelId(currentModel)) {
+        return currentModel
+      }
+      return 'antigravity/gemini-3.8-flash-high'
+    }
+    return rawModelLabel
+  }, [
+    isAgyMode,
+    persistedSessionModel,
+    currentSession?.model,
+    currentModel,
+    rawModelLabel,
+    isAgyModelId,
+  ])
 
   // Measure composer height and set CSS variable for scroll padding
   useLayoutEffect(() => {
@@ -1342,21 +1432,21 @@ function ChatComposerComponent({
       !isModelMenuOpen &&
       !isProfileMenuOpen &&
       !isThinkingMenuOpen &&
-      !isControlsMenuOpen
+      !isAgyModeMenuOpen
     )
       return
     function handleOutsideClick(event: MouseEvent) {
       if (isMobileViewport) return
       const target = event.target as Node
-      if (controlsMenuRef.current?.contains(target)) return
       if (modelSelectorRef.current?.contains(target)) return
       if (profileMenuRef.current?.contains(target)) return
       if (thinkingMenuRef.current?.contains(target)) return
-      setIsControlsMenuOpen(false)
+      if (agyModeMenuRef.current?.contains(target)) return
       setIsModelMenuOpen(false)
       setIsProviderSwitcherExpanded(false)
       setIsProfileMenuOpen(false)
       setIsThinkingMenuOpen(false)
+      setIsAgyModeMenuOpen(false)
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
@@ -1367,7 +1457,7 @@ function ChatComposerComponent({
     isModelMenuOpen,
     isProfileMenuOpen,
     isThinkingMenuOpen,
-    isControlsMenuOpen,
+    isAgyModeMenuOpen,
   ])
 
   const persistDraft = useCallback(
@@ -1910,7 +2000,6 @@ function ChatComposerComponent({
     ) {
       const files = Array.from(event.target.files ?? [])
       event.target.value = ''
-      setIsMobileActionsMenuOpen(false)
       if (files.length === 0) return
       void addAttachments(files)
     },
@@ -2267,271 +2356,629 @@ function ChatComposerComponent({
           </div>
         ) : null}
 
-        {isMobileViewport ? (
-          /* ── Mobile: Telegram-style single-row bar ── */
-          <>
-            <div className="flex items-center gap-2 px-3 py-2">
-              {/* + button — opens bottom sheet actions menu */}
-              <button
-                type="button"
-                aria-label="Actions"
-                disabled={disabled}
-                onPointerDown={(event) => {
-                  event.stopPropagation()
-                }}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  ;(document.activeElement as HTMLElement)?.blur()
-                  setIsModelMenuOpen(false)
-                  setIsMobileActionsMenuOpen((prev) => !prev)
-                }}
-                className="size-8 shrink-0 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-primary-600 active:bg-neutral-200 dark:active:bg-white/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <HugeiconsIcon icon={Add01Icon} size={18} strokeWidth={1.5} />
-              </button>
-
-              {/* Textarea — flex-1, auto-growing */}
-              <PromptInputTextarea
-                placeholder={promptPlaceholder}
-                autoFocus={!isMobileViewport}
-                inputRef={promptRef}
-                onKeyDown={handlePromptKeyDown}
-                onFocus={() => {
-                  setMobileComposerFocused(true)
-                  if (!window.visualViewport) {
-                    setMobileKeyboardOpen(true)
-                    setMobileKeyboardInset(0)
-                  }
-                }}
-                onBlur={() => {
-                  setMobileComposerFocused(false)
-                  if (!window.visualViewport) {
-                    setMobileKeyboardOpen(false)
-                    setMobileKeyboardInset(0)
-                  }
-                }}
-                className="min-h-[36px] max-h-[120px] flex-1 text-base leading-snug"
-              />
-
-              {/* Right side: stop / send / mic */}
-              <div className="shrink-0">
-                {isLoading ? (
-                  <button
-                    type="button"
-                    onClick={handleAbort}
-                    aria-label="Stop generation"
-                    className="size-9 rounded-full bg-red-500 flex items-center justify-center text-white transition-all duration-150"
-                  >
-                    <HugeiconsIcon icon={StopIcon} size={18} strokeWidth={2} />
-                  </button>
-                ) : value.trim().length > 0 ||
-                  attachments.length > 0 ||
-                  attachmentProcessingCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={submitDisabled}
-                    aria-label="Send message"
-                    className="size-9 rounded-full bg-accent-500 flex items-center justify-center text-white transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowUp02Icon}
-                      size={18}
-                      strokeWidth={2}
-                    />
-                  </button>
-                ) : voiceInput.isSupported || voiceRecorder.isSupported ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (voiceInput.isListening) {
-                        voiceInput.stop()
-                      } else if (voiceRecorder.isRecording) {
-                        voiceRecorder.stop()
-                      } else {
-                        voiceInput.start()
-                      }
-                    }}
-                    onPointerDown={handleMicPointerDown}
-                    onPointerUp={handleMicPointerUp}
-                    onPointerLeave={handleMicPointerUp}
-                    aria-label={
-                      voiceRecorder.isRecording
-                        ? 'Recording voice note'
-                        : voiceInput.isListening
-                          ? 'Stop listening'
-                          : 'Voice input'
-                    }
+                    <PromptInputTextarea
+              placeholder={promptPlaceholder}
+              autoFocus={!isMobileViewport}
+              inputRef={promptRef}
+              onKeyDown={handlePromptKeyDown}
+              onFocus={() => {
+                setMobileComposerFocused(true)
+                // Keep fallback behavior for browsers without visualViewport.
+                if (!window.visualViewport) {
+                  setMobileKeyboardOpen(true)
+                  setMobileKeyboardInset(0)
+                }
+              }}
+              onBlur={() => {
+                setMobileComposerFocused(false)
+                if (!window.visualViewport) {
+                  setMobileKeyboardOpen(false)
+                  setMobileKeyboardInset(0)
+                }
+              }}
+              className="min-h-[44px]"
+            />
+            <PromptInputActions className="justify-between px-1.5 md:px-3 py-1 gap-1 md:gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5">
+                <PromptInputAction tooltip="Add attachment">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="rounded-lg text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-500"
+                    aria-label="Add attachment"
                     disabled={disabled}
-                    className={cn(
-                      'size-9 rounded-full flex items-center justify-center relative transition-all duration-150 select-none',
-                      voiceRecorder.isRecording
-                        ? 'text-red-600 bg-red-100 animate-pulse'
-                        : voiceInput.isListening
-                          ? 'text-red-500 bg-red-50 animate-pulse'
-                          : 'text-primary-500 bg-neutral-100 dark:bg-white/10',
-                    )}
+                    onClick={handleOpenAttachmentPicker}
                   >
                     <HugeiconsIcon
-                      icon={Mic01Icon}
+                      icon={AttachmentIcon}
                       size={20}
                       strokeWidth={1.5}
                     />
-                    {voiceRecorder.isRecording ? (
-                      <span className="absolute -top-1 -right-1 flex size-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                        <span className="relative inline-flex size-3 rounded-full bg-red-500" />
-                      </span>
-                    ) : null}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={submitDisabled}
-                    aria-label="Send message"
-                    className="size-9 rounded-full bg-accent-500 flex items-center justify-center text-white transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowUp02Icon}
-                      size={18}
-                      strokeWidth={2}
-                    />
-                  </button>
+                  </Button>
+                </PromptInputAction>
+                {hasDraft && !isLoading && (
+                  <PromptInputAction tooltip="Clear draft">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="rounded-lg text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-red-600"
+                      aria-label="Clear draft"
+                      onClick={handleClearDraft}
+                    >
+                      <HugeiconsIcon
+                        icon={Cancel01Icon}
+                        size={20}
+                        strokeWidth={1.5}
+                      />
+                    </Button>
+                  </PromptInputAction>
                 )}
-              </div>
-            </div>
+                {/* Token counter — bottom bar, mirrors Hermes style, triggers at ~25 tokens */}
+                {value.length >= 100 && (
+                  <span className="ml-1 text-[10px] text-primary-400 tabular-nums select-none">
+                    ~{Math.ceil(value.length / 4)} tokens
+                  </span>
+                )}
 
-            {typeof document !== 'undefined' && isMobileActionsMenuOpen
-              ? createPortal(
-                  <>
+                                {/* 1. Agent Profile Pill */}
+                {isAntigravitySession ? (
+                  <div
+                    className="inline-flex h-7 md:h-8 max-w-[7.5rem] sm:max-w-[10rem] items-center gap-1 md:gap-1.5 rounded-full bg-accent-500/10 dark:bg-accent-500/20 border border-accent-500/30 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-accent-700 dark:text-accent-300 shrink-0 select-none"
+                    title="Profile is locked to Antigravity for this session"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-500 shrink-0" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <span className="truncate">antigravity</span>
+                  </div>
+                ) : (
+                  <div
+                    className="relative flex min-w-0 items-center"
+                    ref={profileMenuRef}
+                  >
                     <button
                       type="button"
-                      aria-label="Close actions"
-                      className="fixed inset-0 z-[199] bg-black/30"
                       onClick={() => {
-                        setIsMobileActionsMenuOpen(false)
+                        setIsProfileMenuOpen((open) => !open)
+                        setIsThinkingMenuOpen(false)
                         setIsModelMenuOpen(false)
                       }}
-                    />
-                    <div
-                      className="fixed bottom-0 left-0 right-0 z-[200] rounded-t-2xl bg-white shadow-2xl pb-safe dark:bg-neutral-900 animate-in slide-in-from-bottom-10 duration-200"
-                      role="dialog"
-                      aria-label="Actions"
-                      onClick={(event) => event.stopPropagation()}
+                      disabled={disabled || profileActivateMutation.isPending}
+                      className={cn(
+                        'inline-flex h-7 md:h-8 max-w-[6.5rem] sm:max-w-[9rem] items-center gap-1 md:gap-1.5 rounded-full bg-primary-100/70 dark:bg-neutral-800/80 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-primary-600 dark:text-neutral-300 transition-colors hover:bg-primary-200/80 dark:hover:bg-neutral-700/80 disabled:cursor-not-allowed disabled:opacity-50 shrink-0 cursor-pointer',
+                        isProfileMenuOpen && 'ring-1 ring-accent-500 bg-primary-200/90 dark:bg-neutral-700',
+                      )}
+                      title={
+                        activeProfile
+                          ? `${activeProfile.name}${profileMeta(activeProfile) ? ` · ${profileMeta(activeProfile)}` : ''}`
+                          : activeProfileName
+                      }
                     >
-                      <div className="mx-auto mt-3 mb-4 h-1 w-10 rounded-full bg-neutral-300 dark:bg-neutral-600" />
-                      <div className="px-4 pb-2 text-sm font-semibold text-neutral-500 dark:text-neutral-400">
-                        Actions
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 px-4 pb-4">
-                        {/* Attach File — keep sheet open so iOS picker can layer on top */}
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={(event) => {
-                            handleOpenAttachmentPicker(event)
-                            // sheet stays open; closes naturally after file selected or on backdrop tap
-                          }}
-                          className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <span className="rounded-lg bg-orange-100 dark:bg-orange-900/30 p-1.5 text-orange-600 dark:text-orange-400">
-                            <HugeiconsIcon
-                              icon={AttachmentIcon}
-                              size={24}
-                              strokeWidth={1.5}
-                            />
-                          </span>
-                          <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                            Attach File
-                          </span>
-                        </button>
-
-                        {/* Model selector — opens model picker sheet on top */}
-                        <button
-                          type="button"
-                          disabled={isModelSwitcherDisabled}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            if (!isModelSwitcherDisabled) {
-                              setIsMobileActionsMenuOpen(false)
-                              setIsModelMenuOpen(true)
-                            }
-                          }}
-                          className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-1.5 text-left disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] transition-transform"
-                        >
-                          <div className="flex w-full items-center justify-between">
-                            <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
-                              <HugeiconsIcon
-                                icon={ArrowDown01Icon}
-                                size={22}
-                                strokeWidth={1.5}
-                              />
-                            </span>
-                            <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                      <span className="truncate">{activeProfileName}</span>
+                      <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
+                    </button>
+                    {isProfileMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-[199]" onClick={() => setIsProfileMenuOpen(false)} />
+                        <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[14rem] max-h-[18rem] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                          <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                            Agent profile
                           </div>
-                          <div className="flex flex-col min-w-0 w-full mt-0.5">
-                            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                              Model
-                            </span>
-                            <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate max-w-full" title={modelButtonLabel}>
-                              {modelButtonLabel}
-                            </span>
+                          {(profilesQuery.data?.profiles ?? []).map((profile) => {
+                            const selected = profile.name === activeProfileName
+                            return (
+                              <button
+                                key={profile.name}
+                                type="button"
+                                onClick={() => {
+                                  if (selected) {
+                                    setIsProfileMenuOpen(false)
+                                    return
+                                  }
+                                  profileActivateMutation.mutate(profile.name)
+                                  setIsProfileMenuOpen(false)
+                                }}
+                                className={cn(
+                                  'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                  selected
+                                    ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                    : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                )}
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span className="truncate font-medium">{profile.name}</span>
+                                  {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
+                                </span>
+                                {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
+                              </button>
+                            )
+                          })}
+                          {profilesQuery.isError ? <div className="px-3 py-2 text-xs text-red-500">Failed to load profiles</div> : null}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* 1b. Locked Workspace Folder Pill for Antigravity Session */}
+                {isAntigravitySession && lockedSessionFolder && (
+                  <div
+                    className="inline-flex h-7 md:h-8 max-w-[8rem] sm:max-w-[11rem] items-center gap-1 md:gap-1.5 rounded-full bg-primary-100/70 dark:bg-neutral-800/80 border border-primary-200/60 dark:border-neutral-700/60 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-primary-700 dark:text-neutral-300 shrink-0 select-none"
+                    title={`Workspace folder locked to: ${currentSession?.cwd || lockedSessionFolder}`}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary-500 shrink-0" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                    </svg>
+                    <span className="truncate">{lockedSessionFolder}</span>
+                  </div>
+                )}
+
+                          <div
+                            className="relative flex min-w-0 items-center"
+                            ref={thinkingMenuRef}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsThinkingMenuOpen((open) => !open)
+                                setIsProfileMenuOpen(false)
+                                setIsModelMenuOpen(false)
+                              }}
+                              className={cn(
+                      'inline-flex h-7 md:h-8 items-center gap-1 md:gap-1.5 rounded-full bg-primary-100/70 dark:bg-neutral-800/80 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-primary-600 dark:text-neutral-300 transition-colors hover:bg-primary-200/80 dark:hover:bg-neutral-700/80 shrink-0 cursor-pointer',
+                      isThinkingMenuOpen && 'ring-1 ring-accent-500 bg-primary-200/90 dark:bg-neutral-700',
+                      thinkingLevel === 'off' && 'opacity-70',
+                    )}
+                              title={`Reasoning effort: ${thinkingLabel(thinkingLevel)}`}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
+                                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
+                              </svg>
+                              <span>{thinkingLabel(thinkingLevel)}</span>
+                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
+                            </button>
+                            {isThinkingMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-[199]" onClick={() => setIsThinkingMenuOpen(false)} />
+                      <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                                {([
+                                  ['off', 'None'],
+                                  ['low', 'Low'],
+                                  ['medium', 'Medium'],
+                                  ['high', 'High'],
+                                ] as Array<[ThinkingLevel, string]>).map(([level, label]) => (
+                                  <button
+                                    key={level}
+                                    type="button"
+                                    onClick={() => handleThinkingSelect(level)}
+                                    className={cn(
+                                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                      thinkingLevel === level
+                                        ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                        : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                    )}
+                                  >
+                                    <span>{label}</span>
+                                    {thinkingLevel === level ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {(activeProfileName === 'antigravity' ||
+                          modelButtonLabel.startsWith('antigravity/') ||
+                          modelButtonLabel.includes('gemini-4-argon') ||
+                          modelButtonLabel.includes('gemini-3-flash-agent')) && (
+                          <div
+                            className="relative flex min-w-0 items-center shrink-0"
+                            ref={agyModeMenuRef}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAgyModeMenuOpen((open) => !open)
+                                setIsProfileMenuOpen(false)
+                                setIsThinkingMenuOpen(false)
+                                setIsModelMenuOpen(false)
+                              }}
+                              className={cn(
+                                'inline-flex h-7 md:h-8 items-center gap-1 md:gap-1.5 rounded-full px-2 md:px-2.5 text-[11px] md:text-xs font-medium transition-colors shrink-0 cursor-pointer border',
+                                agyMode === 'auto'
+                                  ? 'bg-indigo-500/15 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/25'
+                                  : agyMode === 'plan'
+                                    ? 'bg-amber-500/15 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                                    : 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25',
+                                isAgyModeMenuOpen && 'ring-1 ring-accent-500',
+                              )}
+                              title="Antigravity Execution Mode"
+                            >
+                              <span className="font-bold text-[10px]">AGY</span>
+                              <span>
+                                {agyMode === 'auto'
+                                  ? 'Auto'
+                                  : agyMode === 'accept_edits'
+                                    ? 'Accept Edits'
+                                    : 'Plan'}
+                              </span>
+                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
+                            </button>
+                            {isAgyModeMenuOpen && (
+                              <>
+                                <div
+                                  className="fixed inset-0 z-[199]"
+                                  onClick={() => setIsAgyModeMenuOpen(false)}
+                                />
+                                <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[13rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                                    Antigravity Mode
+                                  </div>
+                                  {(
+                                    [
+                                      ['auto', 'Auto (Turbo)', 'Auto-approve commands & edits'],
+                                      ['accept_edits', 'Accept Edits', 'Auto-approve file edits only'],
+                                      ['plan', 'Plan Only', 'Read-only planning mode'],
+                                    ] as const
+                                  ).map(([modeKey, label, desc]) => (
+                                    <button
+                                      key={modeKey}
+                                      type="button"
+                                      onClick={() => {
+                                        setAgyMode(modeKey)
+                                        if (typeof window !== 'undefined') {
+                                          window.localStorage.setItem('hermes-agy-mode', modeKey)
+                                        }
+                                        setIsAgyModeMenuOpen(false)
+                                      }}
+                                      className={cn(
+                                        'flex w-full flex-col rounded-lg px-3 py-2 text-left text-xs transition-colors',
+                                        agyMode === modeKey
+                                          ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                          : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                      )}
+                                    >
+                                      <div className="flex items-center justify-between font-medium">
+                                        <span>{label}</span>
+                                        {agyMode === modeKey && (
+                                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] text-neutral-400">{desc}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
                           </div>
-                        </button>
+                        )}
 
-                        {hasDraft && !isLoading ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleClearDraft()
-                              setIsMobileActionsMenuOpen(false)
-                            }}
-                            className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-2 text-left"
+                        {!hideModelSelector ? (
+                          <div
+                            className="relative flex min-w-0 items-center shrink-0"
+                            ref={modelSelectorRef}
                           >
-                            <span className="rounded-lg bg-red-100 dark:bg-red-900/30 p-1.5 text-red-600 dark:text-red-400">
-                              <HugeiconsIcon
-                                icon={Delete01Icon}
-                                size={24}
-                                strokeWidth={1.5}
-                              />
-                            </span>
-                            <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                              Clear Draft
-                            </span>
-                          </button>
-                        ) : null}
-
-                        {onNewSession ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onNewSession()
-                              setIsMobileActionsMenuOpen(false)
-                            }}
-                            className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-2 text-left"
-                          >
-                            <span className="rounded-lg bg-green-100 dark:bg-green-900/30 p-1.5 text-green-600 dark:text-green-400">
-                              <HugeiconsIcon
-                                icon={Add01Icon}
-                                size={24}
-                                strokeWidth={1.5}
-                              />
-                            </span>
-                            <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
-                              New Session
-                            </span>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsModelMenuOpen((prev) => !prev)
+                                setIsProfileMenuOpen(false)
+                                setIsThinkingMenuOpen(false)
+                              }}
+                              disabled={isModelSwitcherDisabled}
+                              className={cn(
+                        'inline-flex h-7 md:h-8 max-w-[8rem] sm:max-w-[12rem] md:max-w-[16rem] items-center gap-1 md:gap-1.5 rounded-full bg-primary-100/70 dark:bg-neutral-800/80 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-primary-600 dark:text-neutral-300 hover:bg-primary-200/80 dark:hover:bg-neutral-700/80 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 shrink-0',
+                        isModelMenuOpen && 'ring-1 ring-accent-500 bg-primary-200/90 dark:bg-neutral-700',
+                      )}
+                              title={modelButtonLabel}
+                            >
+                              <span className="truncate">{formatModelName(modelButtonLabel)}</span>
+                      <HugeiconsIcon icon={ArrowDown01Icon} size={10} className="shrink-0 text-primary-400 dark:text-neutral-500" />
+                    </button>
+                            {!isMobileViewport && isModelMenuOpen && (
+                              <>
+                                <div className="fixed inset-0 z-[199]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
+                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
+                                  <div className="border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
+                                    <div className="relative flex items-center">
+                                      <svg className="absolute left-2.5 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="8" />
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                      </svg>
+                                      <input
+                                        type="text"
+                                        value={modelSearchQuery}
+                                        onChange={(e) => setModelSearchQuery(e.target.value)}
+                                        placeholder="Filter models in realtime..."
+                                        className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
+                                        autoFocus
+                                      />
+                                      {modelSearchQuery ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setModelSearchQuery('')}
+                                          className="absolute right-2 rounded p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                                          title="Clear filter"
+                                        >
+                                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18" />
+                                            <line x1="6" y1="6" x2="18" y2="18" />
+                                          </svg>
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <div className="max-h-[20rem] overflow-y-auto overflow-x-hidden p-1">
+                                    {(() => {
+                                      const allModels = modelsQuery.data?.models ?? []
+                                      const defaultProvider = modelsQuery.data?.currentProvider ?? ''
+                                      if (allModels.length === 0) {
+                                        return <div className="p-4 text-center text-sm text-neutral-500">No models available</div>
+                                      }
+                                      const parsed = allModels
+                                        .map((m) => {
+                                          const mId = String(typeof m === 'string' ? m : m.id || m.model || m.name || 'unknown')
+                                          const mName = String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || m)
+                                          const mProvider = typeof m === 'string' ? defaultProvider : ((m as Record<string, unknown>).provider as string) || defaultProvider
+                                          const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
+                                          return { id: mId, name: mName, provider: mProvider, isLocal }
+                                        })
+                                        .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
+                                      const query = modelSearchQuery.trim().toLowerCase()
+                                      const filtered = query
+                                        ? parsed.filter(
+                                            (m) =>
+                                              m.name.toLowerCase().includes(query) ||
+                                              m.id.toLowerCase().includes(query) ||
+                                              m.provider.toLowerCase().includes(query),
+                                          )
+                                        : parsed
+                                      if (filtered.length === 0) {
+                                        return (
+                                          <div className="p-4 text-center text-xs text-neutral-500">
+                                            <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                                              No models match &ldquo;{modelSearchQuery}&rdquo;
+                                            </p>
+                                            <button
+                                              type="button"
+                                              onClick={() => setModelSearchQuery('')}
+                                              className="text-accent-600 hover:underline text-[11px]"
+                                            >
+                                              Clear filter
+                                            </button>
+                                          </div>
+                                        )
+                                      }
+                                      const pinnedEntries = filtered.filter((e) => isPinned(e.id))
+                                      const unpinnedGroups = new Map<string, typeof parsed>()
+                                      for (const entry of filtered) {
+                                        if (isPinned(entry.id) && !query) continue
+                                        const group = unpinnedGroups.get(entry.provider) ?? []
+                                        group.push(entry)
+                                        unpinnedGroups.set(entry.provider, group)
+                                      }
+                                      const activeModelId = persistedSessionModel || currentModel
+                                      const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
+                                        if (query) return false
+                                        if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
+                                        const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
+                                        return !hasActive
+                                      }
+                                      const renderEntry = (entry: (typeof parsed)[0]) => {
+                                        const isActive = isCurrentModel(
+                                          activeModelId,
+                                          entry.id,
+                                          entry.provider,
+                                        )
+                                        return (
+                                          <div key={entry.id} className="group relative flex items-center">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                handleModelSelect(entry.id, entry.provider || undefined)
+                                                setIsModelMenuOpen(false)
+                                                setModelSearchQuery('')
+                                              }}
+                                              className={`flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors rounded-lg ${
+                                                isActive
+                                                  ? 'border-l-2 border-accent-500 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium'
+                                                  : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/50'
+                                              }`}
+                                            >
+                                              <span className="flex-1 truncate">{entry.name}</span>
+                                              {entry.isLocal ? <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700">local</span> : null}
+                                              {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                togglePin(entry.id)
+                                              }}
+                                              className={`absolute right-2 rounded p-1 transition-opacity ${
+                                                isPinned(entry.id)
+                                                  ? 'text-accent-500 opacity-80 hover:opacity-100'
+                                                  : 'text-neutral-400 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-accent-500'
+                                              }`}
+                                              aria-label={isPinned(entry.id) ? `Unpin ${entry.name}` : `Pin ${entry.name}`}
+                                            >
+                                              <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned(entry.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                                                <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                        )
+                                      }
+                                      return (
+                                        <>
+                                          {pinnedEntries.length > 0 ? (
+                                            <div className="mb-1 border-b border-neutral-200 pb-1 dark:border-neutral-700">
+                                              <div className="mb-1 flex items-center gap-1 px-3 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" className="text-accent-500">
+                                                  <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
+                                                </svg>
+                                                <span>Pinned ({pinnedEntries.length})</span>
+                                              </div>
+                                              {pinnedEntries.map(renderEntry)}
+                                            </div>
+                                          ) : null}
+                                          {Array.from(unpinnedGroups.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([provider, models]) => {
+                                            const collapsed = isGroupCollapsed(provider, models)
+                                            return (
+                                              <div key={provider} className="mb-1">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setCollapsedProviders((prev) => ({
+                                                      ...prev,
+                                                      [provider]: !collapsed,
+                                                    }))
+                                                  }}
+                                                  className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                                                >
+                                                  <span className="flex items-center gap-1.5">
+                                                    <svg
+                                                      className={`h-3 w-3 transition-transform duration-150 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-neutral-600 dark:text-neutral-300'}`}
+                                                      viewBox="0 0 24 24"
+                                                      fill="none"
+                                                      stroke="currentColor"
+                                                      strokeWidth="2"
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                    >
+                                                      <polyline points="6 9 12 15 18 9" />
+                                                    </svg>
+                                                    <span>{provider}</span>
+                                                  </span>
+                                                  <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+                                                    {models.length}
+                                                  </span>
+                                                </button>
+                                                {!collapsed && (
+                                                  <div className="mt-0.5 pl-1 space-y-0.5">
+                                                    {models.map(renderEntry)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )
+                                          })}
+                                        </>
+                                      )
+                                    })()}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         ) : null}
                       </div>
-                    </div>
-                  </>,
-                  document.body,
-                )
-              : null}
+              <div className="ml-1 flex shrink-0 items-center gap-0.5 md:gap-1">
+                <ContextBar compact sessionId={sessionKey} />
+                {voiceInput.isSupported || voiceRecorder.isSupported ? (
+                  <PromptInputAction
+                    tooltip={
+                      voiceRecorder.isRecording
+                        ? `Recording… ${Math.round(voiceRecorder.durationMs / 1000)}s`
+                        : voiceInput.isListening
+                          ? 'Listening — tap to stop'
+                          : 'Tap: dictate · Hold: voice note'
+                    }
+                  >
+                    <Button
+                      onClick={() => {
+                        if (voiceInput.isListening) {
+                          voiceInput.stop()
+                        } else if (voiceRecorder.isRecording) {
+                          voiceRecorder.stop()
+                        } else {
+                          voiceInput.start()
+                        }
+                      }}
+                      onPointerDown={handleMicPointerDown}
+                      onPointerUp={handleMicPointerUp}
+                      onPointerLeave={handleMicPointerUp}
+                      size="icon-sm"
+                      variant="ghost"
+                      className={cn(
+                        'rounded-lg transition-colors select-none',
+                        voiceRecorder.isRecording
+                          ? 'text-red-600 bg-red-100 hover:bg-red-200 animate-pulse'
+                          : voiceInput.isListening
+                            ? 'text-red-500 bg-red-50 hover:bg-red-100 animate-pulse'
+                            : 'text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-700',
+                      )}
+                      aria-label={
+                        voiceRecorder.isRecording
+                          ? 'Recording voice note'
+                          : voiceInput.isListening
+                            ? 'Stop listening'
+                            : 'Voice input'
+                      }
+                      disabled={disabled}
+                    >
+                      <HugeiconsIcon
+                        icon={Mic01Icon}
+                        size={20}
+                        strokeWidth={1.5}
+                      />
+                      {voiceRecorder.isRecording ? (
+                        <span className="absolute -top-1 -right-1 flex size-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex size-3 rounded-full bg-red-500" />
+                        </span>
+                      ) : null}
+                    </Button>
+                  </PromptInputAction>
+                ) : null}
+                {isLoading ? (
+                  <PromptInputAction tooltip="Stop generation">
+                    <Button
+                      onClick={handleAbort}
+                      size="icon-sm"
+                      variant="destructive"
+                      className="rounded-md"
+                      aria-label="Stop generation"
+                    >
+                      <HugeiconsIcon
+                        icon={StopIcon}
+                        size={20}
+                        strokeWidth={1.5}
+                      />
+                    </Button>
+                  </PromptInputAction>
+                ) : (
+                  <>
+                    <PromptInputAction tooltip="Send message">
+                      <Button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={submitDisabled}
+                        size="icon-sm"
+                        className="rounded-full"
+                        aria-label="Send message"
+                      >
+                        <HugeiconsIcon
+                          icon={ArrowUp02Icon}
+                          size={20}
+                          strokeWidth={1.5}
+                        />
+                      </Button>
+                    </PromptInputAction>
+                  </>
+                )}
+              </div>
+            </PromptInputActions>
+      </PromptInput>
 
-            {/* Mobile model picker portal — z above actions sheet (z-[210]) */}
-            {typeof document !== 'undefined' && isModelMenuOpen
+      {/* Mobile model picker sheet — portaled to body on mobile */}
+      {typeof document !== 'undefined' && isModelMenuOpen && isMobileViewport
               ? createPortal(
                   <>
                     <button
@@ -2626,13 +3073,15 @@ function ChatComposerComponent({
                               </div>
                             )
                           }
-                          const parsed = allModels.map((m) => {
-                            const mId = String(typeof m === 'string' ? m : m.id || m.model || m.name || 'unknown')
-                            const mName = String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || m)
-                            const mProvider = typeof m === 'string' ? defaultProvider : ((m as Record<string, unknown>).provider as string) || defaultProvider
-                            const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
-                            return { id: mId, name: mName, provider: mProvider, isLocal }
-                          })
+                          const parsed = allModels
+                            .map((m) => {
+                              const mId = String(typeof m === 'string' ? m : m.id || m.model || m.name || 'unknown')
+                              const mName = String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || m)
+                              const mProvider = typeof m === 'string' ? defaultProvider : ((m as Record<string, unknown>).provider as string) || defaultProvider
+                              const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
+                              return { id: mId, name: mName, provider: mProvider, isLocal }
+                            })
+                            .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
 
                           // Providers list for quick pill filter
                           const providerNames = Array.from(new Set(parsed.map((m) => m.provider))).filter(Boolean).sort()
@@ -2877,548 +3326,6 @@ function ChatComposerComponent({
                   document.body,
                 )
               : null}
-          </>
-        ) : (
-          /* ── Desktop: original layout ── */
-          <>
-            <PromptInputTextarea
-              placeholder={promptPlaceholder}
-              autoFocus
-              inputRef={promptRef}
-              onKeyDown={handlePromptKeyDown}
-              onFocus={() => {
-                setMobileComposerFocused(true)
-                // Keep fallback behavior for browsers without visualViewport.
-                if (!window.visualViewport) {
-                  setMobileKeyboardOpen(true)
-                  setMobileKeyboardInset(0)
-                }
-              }}
-              onBlur={() => {
-                setMobileComposerFocused(false)
-                if (!window.visualViewport) {
-                  setMobileKeyboardOpen(false)
-                  setMobileKeyboardInset(0)
-                }
-              }}
-              className="min-h-[44px]"
-            />
-            <PromptInputActions className="justify-between px-1.5 md:px-3 gap-0.5 md:gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-0 md:gap-1">
-                <PromptInputAction tooltip="Add attachment">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    className="rounded-lg text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-500"
-                    aria-label="Add attachment"
-                    disabled={disabled}
-                    onClick={handleOpenAttachmentPicker}
-                  >
-                    <HugeiconsIcon
-                      icon={AttachmentIcon}
-                      size={20}
-                      strokeWidth={1.5}
-                    />
-                  </Button>
-                </PromptInputAction>
-                {hasDraft && !isLoading && (
-                  <PromptInputAction tooltip="Clear draft">
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      className="rounded-lg text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-red-600"
-                      aria-label="Clear draft"
-                      onClick={handleClearDraft}
-                    >
-                      <HugeiconsIcon
-                        icon={Cancel01Icon}
-                        size={20}
-                        strokeWidth={1.5}
-                      />
-                    </Button>
-                  </PromptInputAction>
-                )}
-                {/* Token counter — bottom bar, mirrors Hermes style, triggers at ~25 tokens */}
-                {value.length >= 100 && (
-                  <span className="ml-1 text-[10px] text-primary-400 tabular-nums select-none">
-                    ~{Math.ceil(value.length / 4)} tokens
-                  </span>
-                )}
-
-                {!hideModelSelector ? (
-                  <div
-                    className="relative ml-0.5 flex min-w-0 items-center"
-                    ref={controlsMenuRef}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsControlsMenuOpen((open) => !open)
-                        setIsProfileMenuOpen(false)
-                        setIsThinkingMenuOpen(false)
-                        setIsModelMenuOpen(false)
-                      }}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-primary-100/70 px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 dark:hover:bg-primary-800/60"
-                      title={`Chat controls · ${modelButtonLabel}`}
-                      aria-label={`Chat controls, current model: ${modelButtonLabel}`}
-                    >
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <line x1="4" y1="6" x2="20" y2="6" />
-                        <line x1="4" y1="12" x2="20" y2="12" />
-                        <line x1="4" y1="18" x2="20" y2="18" />
-                        <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
-                        <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
-                        <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
-                      </svg>
-                      <span className="max-w-[5rem] truncate sm:max-w-[8rem] md:max-w-[10rem]">{formatModelName(modelButtonLabel)}</span>
-                      <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                    </button>
-                    {isControlsMenuOpen ? (
-                      <div className="absolute bottom-full left-0 z-[190] mb-2 w-[min(32rem,calc(100vw-2rem))] min-w-[18rem] overflow-visible rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                        <div className="mb-2 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                          Chat controls
-                        </div>
-                        <div className="flex flex-wrap items-start gap-2">
-                          <div
-                            className="relative flex min-w-0 items-center"
-                            ref={profileMenuRef}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsProfileMenuOpen((open) => !open)
-                                setIsThinkingMenuOpen(false)
-                                setIsModelMenuOpen(false)
-                              }}
-                              disabled={disabled || profileActivateMutation.isPending}
-                              className="inline-flex h-8 max-w-[8rem] items-center gap-1.5 rounded-full bg-primary-100/70 px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-primary-800/60"
-                              title={
-                                activeProfile
-                                  ? `${activeProfile.name}${profileMeta(activeProfile) ? ` · ${profileMeta(activeProfile)}` : ''}`
-                                  : activeProfileName
-                              }
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                                <circle cx="12" cy="7" r="4" />
-                              </svg>
-                              <span className="truncate">{activeProfileName}</span>
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                            </button>
-                            {isProfileMenuOpen && (
-                              <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[14rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                                  Agent profile
-                                </div>
-                                {(profilesQuery.data?.profiles ?? []).map((profile) => {
-                                  const selected = profile.name === activeProfileName
-                                  return (
-                                    <button
-                                      key={profile.name}
-                                      type="button"
-                                      onClick={() => {
-                                        if (selected) {
-                                          setIsProfileMenuOpen(false)
-                                          return
-                                        }
-                                        profileActivateMutation.mutate(profile.name)
-                                      }}
-                                      className={cn(
-                                        'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                        selected
-                                          ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                          : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                      )}
-                                    >
-                                      <span className="flex items-center gap-2">
-                                        <span className="truncate font-medium">{profile.name}</span>
-                                        {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
-                                      </span>
-                                      {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
-                                    </button>
-                                  )
-                                })}
-                                {profilesQuery.isError ? <div className="px-3 py-2 text-xs text-red-500">Failed to load profiles</div> : null}
-                              </div>
-                            )}
-                          </div>
-
-                          <div
-                            className="relative flex min-w-0 items-center"
-                            ref={thinkingMenuRef}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsThinkingMenuOpen((open) => !open)
-                                setIsProfileMenuOpen(false)
-                                setIsModelMenuOpen(false)
-                              }}
-                              className={cn(
-                                'inline-flex h-8 items-center gap-1.5 rounded-full bg-primary-100/70 px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 dark:hover:bg-primary-800/60',
-                                thinkingLevel === 'off' && 'opacity-70',
-                              )}
-                              title={`Reasoning effort: ${thinkingLabel(thinkingLevel)}`}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-                                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-                              </svg>
-                              <span>{thinkingLabel(thinkingLevel)}</span>
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                            </button>
-                            {isThinkingMenuOpen && (
-                              <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                {([
-                                  ['off', 'None'],
-                                  ['low', 'Low'],
-                                  ['medium', 'Medium'],
-                                  ['high', 'High'],
-                                ] as Array<[ThinkingLevel, string]>).map(([level, label]) => (
-                                  <button
-                                    key={level}
-                                    type="button"
-                                    onClick={() => handleThinkingSelect(level)}
-                                    className={cn(
-                                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                      thinkingLevel === level
-                                        ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                        : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                    )}
-                                  >
-                                    <span>{label}</span>
-                                    {thinkingLevel === level ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-
-                          <div
-                            className="relative flex min-w-0 items-center"
-                            ref={modelSelectorRef}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsModelMenuOpen((prev) => !prev)
-                                setIsProfileMenuOpen(false)
-                                setIsThinkingMenuOpen(false)
-                              }}
-                              disabled={isModelSwitcherDisabled}
-                              className="inline-flex h-8 max-w-[9rem] items-center rounded-full bg-primary-100/70 px-2 md:max-w-none md:px-3 text-xs font-medium text-primary-600 hover:bg-primary-200/80 dark:hover:bg-primary-800/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                              title={modelButtonLabel}
-                            >
-                              <span className="max-w-[5.5rem] truncate sm:max-w-[8.5rem] md:max-w-[12rem]">{modelButtonLabel}</span>
-                            </button>
-                            {isModelMenuOpen && (
-                              <>
-                                <div className="fixed inset-0 z-[199]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
-                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
-                                  <div className="border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
-                                    <div className="relative flex items-center">
-                                      <svg className="absolute left-2.5 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <circle cx="11" cy="11" r="8" />
-                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                                      </svg>
-                                      <input
-                                        type="text"
-                                        value={modelSearchQuery}
-                                        onChange={(e) => setModelSearchQuery(e.target.value)}
-                                        placeholder="Filter models in realtime..."
-                                        className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
-                                        autoFocus
-                                      />
-                                      {modelSearchQuery ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setModelSearchQuery('')}
-                                          className="absolute right-2 rounded p-0.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
-                                          title="Clear filter"
-                                        >
-                                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <line x1="18" y1="6" x2="6" y2="18" />
-                                            <line x1="6" y1="6" x2="18" y2="18" />
-                                          </svg>
-                                        </button>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                  <div className="max-h-[20rem] overflow-y-auto overflow-x-hidden p-1">
-                                    {(() => {
-                                      const allModels = modelsQuery.data?.models ?? []
-                                      const defaultProvider = modelsQuery.data?.currentProvider ?? ''
-                                      if (allModels.length === 0) {
-                                        return <div className="p-4 text-center text-sm text-neutral-500">No models available</div>
-                                      }
-                                      const parsed = allModels.map((m) => {
-                                        const mId = String(typeof m === 'string' ? m : m.id || m.model || m.name || 'unknown')
-                                        const mName = String(typeof m === 'string' ? m : m.name || m.displayName || m.label || m.id || m.model || m)
-                                        const mProvider = typeof m === 'string' ? defaultProvider : ((m as Record<string, unknown>).provider as string) || defaultProvider
-                                        const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
-                                        return { id: mId, name: mName, provider: mProvider, isLocal }
-                                      })
-                                      const query = modelSearchQuery.trim().toLowerCase()
-                                      const filtered = query
-                                        ? parsed.filter(
-                                            (m) =>
-                                              m.name.toLowerCase().includes(query) ||
-                                              m.id.toLowerCase().includes(query) ||
-                                              m.provider.toLowerCase().includes(query),
-                                          )
-                                        : parsed
-                                      if (filtered.length === 0) {
-                                        return (
-                                          <div className="p-4 text-center text-xs text-neutral-500">
-                                            <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                                              No models match &ldquo;{modelSearchQuery}&rdquo;
-                                            </p>
-                                            <button
-                                              type="button"
-                                              onClick={() => setModelSearchQuery('')}
-                                              className="text-accent-600 hover:underline text-[11px]"
-                                            >
-                                              Clear filter
-                                            </button>
-                                          </div>
-                                        )
-                                      }
-                                      const pinnedEntries = filtered.filter((e) => isPinned(e.id))
-                                      const unpinnedGroups = new Map<string, typeof parsed>()
-                                      for (const entry of filtered) {
-                                        if (isPinned(entry.id) && !query) continue
-                                        const group = unpinnedGroups.get(entry.provider) ?? []
-                                        group.push(entry)
-                                        unpinnedGroups.set(entry.provider, group)
-                                      }
-                                      const activeModelId = persistedSessionModel || currentModel
-                                      const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
-                                        if (query) return false
-                                        if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
-                                        const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
-                                        return !hasActive
-                                      }
-                                      const renderEntry = (entry: (typeof parsed)[0]) => {
-                                        const isActive = isCurrentModel(
-                                          activeModelId,
-                                          entry.id,
-                                          entry.provider,
-                                        )
-                                        return (
-                                          <div key={entry.id} className="group relative flex items-center">
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                handleModelSelect(entry.id, entry.provider || undefined)
-                                                setIsModelMenuOpen(false)
-                                                setModelSearchQuery('')
-                                              }}
-                                              className={`flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors rounded-lg ${
-                                                isActive
-                                                  ? 'border-l-2 border-accent-500 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium'
-                                                  : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/50'
-                                              }`}
-                                            >
-                                              <span className="flex-1 truncate">{entry.name}</span>
-                                              {entry.isLocal ? <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700">local</span> : null}
-                                              {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                togglePin(entry.id)
-                                              }}
-                                              className={`absolute right-2 rounded p-1 transition-opacity ${
-                                                isPinned(entry.id)
-                                                  ? 'text-accent-500 opacity-80 hover:opacity-100'
-                                                  : 'text-neutral-400 opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-accent-500'
-                                              }`}
-                                              aria-label={isPinned(entry.id) ? `Unpin ${entry.name}` : `Pin ${entry.name}`}
-                                            >
-                                              <svg width="12" height="12" viewBox="0 0 24 24" fill={isPinned(entry.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                                                <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-                                              </svg>
-                                            </button>
-                                          </div>
-                                        )
-                                      }
-                                      return (
-                                        <>
-                                          {pinnedEntries.length > 0 ? (
-                                            <div className="mb-1 border-b border-neutral-200 pb-1 dark:border-neutral-700">
-                                              <div className="mb-1 flex items-center gap-1 px-3 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
-                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" className="text-accent-500">
-                                                  <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" />
-                                                </svg>
-                                                <span>Pinned ({pinnedEntries.length})</span>
-                                              </div>
-                                              {pinnedEntries.map(renderEntry)}
-                                            </div>
-                                          ) : null}
-                                          {Array.from(unpinnedGroups.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([provider, models]) => {
-                                            const collapsed = isGroupCollapsed(provider, models)
-                                            return (
-                                              <div key={provider} className="mb-1">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setCollapsedProviders((prev) => ({
-                                                      ...prev,
-                                                      [provider]: !collapsed,
-                                                    }))
-                                                  }}
-                                                  className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200 transition-colors cursor-pointer"
-                                                >
-                                                  <span className="flex items-center gap-1.5">
-                                                    <svg
-                                                      className={`h-3 w-3 transition-transform duration-150 ${collapsed ? '-rotate-90 text-neutral-400' : 'rotate-0 text-neutral-600 dark:text-neutral-300'}`}
-                                                      viewBox="0 0 24 24"
-                                                      fill="none"
-                                                      stroke="currentColor"
-                                                      strokeWidth="2"
-                                                      strokeLinecap="round"
-                                                      strokeLinejoin="round"
-                                                    >
-                                                      <polyline points="6 9 12 15 18 9" />
-                                                    </svg>
-                                                    <span>{provider}</span>
-                                                  </span>
-                                                  <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-normal text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
-                                                    {models.length}
-                                                  </span>
-                                                </button>
-                                                {!collapsed && (
-                                                  <div className="mt-0.5 pl-1 space-y-0.5">
-                                                    {models.map(renderEntry)}
-                                                  </div>
-                                                )}
-                                              </div>
-                                            )
-                                          })}
-                                        </>
-                                      )
-                                    })()}
-                                  </div>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="ml-1 flex shrink-0 items-center gap-0.5 md:gap-1">
-                <ContextBar compact sessionId={sessionKey} />
-                {voiceInput.isSupported || voiceRecorder.isSupported ? (
-                  <PromptInputAction
-                    tooltip={
-                      voiceRecorder.isRecording
-                        ? `Recording… ${Math.round(voiceRecorder.durationMs / 1000)}s`
-                        : voiceInput.isListening
-                          ? 'Listening — tap to stop'
-                          : 'Tap: dictate · Hold: voice note'
-                    }
-                  >
-                    <Button
-                      onClick={() => {
-                        if (voiceInput.isListening) {
-                          voiceInput.stop()
-                        } else if (voiceRecorder.isRecording) {
-                          voiceRecorder.stop()
-                        } else {
-                          voiceInput.start()
-                        }
-                      }}
-                      onPointerDown={handleMicPointerDown}
-                      onPointerUp={handleMicPointerUp}
-                      onPointerLeave={handleMicPointerUp}
-                      size="icon-sm"
-                      variant="ghost"
-                      className={cn(
-                        'rounded-lg transition-colors select-none',
-                        voiceRecorder.isRecording
-                          ? 'text-red-600 bg-red-100 hover:bg-red-200 animate-pulse'
-                          : voiceInput.isListening
-                            ? 'text-red-500 bg-red-50 hover:bg-red-100 animate-pulse'
-                            : 'text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-700',
-                      )}
-                      aria-label={
-                        voiceRecorder.isRecording
-                          ? 'Recording voice note'
-                          : voiceInput.isListening
-                            ? 'Stop listening'
-                            : 'Voice input'
-                      }
-                      disabled={disabled}
-                    >
-                      <HugeiconsIcon
-                        icon={Mic01Icon}
-                        size={20}
-                        strokeWidth={1.5}
-                      />
-                      {voiceRecorder.isRecording ? (
-                        <span className="absolute -top-1 -right-1 flex size-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                          <span className="relative inline-flex size-3 rounded-full bg-red-500" />
-                        </span>
-                      ) : null}
-                    </Button>
-                  </PromptInputAction>
-                ) : null}
-                {isLoading ? (
-                  <PromptInputAction tooltip="Stop generation">
-                    <Button
-                      onClick={handleAbort}
-                      size="icon-sm"
-                      variant="destructive"
-                      className="rounded-md"
-                      aria-label="Stop generation"
-                    >
-                      <HugeiconsIcon
-                        icon={StopIcon}
-                        size={20}
-                        strokeWidth={1.5}
-                      />
-                    </Button>
-                  </PromptInputAction>
-                ) : (
-                  <>
-                    <PromptInputAction tooltip="Send message">
-                      <Button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={submitDisabled}
-                        size="icon-sm"
-                        className="rounded-full"
-                        aria-label="Send message"
-                      >
-                        <HugeiconsIcon
-                          icon={ArrowUp02Icon}
-                          size={20}
-                          strokeWidth={1.5}
-                        />
-                      </Button>
-                    </PromptInputAction>
-                  </>
-                )}
-              </div>
-            </PromptInputActions>
-          </>
-        )}
-      </PromptInput>
 
       {/* Fullscreen image preview overlay — portaled to body to escape stacking context */}
       {previewImage &&

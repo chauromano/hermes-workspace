@@ -1072,7 +1072,30 @@ export function ChatScreen({
   const sessionModel = useSessionModelStore((s) =>
     s.getModel(resolvedSessionKey || activeFriendlyId || (isNewChat ? 'draft' : 'main')),
   )
-  const currentModel = _localModelOverride || sessionModel || gatewayModel
+  const isAntigravitySession = Boolean(
+    activeSession?.source === 'antigravity' ||
+    (typeof activeFriendlyId === 'string' && activeFriendlyId.startsWith('agy_')) ||
+    (typeof resolvedSessionKey === 'string' && resolvedSessionKey.startsWith('agy_')) ||
+    (typeof activeFriendlyId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFriendlyId) &&
+      activeSession?.source === 'antigravity')
+  )
+  const isAgyModel = (m: string) => {
+    const l = (m || '').toLowerCase()
+    return (
+      l.startsWith('antigravity/') ||
+      l.startsWith('google-antigravity/') ||
+      l.includes('gemini-4-argon') ||
+      l.includes('gemini-3.8-flash') ||
+      l.includes('claude-opus-5-5') ||
+      l.includes('claude-sonnet-5-5') ||
+      l.includes('gpt-oss-120b')
+    )
+  }
+  const baseModel = _localModelOverride || sessionModel || gatewayModel
+  const currentModel = isAntigravitySession
+    ? (isAgyModel(baseModel) ? baseModel : (activeSession?.model || 'antigravity/gemini-3.8-flash-high'))
+    : baseModel
 
   // Ref so sendMessage can always read latest thinkingLevel without being in deps
   const thinkingLevelRef = useRef<ThinkingLevel>(thinkingLevel)
@@ -2469,6 +2492,30 @@ export function ChatScreen({
       )
 
       if (isNewChat) {
+        const isAgy = isAntigravitySession || isAgyModel(currentModel)
+        if (isAgy) {
+          const { optimisticMessage } = createOptimisticMessage(
+            trimmedBody,
+            attachmentPayload,
+          )
+          appendHistoryMessage(queryClient, 'new', 'new', optimisticMessage)
+          setPendingGeneration(true)
+          setSending(true)
+          setWaitingForResponse(true)
+          sendMessage(
+            'new',
+            'new',
+            trimmedBody,
+            attachmentPayload,
+            fastMode,
+            true,
+            typeof optimisticMessage.clientId === 'string'
+              ? optimisticMessage.clientId
+              : '',
+          )
+          return
+        }
+
         // In portable mode, use 'main' — no server-side sessions exist.
         // In enhanced mode, create a UUID thread for the sessions API.
         const threadId = isPortableMode ? 'main' : crypto.randomUUID()
@@ -2773,6 +2820,7 @@ export function ChatScreen({
               activeTitle={activeTitle}
               activeProjectId={activeSession?.projectId}
               activeProjectName={activeSession?.projectName}
+              source={activeSession?.source}
               onRenameTitle={handleRenameActiveSessionTitle}
               renamingTitle={renamingSessionTitle}
               wrapperRef={headerRef}
@@ -2927,6 +2975,7 @@ export function ChatScreen({
                     activeCanonicalKey ||
                     activeSessionKey
               }
+              session={isNewChat ? null : activeSession}
               wrapperRef={composerRef}
               composerRef={composerHandleRef}
               embedded={embedded}

@@ -23,12 +23,22 @@ export function shouldResolveStreamSession({
   pinMainSession?: boolean
 }): boolean {
   // No change → nothing to resolve
-  if (resolvedSessionKey === currentSessionKey) return false
+  if (!resolvedSessionKey || resolvedSessionKey === currentSessionKey) return false
   // "new" should resolve once to a concrete session.
   if (requestedSessionKey === 'new') return true
   // "main" only stays pinned when the current route is intentionally bound to
   // the portable Workspace session in zero-fork mode.
   if (requestedSessionKey === 'main') return !pinMainSession
+  // Never promote Hermes backend-derived api-* IDs over existing concrete sessions (#297)
+  if (resolvedSessionKey.startsWith('api-')) return false
+  // If the resolved key is a canonical session ID (e.g. UUID or agy_*) and differs from current,
+  // promote it so client updates to canonical session identity
+  if (
+    resolvedSessionKey.startsWith('agy_') ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedSessionKey)
+  ) {
+    return true
+  }
   // Concrete session → never promote a different backend ID
   return false
 }
@@ -711,6 +721,30 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
           if (typeof payload.model === 'string' && payload.model) {
             stepUsageRef.current.model = payload.model
           }
+          const doneSessionKey =
+            typeof payload.sessionKey === 'string' && payload.sessionKey.trim()
+              ? payload.sessionKey.trim()
+              : undefined
+          const doneFriendlyId =
+            typeof payload.friendlyId === 'string' && payload.friendlyId.trim()
+              ? payload.friendlyId.trim()
+              : doneSessionKey
+          if (
+            doneSessionKey &&
+            doneSessionKey !== activeSessionKeyRef.current &&
+            shouldResolveStreamSession({
+              requestedSessionKey: requestedSessionKeyRef.current,
+              currentSessionKey: activeSessionKeyRef.current,
+              resolvedSessionKey: doneSessionKey,
+              pinMainSession,
+            })
+          ) {
+            activeSessionKeyRef.current = doneSessionKey
+            onSessionResolved?.({
+              sessionKey: doneSessionKey,
+              friendlyId: doneFriendlyId || doneSessionKey,
+            })
+          }
           const doneState = (payload as { state?: string }).state
           const errorMessage = (payload as { errorMessage?: string })
             .errorMessage
@@ -884,6 +918,10 @@ export function useStreamingMessage(options: UseStreamingMessageOptions = {}) {
             attachments: params.attachments,
             idempotencyKey: params.idempotencyKey ?? crypto.randomUUID(),
             model: params.model || undefined,
+            agyMode:
+              typeof window !== 'undefined'
+                ? localStorage.getItem('hermes-agy-mode') || 'auto'
+                : 'auto',
             locale:
               typeof window !== 'undefined'
                 ? localStorage.getItem('hermes-workspace-locale') || 'en'

@@ -29,6 +29,9 @@ type ProjectSessionChipProps = {
   sessionKey?: string
   projectId?: string | null
   projectName?: string | null
+  source?: string | null
+  isLocked?: boolean
+  lockReason?: string
   className?: string
   compact?: boolean
 }
@@ -37,6 +40,9 @@ export function ProjectSessionChip({
   sessionKey,
   projectId,
   projectName,
+  source,
+  isLocked = false,
+  lockReason,
   className,
   compact = false,
 }: ProjectSessionChipProps) {
@@ -88,6 +94,44 @@ export function ProjectSessionChip({
           toast.error(err instanceof Error ? err.message : 'Failed to change project')
         },
       },
+    )
+  }
+
+  const isAgyLocked =
+    isLocked ||
+    source === 'antigravity' ||
+    (typeof sessionKey === 'string' &&
+      (sessionKey.startsWith('agy_') ||
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionKey)))
+
+  if (isAgyLocked) {
+    return (
+      <div
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full border select-none font-medium text-xs',
+          'border-accent-500/30 bg-accent-500/10 text-accent-700 dark:text-accent-300',
+          compact ? 'px-2 py-0.5 text-[11px] max-w-[130px]' : 'px-2.5 py-1 max-w-[200px]',
+          className,
+        )}
+        title={lockReason || `Workspace locked to ${displayName} for Antigravity session`}
+      >
+        <svg
+          width={compact ? 11 : 12}
+          height={compact ? 11 : 12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 text-accent-500"
+          aria-hidden="true"
+        >
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        <span className="truncate">{displayName}</span>
+      </div>
     )
   }
 
@@ -157,7 +201,45 @@ export function ProjectSessionChip({
             <div className="max-h-48 overflow-y-auto scrollbar-thin py-0.5 space-y-0.5 border-t border-[var(--theme-border)] mt-1 pt-1">
               {projects.map((proj) => {
                 const isSelected = effectiveProjectId === proj.id
-                return (
+                const isAgyLocked =
+    isLocked ||
+    source === 'antigravity' ||
+    (typeof sessionKey === 'string' &&
+      (sessionKey.startsWith('agy_') ||
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionKey)))
+
+  if (isAgyLocked) {
+    return (
+      <div
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full border select-none font-medium text-xs',
+          'border-accent-500/30 bg-accent-500/10 text-accent-700 dark:text-accent-300',
+          compact ? 'px-2 py-0.5 text-[11px] max-w-[130px]' : 'px-2.5 py-1 max-w-[200px]',
+          className,
+        )}
+        title={lockReason || `Workspace locked to ${displayName} for Antigravity session`}
+      >
+        <svg
+          width={compact ? 11 : 12}
+          height={compact ? 11 : 12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 text-accent-500"
+          aria-hidden="true"
+        >
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        <span className="truncate">{displayName}</span>
+      </div>
+    )
+  }
+
+  return (
                   <MenuItem
                     key={proj.id}
                     onClick={() => handleSelect(proj.id)}

@@ -270,6 +270,16 @@ export function normalizeSessions(
       projectId: session.projectId ?? null,
       projectName: session.projectName ?? null,
       projectSlug: session.projectSlug ?? null,
+      lastPromptAt:
+        typeof session.lastPromptAt === 'number'
+          ? session.lastPromptAt
+          : typeof session.updatedAt === 'number'
+            ? session.updatedAt
+            : undefined,
+      status: typeof session.status === 'string' ? session.status : 'idle',
+      source: typeof session.source === 'string' ? session.source : null,
+      surface: typeof session.surface === 'string' ? session.surface : null,
+      model: typeof session.model === 'string' ? session.model : null,
     }
   })
 }

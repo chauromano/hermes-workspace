@@ -71,6 +71,7 @@ type ChatHeaderProps = {
   activeTitle: string
   activeProjectId?: string | null
   activeProjectName?: string | null
+  source?: string | null
   onRenameTitle?: (nextTitle: string) => Promise<void> | void
   renamingTitle?: boolean
   wrapperRef?: React.Ref<HTMLDivElement>
@@ -113,6 +114,7 @@ function ChatHeaderComponent({
   activeTitle,
   activeProjectId,
   activeProjectName,
+  source,
   onRenameTitle,
   renamingTitle = false,
   wrapperRef,
@@ -308,6 +310,7 @@ function ChatHeaderComponent({
             sessionKey={activeFriendlyId}
             projectId={activeProjectId}
             projectName={activeProjectName}
+            source={source}
             compact
           />
 
@@ -398,6 +401,7 @@ function ChatHeaderComponent({
                 sessionKey={activeFriendlyId}
                 projectId={activeProjectId}
                 projectName={activeProjectName}
+                source={source}
                 className="ml-1 shrink-0"
               />
               {sessionPopoverOpen && (

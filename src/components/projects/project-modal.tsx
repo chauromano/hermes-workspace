@@ -8,7 +8,6 @@ import {
   Edit01Icon,
   Folder01Icon,
   PlusSignIcon,
-  ArrowRight01Icon,
   ArrowLeft01Icon,
   Loading03Icon,
 } from '@hugeicons/core-free-icons'
@@ -48,6 +47,10 @@ function autoSlug(text: string): string {
     .slice(0, 64)
 }
 
+function isWindowsPath(p: string): boolean {
+  return /^[a-zA-Z]:[/\\]/.test(p.trim())
+}
+
 export function ProjectModal({
   open,
   onOpenChange,
@@ -61,6 +64,7 @@ export function ProjectModal({
   const [slugEdited, setSlugEdited] = useState(false)
   const [description, setDescription] = useState('')
   const [primaryPath, setPrimaryPath] = useState('/workspace')
+  const [browseMode, setBrowseMode] = useState<'container' | 'host'>('container')
   const [browseSubpath, setBrowseSubpath] = useState('')
   const [setActive, setSetActive] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -88,9 +92,14 @@ export function ProjectModal({
       setDescription(project.description || '')
       const initialPath = project.primary_path || '/workspace'
       setPrimaryPath(initialPath)
-      if (initialPath.startsWith('/workspace/') && initialPath.length > '/workspace/'.length) {
+      if (isWindowsPath(initialPath)) {
+        setBrowseMode('host')
+        setBrowseSubpath(initialPath.replace(/\\/g, '/'))
+      } else if (initialPath.startsWith('/workspace/') && initialPath.length > '/workspace/'.length) {
+        setBrowseMode('container')
         setBrowseSubpath(initialPath.slice('/workspace/'.length))
       } else {
+        setBrowseMode('container')
         setBrowseSubpath('')
       }
       setSetActive(Boolean(project.is_active))
@@ -99,8 +108,9 @@ export function ProjectModal({
       setSlug('')
       setSlugEdited(false)
       setDescription('')
-      setPrimaryPath('/workspace')
-      setBrowseSubpath('')
+      setBrowseMode('host')
+      setPrimaryPath('D:/Workspace')
+      setBrowseSubpath('D:/Workspace')
       setSetActive(true)
     }
     setError(null)
@@ -116,6 +126,21 @@ export function ProjectModal({
     }
   }, [open, resetForm])
 
+  const switchBrowseMode = (mode: 'container' | 'host', rootOverride?: string) => {
+    hapticTap()
+    setBrowseMode(mode)
+    if (mode === 'host') {
+      const target = rootOverride || 'D:/Workspace'
+      setBrowseSubpath(target)
+      if (target !== 'drives') {
+        setPrimaryPath(target)
+      }
+    } else {
+      setBrowseSubpath('')
+      setPrimaryPath('/workspace')
+    }
+  }
+
   const handleNameChange = (val: string) => {
     setName(val)
     if (!isEdit && !slugEdited) {
@@ -123,15 +148,35 @@ export function ProjectModal({
     }
   }
 
-  const handleDrillFolder = (folderName: string) => {
+  const handleDrillFolder = (item: { name: string; path: string }) => {
     hapticTap()
-    const nextSub = browseSubpath ? `${browseSubpath}/${folderName}` : folderName
+    if (browseMode === 'host') {
+      const nextPath = item.path.replace(/\\/g, '/')
+      setBrowseSubpath(nextPath)
+      setPrimaryPath(nextPath)
+      return
+    }
+    const nextSub = browseSubpath ? `${browseSubpath}/${item.name}` : item.name
     setBrowseSubpath(nextSub)
     setPrimaryPath(`/workspace/${nextSub}`)
   }
 
   const handleNavigateUp = () => {
     hapticTap()
+    if (browseMode === 'host') {
+      if (!browseSubpath || browseSubpath === 'drives') return
+      const cleaned = browseSubpath.replace(/\\/g, '/').replace(/\/+$/, '')
+      if (/^[a-zA-Z]:$/.test(cleaned)) {
+        setBrowseSubpath('drives')
+        return
+      }
+      const parts = cleaned.split('/')
+      parts.pop()
+      const parentPath = parts.length === 1 && /^[a-zA-Z]:$/.test(parts[0]) ? `${parts[0]}/` : parts.join('/')
+      setBrowseSubpath(parentPath)
+      setPrimaryPath(parentPath)
+      return
+    }
     if (!browseSubpath) return
     const parts = browseSubpath.split('/')
     parts.pop()
@@ -142,6 +187,19 @@ export function ProjectModal({
 
   const handleBreadcrumbClick = (index: number) => {
     hapticTap()
+    if (browseMode === 'host') {
+      if (index === -1) {
+        setBrowseSubpath('drives')
+        return
+      }
+      const cleaned = browseSubpath.replace(/\\/g, '/').replace(/\/+$/, '')
+      const parts = cleaned.split('/')
+      const slice = parts.slice(0, index + 1)
+      const nextPath = slice.length === 1 && /^[a-zA-Z]:$/.test(slice[0]) ? `${slice[0]}/` : slice.join('/')
+      setBrowseSubpath(nextPath)
+      setPrimaryPath(nextPath)
+      return
+    }
     if (index === -1) {
       setBrowseSubpath('')
       setPrimaryPath('/workspace')
@@ -165,8 +223,14 @@ export function ProjectModal({
 
     try {
       hapticTap()
+      const targetSubpath =
+        browseMode === 'host'
+          ? browseSubpath === 'drives'
+            ? 'D:/Workspace'
+            : browseSubpath
+          : browseSubpath
       const created = await createFolder.mutateAsync({
-        subpath: browseSubpath,
+        subpath: targetSubpath,
         name: trimmed,
       })
       toast.success(`Created folder "${created.name}"`)
@@ -240,8 +304,12 @@ export function ProjectModal({
   }
 
   const breadcrumbs = useMemo(() => {
+    if (browseMode === 'host') {
+      if (!browseSubpath || browseSubpath === 'drives') return []
+      return browseSubpath.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean)
+    }
     return browseSubpath ? browseSubpath.split('/') : []
-  }, [browseSubpath])
+  }, [browseMode, browseSubpath])
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
@@ -264,7 +332,7 @@ export function ProjectModal({
               <DialogDescription className="text-xs text-[var(--theme-muted)]">
                 {isEdit
                   ? 'Update project details, folder attachment, or active context'
-                  : 'Anchor workspaces, tasks, and agents to a codebase or folder'}
+                  : 'Anchor workspaces, tasks, and agents (Hermes & Antigravity) to a PC or container folder'}
               </DialogDescription>
             </div>
           </div>
@@ -360,9 +428,37 @@ export function ProjectModal({
 
           {/* Primary Workspace Folder Selection */}
           <div className="space-y-2">
-            <label className="block text-xs font-medium text-[var(--theme-text)]">
-              Primary Workspace Folder <span className="text-red-500">*</span>
-            </label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="block text-xs font-medium text-[var(--theme-text)]">
+                Primary Workspace Folder <span className="text-red-500">*</span>
+              </label>
+              <div className="inline-flex items-center rounded-lg border border-[var(--theme-border)] bg-[var(--theme-bg)] p-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => switchBrowseMode('host', 'D:/Workspace')}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 font-medium transition-colors',
+                    browseMode === 'host'
+                      ? 'bg-accent-500 text-white'
+                      : 'text-[var(--theme-muted)] hover:text-[var(--theme-text)]',
+                  )}
+                >
+                  Host PC (D:\ / C:\)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchBrowseMode('container')}
+                  className={cn(
+                    'rounded-md px-2 py-0.5 font-medium transition-colors',
+                    browseMode === 'container'
+                      ? 'bg-accent-500 text-white'
+                      : 'text-[var(--theme-muted)] hover:text-[var(--theme-text)]',
+                  )}
+                >
+                  Container (/workspace)
+                </button>
+              </div>
+            </div>
 
             {/* Breadcrumb Navigation */}
             <div className="flex items-center gap-1 overflow-x-auto py-1 text-xs text-[var(--theme-muted)] scrollbar-none">
@@ -370,11 +466,14 @@ export function ProjectModal({
                 type="button"
                 onClick={() => handleBreadcrumbClick(-1)}
                 className={cn(
-                  'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors',
-                  browseSubpath === '' ? 'font-semibold text-accent-600 dark:text-accent-400' : '',
+                  'rounded px-1.5 py-0.5 hover:bg-[var(--theme-hover)] transition-colors shrink-0',
+                  (browseMode === 'container' && browseSubpath === '') ||
+                    (browseMode === 'host' && browseSubpath === 'drives')
+                    ? 'font-semibold text-accent-600 dark:text-accent-400'
+                    : '',
                 )}
               >
-                workspace
+                {browseMode === 'host' ? 'PC Drives' : 'workspace'}
               </button>
               {breadcrumbs.map((b, idx) => (
                 <span key={idx} className="flex items-center gap-1 shrink-0">
@@ -397,10 +496,13 @@ export function ProjectModal({
             <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-2 space-y-1.5">
               <div className="flex items-center justify-between px-1">
                 <span className="text-[11px] font-medium text-[var(--theme-muted)]">
-                  Browse folders under /workspace:
+                  {browseMode === 'host'
+                    ? `Browse PC folders (${browseSubpath === 'drives' ? 'All Drives' : browseSubpath}):`
+                    : 'Browse folders under /workspace:'}
                 </span>
                 <div className="flex items-center gap-2">
-                  {browseSubpath && (
+                  {((browseMode === 'container' && browseSubpath) ||
+                    (browseMode === 'host' && browseSubpath && browseSubpath !== 'drives')) && (
                     <button
                       type="button"
                       onClick={handleNavigateUp}
@@ -410,23 +512,25 @@ export function ProjectModal({
                       <span>Back up</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      hapticTap()
-                      setIsCreatingFolder((v) => !v)
-                      setFolderCreateError(null)
-                    }}
-                    className={cn(
-                      'flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
-                      isCreatingFolder
-                        ? 'bg-accent-500/20 text-accent-600'
-                        : 'text-accent-600 hover:bg-accent-500/10',
-                    )}
-                  >
-                    <HugeiconsIcon icon={PlusSignIcon} size={12} strokeWidth={2.2} />
-                    <span>New Folder</span>
-                  </button>
+                  {browseSubpath !== 'drives' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticTap()
+                        setIsCreatingFolder((v) => !v)
+                        setFolderCreateError(null)
+                      }}
+                      className={cn(
+                        'flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded transition-colors',
+                        isCreatingFolder
+                          ? 'bg-accent-500/20 text-accent-600'
+                          : 'text-accent-600 hover:bg-accent-500/10',
+                      )}
+                    >
+                      <HugeiconsIcon icon={PlusSignIcon} size={12} strokeWidth={2.2} />
+                      <span>New Folder</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -434,7 +538,15 @@ export function ProjectModal({
               {isCreatingFolder && (
                 <div className="rounded-lg border border-accent-500/30 bg-accent-500/5 p-2 space-y-1.5 transition-all">
                   <div className="flex items-center justify-between text-[11px] font-medium text-[var(--theme-text)]">
-                    <span>Create folder in {browseSubpath ? `/${browseSubpath}` : '/workspace'}:</span>
+                    <span>
+                      Create folder in{' '}
+                      {browseMode === 'host'
+                        ? browseSubpath
+                        : browseSubpath
+                          ? `/${browseSubpath}`
+                          : '/workspace'}
+                      :
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
@@ -510,7 +622,7 @@ export function ProjectModal({
                 ) : !folderItems || folderItems.length === 0 ? (
                   <div className="py-3 text-center text-xs text-[var(--theme-muted)] space-y-1">
                     <div>No subfolders found in this directory</div>
-                    {!isCreatingFolder && (
+                    {!isCreatingFolder && browseSubpath !== 'drives' && (
                       <button
                         type="button"
                         onClick={() => {
@@ -539,7 +651,7 @@ export function ProjectModal({
                       >
                         <button
                           type="button"
-                          onClick={() => handleDrillFolder(item.name)}
+                          onClick={() => handleDrillFolder(item)}
                           className="flex items-center gap-2 min-w-0 flex-1 text-left"
                         >
                           <HugeiconsIcon
@@ -574,10 +686,10 @@ export function ProjectModal({
               <div className="pt-1.5 border-t border-[var(--theme-border)]">
                 <div className="flex items-center justify-between mb-1">
                   <span className="block text-[10px] text-[var(--theme-muted)]">
-                    Selected Path:
+                    Selected Path (PC or Container):
                   </span>
                   <span className="text-[9px] text-[var(--theme-muted)] font-mono">
-                    (will be created if it does not exist)
+                    (e.g. D:/Workspace/my-app or C:/Users/roman/...)
                   </span>
                 </div>
                 <input

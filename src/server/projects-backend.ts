@@ -59,9 +59,15 @@ const dbCache = new Map<string, DatabaseSync>()
 function getDatabase(dbPath: string): DatabaseSync {
   let db = dbCache.get(dbPath)
   if (!db) {
-    db = new DatabaseSync(dbPath)
-    db.exec('PRAGMA busy_timeout = 5000;')
-    dbCache.set(dbPath, db)
+    try {
+      db = new DatabaseSync(dbPath)
+      db.exec('PRAGMA busy_timeout = 5000;')
+      db.prepare('SELECT 1').get()
+      dbCache.set(dbPath, db)
+    } catch {
+      const normalized = dbPath.replace(/\\/g, '/')
+      db = new DatabaseSync(`file:${normalized}?immutable=1`)
+    }
   }
   return db
 }
@@ -87,6 +93,32 @@ function runSqliteExec(dbPath: string, sql: string): void {
     console.error('[projects-backend] runSqliteExec error:', message, '\nSQL:\n', sql)
     throw new Error(`Failed to update projects.db: ${message}`)
   }
+}
+
+export function isWindowsHostPath(p: string): boolean {
+  return /^[a-zA-Z]:[/\\]/.test(p.trim())
+}
+
+export function cleanProjectPath(raw: string): string {
+  const trimmed = raw.trim().replace(/\\/g, '/')
+  if (isWindowsHostPath(trimmed)) {
+    const drive = trimmed[0].toUpperCase()
+    const rest = trimmed.slice(2).replace(/\/+$/, '')
+    return `${drive}:${rest || '/'}`
+  }
+  return resolve(trimmed).replace(/\\/g, '/')
+}
+
+export function toContainerAccessiblePath(raw: string): string | null {
+  const cleaned = cleanProjectPath(raw)
+  if (isWindowsHostPath(cleaned)) {
+    if (cleaned.toLowerCase() === 'd:/workspace') return '/workspace'
+    if (cleaned.toLowerCase().startsWith('d:/workspace/')) {
+      return '/workspace/' + cleaned.slice('D:/Workspace/'.length)
+    }
+    return null
+  }
+  return cleaned
 }
 
 export function slugify(name: string): string {
@@ -295,13 +327,14 @@ export function createProject(
 
   const name = input.name.trim()
   const rawCandidate = slugify(input.slug || name)
-  const primaryPath = resolve(input.primary_path.trim()).replace(/\\/g, '/')
+  const primaryPath = cleanProjectPath(input.primary_path)
   const now = Math.floor(Date.now() / 1000)
 
   // Ensure primaryPath exists on disk
   try {
-    if (!existsSync(primaryPath)) {
-      mkdirSync(primaryPath, { recursive: true })
+    const containerPrimary = toContainerAccessiblePath(primaryPath)
+    if (containerPrimary && !existsSync(containerPrimary)) {
+      mkdirSync(containerPrimary, { recursive: true })
     }
   } catch (err) {
     console.warn(`[projects] Warning: Could not create directory ${primaryPath}:`, err)
@@ -371,11 +404,12 @@ export function createProject(
   if (Array.isArray(input.folders)) {
     for (const folder of input.folders) {
       if (!folder.path || !folder.path.trim()) continue
-      const fPath = resolve(folder.path.trim()).replace(/\\/g, '/')
+      const fPath = cleanProjectPath(folder.path)
       if (fPath === primaryPath) continue
       try {
-        if (!existsSync(fPath)) {
-          mkdirSync(fPath, { recursive: true })
+        const containerFolder = toContainerAccessiblePath(fPath)
+        if (containerFolder && !existsSync(containerFolder)) {
+          mkdirSync(containerFolder, { recursive: true })
         }
       } catch (err) {
         console.warn(`[projects] Warning: Could not create folder ${fPath}:`, err)
@@ -474,10 +508,11 @@ export function updateProject(
   const statements: string[] = ['BEGIN TRANSACTION;']
 
   if (typeof updates.primary_path === 'string' && updates.primary_path.trim()) {
-    const primary = resolve(updates.primary_path.trim()).replace(/\\/g, '/')
+    const primary = cleanProjectPath(updates.primary_path)
     try {
-      if (!existsSync(primary)) {
-        mkdirSync(primary, { recursive: true })
+      const containerPrimary = toContainerAccessiblePath(primary)
+      if (containerPrimary && !existsSync(containerPrimary)) {
+        mkdirSync(containerPrimary, { recursive: true })
       }
     } catch (err) {
       console.warn(`[projects] Warning: Could not create directory ${primary}:`, err)
@@ -528,10 +563,11 @@ export function addProjectFolder(
     throw new Error(`Project not found: ${ident}`)
   }
 
-  const cleanPath = resolve(folderPath.trim()).replace(/\\/g, '/')
+  const cleanPath = cleanProjectPath(folderPath)
   try {
-    if (!existsSync(cleanPath)) {
-      mkdirSync(cleanPath, { recursive: true })
+    const containerClean = toContainerAccessiblePath(cleanPath)
+    if (containerClean && !existsSync(containerClean)) {
+      mkdirSync(containerClean, { recursive: true })
     }
   } catch (err) {
     console.warn(`[projects] Warning: Could not create folder ${cleanPath}:`, err)
@@ -569,7 +605,7 @@ export function removeProjectFolder(
     throw new Error(`Project not found: ${ident}`)
   }
 
-  const cleanPath = resolve(folderPath.trim()).replace(/\\/g, '/')
+  const cleanPath = cleanProjectPath(folderPath)
   runSqliteExec(
     dbPath,
     `DELETE FROM project_folders WHERE project_id = ${sqliteQuote(proj.id)} AND path = ${sqliteQuote(cleanPath)};`,
@@ -721,8 +757,60 @@ export function getStateDbPath(): string {
   return primary
 }
 
+export function getAllStateDbPaths(): Array<{ profile: string; path: string }> {
+  const root = getHermesRoot()
+  const out: Array<{ profile: string; path: string }> = []
+  const rootDb = getStateDbPath()
+  if (existsSync(rootDb)) {
+    out.push({ profile: 'default', path: rootDb })
+  }
+  const profilesDir = join(root, 'profiles')
+  if (existsSync(profilesDir)) {
+    try {
+      for (const name of readdirSync(profilesDir)) {
+        if (name.startsWith('.') || name === 'default') continue
+        const pDb = join(profilesDir, name, 'state.db')
+        try {
+          const st = statSync(pDb)
+          if (st.isFile() && st.size > 0) {
+            out.push({ profile: name, path: pDb })
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  return out
+}
+
 export function normalizePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  let s = (p || '').trim()
+  if (s.toLowerCase().startsWith('file:///')) {
+    try {
+      s = decodeURIComponent(s.slice('file:///'.length))
+    } catch {
+      s = s.slice('file:///'.length)
+    }
+  }
+  s = s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  if (s === 'd:/workspace') return '/workspace'
+  if (s.startsWith('d:/workspace/')) {
+    s = '/workspace/' + s.slice('d:/workspace/'.length)
+  }
+  if (
+    s === '/workspace/hermes_default_spaces/architect/express-architecture-kb' ||
+    s === '/workspace/hermes/architect/express-architecture-kb'
+  ) {
+    return '/workspace/obsidian/express-architecture-hub/express-architecture-kb'
+  }
+  if (
+    s === '/workspace/hermes_default_spaces/architect' ||
+    s.startsWith('/workspace/hermes_default_spaces/architect/') ||
+    s === '/workspace/hermes/architect' ||
+    s.startsWith('/workspace/hermes/architect/')
+  ) {
+    return '/workspace/obsidian/express-architecture-hub'
+  }
+  return s
 }
 
 export function findProjectForPath(
@@ -761,6 +849,7 @@ const sessionCwdCache = new Map<string, { cwd: string; timestamp: number }>()
 const CWD_CACHE_TTL_MS = 30_000
 
 export function invalidateSessionCwd(sessionId?: string): void {
+  cachedDbSessions = null
   if (sessionId) {
     sessionCwdCache.delete(sessionId)
   } else {
@@ -768,7 +857,7 @@ export function invalidateSessionCwd(sessionId?: string): void {
   }
 }
 
-export function getSessionCwdMap(sessionIds: string[], stateDb = getStateDbPath()): Map<string, string> {
+export function getSessionCwdMap(sessionIds: string[], _stateDb = getStateDbPath()): Map<string, string> {
   const map = new Map<string, string>()
   if (sessionIds.length === 0) return map
 
@@ -784,26 +873,30 @@ export function getSessionCwdMap(sessionIds: string[], stateDb = getStateDbPath(
     }
   }
 
-  if (missingIds.length > 0 && existsSync(stateDb)) {
-    try {
-      const inList = missingIds.map(sqliteQuote).join(', ')
-      const raw = runSqlite(stateDb, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
-      if (raw) {
-        const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
-        const found = new Set<string>()
-        for (const row of rows) {
-          found.add(row.id)
-          const cwd = row.cwd && row.cwd.trim() ? row.cwd.trim() : ''
-          sessionCwdCache.set(row.id, { cwd, timestamp: now })
-          if (cwd) map.set(row.id, cwd)
-        }
-        for (const id of missingIds) {
-          if (!found.has(id)) {
-            sessionCwdCache.set(id, { cwd: '', timestamp: now })
+  if (missingIds.length > 0) {
+    const inList = missingIds.map(sqliteQuote).join(', ')
+    const found = new Set<string>()
+    for (const { path: dbPath } of getAllStateDbPaths()) {
+      try {
+        const raw = runSqlite(dbPath, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
+        if (raw) {
+          const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
+          for (const row of rows) {
+            const cwd = row.cwd && row.cwd.trim() ? row.cwd.trim() : ''
+            if (cwd || !found.has(row.id)) {
+              found.add(row.id)
+              sessionCwdCache.set(row.id, { cwd, timestamp: now })
+              if (cwd) map.set(row.id, cwd)
+            }
           }
         }
+      } catch {}
+    }
+    for (const id of missingIds) {
+      if (!found.has(id)) {
+        sessionCwdCache.set(id, { cwd: '', timestamp: now })
       }
-    } catch {}
+    }
   }
 
   return map
@@ -813,7 +906,7 @@ export function setSessionProject(
   sessionId: string,
   projectId: string | null,
   projectsDb = getProjectsDbPath(),
-  stateDb = getStateDbPath(),
+  _stateDb = getStateDbPath(),
 ): {
   success: boolean
   cwd: string | null
@@ -837,9 +930,11 @@ export function setSessionProject(
     projectName = 'Personal Sandbox'
   }
 
-  if (existsSync(stateDb)) {
-    const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
-    runSqliteExec(stateDb, sql)
+  for (const { path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
+      runSqliteExec(dbPath, sql)
+    } catch {}
   }
 
   sessionCwdCache.set(sessionId, { cwd: targetPath || '', timestamp: Date.now() })
@@ -853,45 +948,140 @@ export function setSessionProject(
   }
 }
 
+let cachedDbSessions: {
+  sessions: Array<Record<string, unknown>>
+  timestamp: number
+} | null = null
+const DB_SESSIONS_CACHE_TTL_MS = 10_000
+
 export function readSessionsFromStateDb(
-  limit = 50,
-  stateDb = getStateDbPath(),
+  limit = 200,
+  _stateDb = getStateDbPath(),
 ): Array<Record<string, unknown>> {
-  if (!existsSync(stateDb)) return []
-  try {
-    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
-    const raw = runSqlite(stateDb, sql)
-    if (!raw) return []
-    const rows = JSON.parse(raw) as Array<Record<string, any>>
-    return rows.map((s) => ({
-      key: s.id,
-      id: s.id,
-      friendlyId: s.id,
-      kind: 'chat',
-      status: 'idle',
-      model: s.model || '',
-      label: s.title || undefined,
-      title: s.title || undefined,
-      derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
-      preview: undefined,
-      tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
-      totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
-      message_count: s.message_count || 0,
-      tool_call_count: s.tool_call_count || 0,
-      messageCount: s.message_count || 0,
-      toolCallCount: s.tool_call_count || 0,
-      cost: 0,
-      createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-      startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-      updatedAt: s.last_activity_at
-        ? Math.floor(s.last_activity_at * 1000)
-        : s.started_at
-          ? Math.floor(s.started_at * 1000)
-          : Date.now(),
-      isPinned: Boolean(s.pinned),
-      cwd: s.cwd || null,
-    }))
-  } catch {
-    return []
+  const now = Date.now()
+  if (cachedDbSessions && now - cachedDbSessions.timestamp < DB_SESSIONS_CACHE_TTL_MS) {
+    return cachedDbSessions.sessions.map((s) => ({ ...s }))
   }
+  const seen = new Map<string, Record<string, unknown>>()
+  for (const { profile, path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name FROM sessions WHERE COALESCE(archived, 0) = 0 AND COALESCE(hidden, 0) = 0 ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
+      const raw = runSqlite(dbPath, sql)
+      if (!raw) continue
+      const rows = JSON.parse(raw) as Array<Record<string, any>>
+      for (const s of rows) {
+        if (!s.id || seen.has(s.id)) continue
+        const cwd = s.cwd && String(s.cwd).trim() ? String(s.cwd).trim() : ''
+        sessionCwdCache.set(s.id, { cwd, timestamp: now })
+        const updatedMs = s.last_activity_at
+          ? Math.floor(s.last_activity_at * 1000)
+          : s.started_at
+            ? Math.floor(s.started_at * 1000)
+            : now
+        seen.set(s.id, {
+          key: s.id,
+          id: s.id,
+          friendlyId: s.id,
+          kind: 'chat',
+          status: 'idle',
+          model: s.model || '',
+          label: s.title || undefined,
+          title: s.title || undefined,
+          derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
+          preview: undefined,
+          tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
+          totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
+          message_count: s.message_count || 0,
+          tool_call_count: s.tool_call_count || 0,
+          messageCount: s.message_count || 0,
+          toolCallCount: s.tool_call_count || 0,
+          cost: 0,
+          createdAt: s.started_at ? Math.floor(s.started_at * 1000) : now,
+          startedAt: s.started_at ? Math.floor(s.started_at * 1000) : now,
+          updatedAt: updatedMs,
+          lastPromptAt: updatedMs,
+          isPinned: Boolean(s.pinned),
+          cwd: cwd || null,
+          agentProfile: s.profile_name || profile,
+        })
+      }
+    } catch {}
+  }
+  const result = Array.from(seen.values())
+    .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, limit * 2)
+  cachedDbSessions = { sessions: result, timestamp: now }
+  return result
+}
+
+export function readSessionMessagesFromStateDb(
+  sessionId: string,
+  limit = 200,
+): { messages: Array<Record<string, any>>; model?: string } | null {
+  if (!sessionId || !sessionId.trim()) return null
+  const cleanId = sessionId.trim()
+  for (const { path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const sessRaw = runSqlite(
+        dbPath,
+        `SELECT id, model FROM sessions WHERE id = ${sqliteQuote(cleanId)} LIMIT 1;`,
+      )
+      const sessRows = sessRaw ? (JSON.parse(sessRaw) as Array<{ id: string; model?: string }>) : []
+      if (sessRows.length === 0) continue
+
+      const msgRaw = runSqlite(
+        dbPath,
+        `SELECT id, session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason, reasoning FROM messages WHERE session_id = ${sqliteQuote(cleanId)} AND COALESCE(active, 1) = 1 ORDER BY timestamp ASC, id ASC LIMIT ${limit > 0 ? limit : 500};`,
+      )
+      const messages = msgRaw ? (JSON.parse(msgRaw) as Array<Record<string, any>>) : []
+      return {
+        messages,
+        model: sessRows[0]?.model || undefined,
+      }
+    } catch {}
+  }
+  return null
+}
+
+let cachedActiveLeases: {
+  leases: Map<string, boolean>
+  timestamp: number
+} | null = null
+const LEASES_CACHE_TTL_MS = 5_000
+
+export function getSessionActivityMetaMap(
+  sessionIds: string[],
+  _stateDb = getStateDbPath(),
+): Map<string, { lastPromptAt: number | null; hasActiveLease: boolean }> {
+  const map = new Map<string, { lastPromptAt: number | null; hasActiveLease: boolean }>()
+  if (sessionIds.length === 0) return map
+
+  const now = Date.now()
+  if (!cachedActiveLeases || now - cachedActiveLeases.timestamp >= LEASES_CACHE_TTL_MS) {
+    const leases = new Map<string, boolean>()
+    const nowSec = now / 1000
+    for (const { path: dbPath } of getAllStateDbPaths()) {
+      try {
+        const leaseSql = `SELECT conversation_id, expires_at FROM session_turn_leases WHERE expires_at > ${nowSec};`
+        const leaseRaw = runSqlite(dbPath, leaseSql)
+        const leaseRows = leaseRaw
+          ? (JSON.parse(leaseRaw) as Array<{ conversation_id: string; expires_at?: number | null }>)
+          : []
+        for (const lr of leaseRows) {
+          if (lr.conversation_id) {
+            leases.set(lr.conversation_id, true)
+          }
+        }
+      } catch {}
+    }
+    cachedActiveLeases = { leases, timestamp: now }
+  }
+
+  for (const id of sessionIds) {
+    if (cachedActiveLeases.leases.get(id)) {
+      map.set(id, { lastPromptAt: null, hasActiveLease: true })
+    }
+  }
+
+  return map
 }

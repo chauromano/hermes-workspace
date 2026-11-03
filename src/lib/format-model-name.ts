@@ -32,6 +32,16 @@ const MODEL_MAP: Record<string, string> = {
   'MiniMax-M3': 'MiniMax M3',
   'MiniMax-M2.7': 'MiniMax M2.7',
   'MiniMax-M2.7-Lightning': 'MiniMax M2.7 Lightning',
+  'gemini-4-argon-high': 'Gemini 3.1 Pro (High)',
+  'gemini-4-argon-low': 'Gemini 3.1 Pro (Low)',
+  'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
+  'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
+  'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
+  'gemini-3-flash-agent': 'Gemini 3 Flash',
+  'claude-sonnet-4-6-thinking': 'Claude Sonnet 4.6 (Thinking)',
+  'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
+  'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -41,6 +51,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   'openai-codex': 'Codex',
   google: 'Google',
   minimax: 'MiniMax',
+  antigravity: 'Antigravity',
 }
 
 export function formatModelName(raw: string | undefined | null): string {

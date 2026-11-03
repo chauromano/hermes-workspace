@@ -11,8 +11,13 @@ import {
   deleteProject,
   listWorkspaceDirectories,
   createWorkspaceDirectory,
+  isWindowsHostPath,
   type CreateProjectInput,
 } from '../../server/projects-backend'
+import {
+  listHostFolders,
+  createHostFolder,
+} from '../../server/antigravity-bridge'
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -35,6 +40,22 @@ export const Route = createFileRoute('/api/projects')({
         // Folder auto-completion helper for Project creation
         if (type === 'folders') {
           const subpath = url.searchParams.get('subpath') || ''
+          const hostMode =
+            url.searchParams.get('host') === 'true' ||
+            subpath === 'drives' ||
+            isWindowsHostPath(subpath)
+          if (hostMode) {
+            const targetHostPath = subpath || 'D:/Workspace'
+            const hostData = await listHostFolders(targetHostPath)
+            if (hostData) {
+              return jsonResponse({
+                folders: hostData.folders,
+                path: hostData.path,
+                parent: hostData.parent,
+                host: true,
+              })
+            }
+          }
           const folders = listWorkspaceDirectories(subpath)
           return jsonResponse({ folders })
         }
@@ -63,6 +84,16 @@ export const Route = createFileRoute('/api/projects')({
                   : ''
             if (!name || !name.trim()) {
               return jsonResponse({ error: 'Folder name is required' }, 400)
+            }
+            if (isWindowsHostPath(subpath)) {
+              const hostCreated = await createHostFolder(subpath, name.trim())
+              if (!hostCreated.ok || !hostCreated.folder) {
+                return jsonResponse(
+                  { error: hostCreated.error || 'Failed to create PC folder' },
+                  500,
+                )
+              }
+              return jsonResponse({ success: true, folder: hostCreated.folder }, 201)
             }
             const folder = createWorkspaceDirectory(subpath, name)
             return jsonResponse({ success: true, folder }, 201)

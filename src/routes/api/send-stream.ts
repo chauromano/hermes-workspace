@@ -33,6 +33,13 @@ import {
 } from '../../server/claude-api'
 import { loadWorkspaceCatalog } from './workspace'
 import {
+  isAntigravitySession,
+  listAntigravitySessions,
+  openAntigravityStream,
+} from '../../server/antigravity-bridge'
+import { getActiveProfileName } from '../../server/profiles-browser'
+import { getActiveProjectId, getProject } from '../../server/projects-backend'
+import {
   collectSyntheticLiveToolEvents,
   createSyntheticLiveToolTracker,
 } from './-send-stream-live-tools'
@@ -321,17 +328,47 @@ export const Route = createFileRoute('/api/send-stream')({
           )
         }
 
+        const requestModelRaw = typeof body.model === 'string' ? body.model.trim() : ''
+        const candidateIdForAgy = rawSessionKey || requestedFriendlyId || ''
+        const isExistingAgySession =
+          candidateIdForAgy &&
+          candidateIdForAgy !== 'new' &&
+          candidateIdForAgy !== 'main'
+            ? await isAntigravitySession(candidateIdForAgy)
+            : false
+        const activeProfileName = getActiveProfileName()
+        const isAntigravityTurn =
+          isExistingAgySession ||
+          activeProfileName === 'antigravity' ||
+          requestModelRaw.toLowerCase().startsWith('antigravity/') ||
+          requestModelRaw.toLowerCase().startsWith('google-antigravity/') ||
+          requestModelRaw.toLowerCase().includes('gemini-4-argon') ||
+          requestModelRaw.toLowerCase().includes('gemini-3.8-flash') ||
+          requestModelRaw.toLowerCase().includes('claude-opus-5-5') ||
+          requestModelRaw.toLowerCase().includes('claude-sonnet-5-5') ||
+          requestModelRaw.toLowerCase().includes('gpt-oss-120b')
+
         // Resolve session key
         let sessionKey: string
         let resolvedFriendlyId: string
         try {
-          const resolved = await resolveSessionKey({
-            rawSessionKey,
-            friendlyId: requestedFriendlyId,
-            defaultKey: 'main',
-          })
-          sessionKey = resolved.sessionKey
-          resolvedFriendlyId = resolved.sessionKey
+          if (isAntigravityTurn) {
+            sessionKey =
+              candidateIdForAgy &&
+              candidateIdForAgy !== 'new' &&
+              candidateIdForAgy !== 'main'
+                ? candidateIdForAgy
+                : 'new'
+            resolvedFriendlyId = sessionKey
+          } else {
+            const resolved = await resolveSessionKey({
+              rawSessionKey,
+              friendlyId: requestedFriendlyId,
+              defaultKey: 'main',
+            })
+            sessionKey = resolved.sessionKey
+            resolvedFriendlyId = resolved.sessionKey
+          }
         } catch (err) {
           const errorMsg = normalizeClaudeErrorMessage(err)
           if (errorMsg === 'session not found') {
@@ -522,6 +559,298 @@ export const Route = createFileRoute('/api/send-stream')({
             }, 10_000)
 
             try {
+              if (isAntigravityTurn) {
+                const runId = crypto.randomUUID()
+                activeRunId = runId
+                registerActiveSendRun(runId)
+                unregisterTimer = setTimeout(() => {
+                  if (activeRunId) {
+                    unregisterActiveSendRun(activeRunId)
+                    activeRunId = null
+                  }
+                }, SEND_STREAM_RUN_TIMEOUT_MS)
+
+                let targetCwd = ''
+                let existingSessionModel = ''
+                if (isExistingAgySession) {
+                  const agyList = await listAntigravitySessions(400)
+                  const match = agyList.find((s) => s.id === sessionKey || s.key === sessionKey)
+                  if (match?.cwd) targetCwd = match.cwd
+                  if (match?.model) existingSessionModel = match.model
+                }
+                if (!targetCwd) {
+                  const activeProjId = getActiveProjectId()
+                  if (activeProjId) {
+                    const proj = getProject(activeProjId)
+                    if (proj?.primary_path) targetCwd = proj.primary_path
+                  }
+                }
+                if (!targetCwd && workspaceScope?.path) {
+                  targetCwd = workspaceScope.path
+                }
+                if (!targetCwd) {
+                  targetCwd = 'D:/Workspace'
+                }
+
+                const agyMode =
+                  typeof body.agyMode === 'string' && body.agyMode.trim()
+                    ? body.agyMode.trim()
+                    : 'auto'
+                const agyEffort =
+                  typeof body.thinking === 'string' &&
+                  ['low', 'medium', 'high'].includes(body.thinking.trim().toLowerCase())
+                    ? body.thinking.trim().toLowerCase()
+                    : undefined
+
+                const isRecognizedAgyModel =
+                  requestModelRaw.toLowerCase().startsWith('antigravity/') ||
+                  requestModelRaw.toLowerCase().startsWith('google-antigravity/') ||
+                  requestModelRaw.toLowerCase().includes('gemini-4-argon') ||
+                  requestModelRaw.toLowerCase().includes('gemini-3.8-flash') ||
+                  requestModelRaw.toLowerCase().includes('claude-opus-5-5') ||
+                  requestModelRaw.toLowerCase().includes('claude-sonnet-5-5') ||
+                  requestModelRaw.toLowerCase().includes('gpt-oss-120b')
+
+                let effectiveAgyModel = isRecognizedAgyModel ? requestModelRaw : ''
+                if (!effectiveAgyModel && isExistingAgySession && existingSessionModel) {
+                  effectiveAgyModel = existingSessionModel
+                }
+                if (!effectiveAgyModel) {
+                  effectiveAgyModel = 'antigravity/gemini-3.8-flash-high'
+                }
+
+                let currentSessionKey = sessionKey
+                let startedEmitted = false
+                let accumulated = ''
+                let accumulatedThinking = ''
+                let resolvedModelUsed = effectiveAgyModel
+
+                const agyConversationId =
+                  candidateIdForAgy &&
+                  candidateIdForAgy !== 'new' &&
+                  candidateIdForAgy !== 'main'
+                    ? candidateIdForAgy
+                    : undefined
+
+                const agyRes = await openAntigravityStream({
+                  conversationId: agyConversationId,
+                  prompt: getChatMessage(message, attachments),
+                  model: effectiveAgyModel,
+                  effort: agyEffort,
+                  mode: agyMode,
+                  cwd: targetCwd,
+                  signal: abortController.signal,
+                })
+
+                if (!agyRes.ok || !agyRes.body) {
+                  const errText = await agyRes.text().catch(() => 'Antigravity bridge error')
+                  throw new Error(errText || `Antigravity bridge returned ${agyRes.status}`)
+                }
+
+                const reader = agyRes.body.getReader()
+                const decoder = new TextDecoder()
+                let buffer = ''
+
+                while (true) {
+                  const { value, done } = await reader.read()
+                  if (done) break
+                  buffer += decoder.decode(value, { stream: true })
+                  const parts = buffer.split('\n\n')
+                  buffer = parts.pop() || ''
+
+                  for (const block of parts) {
+                    const lines = block.split('\n')
+                    let evName = 'message'
+                    let dataRaw = ''
+                    for (const line of lines) {
+                      if (line.startsWith('event:')) {
+                        evName = line.slice(6).trim()
+                      } else if (line.startsWith('data:')) {
+                        dataRaw += line.slice(5).trim()
+                      }
+                    }
+                    if (!dataRaw) continue
+                    let payload: Record<string, unknown> = {}
+                    try {
+                      payload = JSON.parse(dataRaw) as Record<string, unknown>
+                    } catch {
+                      continue
+                    }
+
+                    if (evName === 'init') {
+                      const cid =
+                        typeof payload.conversationId === 'string' && payload.conversationId
+                          ? payload.conversationId
+                          : currentSessionKey
+                      currentSessionKey = cid
+                      if (typeof payload.model === 'string' && payload.model) {
+                        resolvedModelUsed = payload.model
+                      }
+                      persistRunStarted(runId, currentSessionKey, currentSessionKey)
+                      if (!startedEmitted) {
+                        startedEmitted = true
+                        sendEvent('started', {
+                          runId,
+                          sessionKey: currentSessionKey,
+                          friendlyId: currentSessionKey,
+                        })
+                      }
+                      lastActivity = 'Antigravity agent initialized...'
+                    } else if (evName === 'thinking') {
+                      if (!startedEmitted && currentSessionKey !== 'new') {
+                        startedEmitted = true
+                        persistRunStarted(runId, currentSessionKey, currentSessionKey)
+                        sendEvent('started', {
+                          runId,
+                          sessionKey: currentSessionKey,
+                          friendlyId: currentSessionKey,
+                        })
+                      }
+                      const thText = typeof payload.text === 'string' ? payload.text : ''
+                      if (thText) {
+                        accumulatedThinking = thText
+                        persistActiveRun((runSessionKey, activeId) =>
+                          setRunThinking(runSessionKey, activeId, accumulatedThinking),
+                        )
+                        sendEvent('thinking', {
+                          text: accumulatedThinking,
+                          sessionKey: currentSessionKey,
+                          runId,
+                        })
+                        lastActivity = 'Reasoning...'
+                      }
+                    } else if (evName === 'tool') {
+                      if (!startedEmitted && currentSessionKey !== 'new') {
+                        startedEmitted = true
+                        persistRunStarted(runId, currentSessionKey, currentSessionKey)
+                        sendEvent('started', {
+                          runId,
+                          sessionKey: currentSessionKey,
+                          friendlyId: currentSessionKey,
+                        })
+                      }
+                      const phase =
+                        payload.phase === 'complete' ? 'complete' : 'calling'
+                      const tName = typeof payload.name === 'string' ? payload.name : 'tool'
+                      const tcId =
+                        typeof payload.toolCallId === 'string'
+                          ? payload.toolCallId
+                          : `${runId}:${tName}`
+                      const argsObj =
+                        payload.args && typeof payload.args === 'object'
+                          ? (payload.args as Record<string, unknown>)
+                          : undefined
+                      const resStr =
+                        typeof payload.result === 'string' ? payload.result : undefined
+                      persistActiveRun((runSessionKey, activeId) =>
+                        upsertRunToolCall(runSessionKey, activeId, {
+                          id: tcId,
+                          name: tName,
+                          phase,
+                          args: argsObj,
+                          result: resStr,
+                        }),
+                      )
+                      sendEvent('tool', {
+                        phase,
+                        name: tName,
+                        toolCallId: tcId,
+                        args: argsObj,
+                        result: resStr,
+                        sessionKey: currentSessionKey,
+                        runId,
+                      })
+                      lastActivity =
+                        phase === 'calling'
+                          ? `Running: ${tName.replace(/_/g, ' ')}`
+                          : `Completed: ${tName.replace(/_/g, ' ')}`
+                    } else if (evName === 'chunk') {
+                      if (!startedEmitted && currentSessionKey !== 'new') {
+                        startedEmitted = true
+                        persistRunStarted(runId, currentSessionKey, currentSessionKey)
+                        sendEvent('started', {
+                          runId,
+                          sessionKey: currentSessionKey,
+                          friendlyId: currentSessionKey,
+                        })
+                      }
+                      const textChunk = typeof payload.text === 'string' ? payload.text : ''
+                      if (textChunk) {
+                        accumulated = textChunk
+                        persistActiveRun((runSessionKey, activeId) =>
+                          appendRunText(runSessionKey, activeId, accumulated, {
+                            replace: true,
+                          }),
+                        )
+                        sendEvent('chunk', {
+                          text: accumulated,
+                          fullReplace: true,
+                          sessionKey: currentSessionKey,
+                          runId,
+                        })
+                        lastActivity = 'Streaming response...'
+                      }
+                    } else if (evName === 'step') {
+                      sendEvent('step', {
+                        ...payload,
+                        sessionKey: currentSessionKey,
+                        runId,
+                      })
+                    } else if (evName === 'done') {
+                      const cid =
+                        typeof payload.conversationId === 'string' && payload.conversationId
+                          ? payload.conversationId
+                          : currentSessionKey
+                      currentSessionKey = cid
+                      if (typeof payload.text === 'string' && payload.text.length > accumulated.length) {
+                        accumulated = payload.text
+                      }
+                      persistActiveRun((runSessionKey, activeId) =>
+                        markRunStatus(runSessionKey, activeId, 'complete'),
+                      )
+                      sendEvent('done', {
+                        state: 'complete',
+                        sessionKey: currentSessionKey,
+                        friendlyId: currentSessionKey,
+                        runId,
+                        model: resolvedModelUsed,
+                        usage: payload.usage,
+                        message: {
+                          role: 'assistant',
+                          model: resolvedModelUsed,
+                          content: [
+                            ...(accumulatedThinking
+                              ? [{ type: 'thinking', thinking: accumulatedThinking }]
+                              : []),
+                            { type: 'text', text: accumulated },
+                          ],
+                        },
+                      })
+                      closeStream()
+                      return
+                    } else if (evName === 'error') {
+                      const errMsg =
+                        typeof payload.message === 'string'
+                          ? payload.message
+                          : 'Antigravity execution failed'
+                      persistActiveRun((runSessionKey, activeId) =>
+                        markRunStatus(runSessionKey, activeId, 'error', errMsg),
+                      )
+                      sendEvent('error', {
+                        message: errMsg,
+                        sessionKey: currentSessionKey,
+                        runId,
+                      })
+                      closeStream()
+                      return
+                    }
+                  }
+                }
+
+                closeStream()
+                return
+              }
+
               if (chatMode === 'portable') {
                 const runId = crypto.randomUUID()
                 const portableSessionKey = sessionKey

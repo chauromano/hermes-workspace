@@ -141,11 +141,7 @@ function ChatRoute() {
           activeFriendlyId={activeFriendlyId}
           isNewChat={isNewChat}
           forcedSessionKey={forcedSessionKey}
-          onSessionResolved={
-            isNewChat || activeFriendlyId === 'main'
-              ? handleSessionResolved
-              : undefined
-          }
+          onSessionResolved={handleSessionResolved}
         />
       </Suspense>
     </ErrorBoundary>

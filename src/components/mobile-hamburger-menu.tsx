@@ -11,27 +11,28 @@ import {
   CommandLineIcon,
   McpServerIcon,
   Menu01Icon,
-  PinIcon,
   PlusSignIcon,
   PuzzleIcon,
   Rocket01Icon,
-  Search01Icon,
   Settings01Icon,
   UserGroupIcon,
   UserMultipleIcon,
 } from '@hugeicons/core-free-icons'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SessionMeta } from '@/screens/chat/types'
 import { cn } from '@/lib/utils'
 import { hapticTap } from '@/lib/haptics'
 import { getTheme, getThemeVariant, isDarkTheme, setTheme } from '@/lib/theme'
-import { ProjectSwitcher } from '@/components/projects/project-switcher'
+import { SidebarSessions } from '@/screens/chat/components/sidebar/sidebar-sessions'
+import { SessionRenameDialog } from '@/screens/chat/components/sidebar/session-rename-dialog'
+import { SessionDeleteDialog } from '@/screens/chat/components/sidebar/session-delete-dialog'
+import { useDeleteSession } from '@/screens/chat/hooks/use-delete-session'
+import { useRenameSession } from '@/screens/chat/hooks/use-rename-session'
 import {
   selectChatProfileDisplayName,
   useChatSettingsStore,
 } from '@/hooks/use-chat-settings'
 import { useSettingsStore } from '@/hooks/use-settings'
-import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 
 export const MOBILE_HAMBURGER_NAV_ITEMS = [
   {
@@ -127,42 +128,6 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
   },
 ]
 
-function normalizeLabel(value: string | undefined): string {
-  if (typeof value !== 'string') return ''
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : ''
-}
-
-function getSessionTitle(session: SessionMeta): string {
-  const label = normalizeLabel(session.label)
-  if (label) return label
-  const derivedTitle = normalizeLabel(session.derivedTitle)
-  if (derivedTitle) return derivedTitle
-  const title = normalizeLabel(session.title)
-  if (title) return title
-  return `Session ${session.friendlyId ? session.friendlyId.slice(0, 8) : 'Chat'}`
-}
-
-const dayFormatter = new Intl.DateTimeFormat(undefined, {
-  month: 'short',
-  day: 'numeric',
-})
-
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: 'numeric',
-  minute: '2-digit',
-})
-
-function formatUpdatedAt(updatedAt?: number): string {
-  if (typeof updatedAt !== 'number') return ''
-  const value = new Date(updatedAt)
-  const now = new Date()
-  if (value.toDateString() === now.toDateString()) {
-    return timeFormatter.format(value)
-  }
-  return dayFormatter.format(value)
-}
-
 /** Shared drawer state — used by both the trigger button and the drawer itself */
 let _setOpen: ((v: boolean) => void) | null = null
 
@@ -198,92 +163,6 @@ type MobileHamburgerMenuProps = {
   onNewChat?: () => void
 }
 
-function MobileSessionItem({
-  session,
-  active,
-  isPinned,
-  onSelect,
-  onTogglePin,
-}: {
-  session: SessionMeta
-  active: boolean
-  isPinned: boolean
-  onSelect: () => void
-  onTogglePin: () => void
-}) {
-  const timestamp = formatUpdatedAt(session.updatedAt)
-  const title = getSessionTitle(session)
-
-  return (
-    <div
-      className={cn(
-        'group flex items-center gap-1.5 w-full rounded-xl px-2.5 py-1.5 text-left transition-all active:scale-[0.99]',
-        active
-          ? 'bg-accent-500/10 text-accent-700 font-semibold'
-          : 'hover:bg-primary-100/70 text-ink',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex items-center gap-2.5 min-w-0 flex-1 text-left py-0.5"
-      >
-        <span
-          className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-lg',
-            active
-              ? 'bg-accent-500/20 text-accent-600'
-              : isPinned
-                ? 'bg-accent-500/15 text-accent-600'
-                : 'bg-primary-100 text-primary-500',
-          )}
-        >
-          {isPinned ? (
-            <HugeiconsIcon icon={PinIcon} size={14} strokeWidth={1.8} />
-          ) : (
-            <HugeiconsIcon icon={Chat01Icon} size={15} />
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium">
-            {title}
-          </span>
-          {timestamp ? (
-            <span className="block truncate text-[10px] text-primary-400">
-              {timestamp}
-            </span>
-          ) : null}
-        </span>
-        {active && (
-          <span className="size-2 rounded-full bg-accent-500 shrink-0" />
-        )}
-      </button>
-
-      {/* Pin toggle button */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onTogglePin()
-        }}
-        aria-label={isPinned ? 'Unpin session' : 'Pin session'}
-        className={cn(
-          'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
-          isPinned
-            ? 'text-accent-600 hover:bg-accent-500/20'
-            : 'text-primary-300 opacity-60 hover:opacity-100 hover:bg-primary-200/60 hover:text-primary-700',
-        )}
-      >
-        <HugeiconsIcon
-          icon={PinIcon}
-          size={14}
-          strokeWidth={isPinned ? 2 : 1.5}
-        />
-      </button>
-    </div>
-  )
-}
-
 /** Mount once in WorkspaceShell — renders the drawer + backdrop */
 export function MobileHamburgerMenu({
   sessions = [],
@@ -299,15 +178,65 @@ export function MobileHamburgerMenu({
   const isChatRoute =
     pathname.startsWith('/chat') || pathname === '/new' || pathname === '/'
 
-  const { pinnedSessionKeys, togglePinnedSession } = usePinnedSessions()
   const [activeTab, setActiveTab] = useState<'sessions' | 'apps'>('sessions')
-  const [sessionSearch, setSessionSearch] = useState('')
+
+  const { deleteSession } = useDeleteSession()
+  const { renameSession } = useRenameSession()
+
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [renameSessionKey, setRenameSessionKey] = useState<string | null>(null)
+  const [renameFriendlyId, setRenameFriendlyId] = useState<string | null>(null)
+  const [renameSessionTitle, setRenameSessionTitle] = useState('')
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteSessionKey, setDeleteSessionKey] = useState<string | null>(null)
+  const [deleteFriendlyId, setDeleteFriendlyId] = useState<string | null>(null)
+  const [deleteSessionTitle, setDeleteSessionTitle] = useState('')
+
+  function handleOpenRename(session: SessionMeta) {
+    setRenameSessionKey(session.key)
+    setRenameFriendlyId(session.friendlyId)
+    setRenameSessionTitle(
+      session.label || session.title || session.derivedTitle || '',
+    )
+    setRenameDialogOpen(true)
+  }
+
+  function handleSaveRename(newTitle: string) {
+    if (renameSessionKey) {
+      void renameSession(renameSessionKey, renameFriendlyId, newTitle)
+    }
+    setRenameDialogOpen(false)
+    setRenameSessionKey(null)
+    setRenameFriendlyId(null)
+  }
+
+  function handleOpenDelete(session: SessionMeta) {
+    setDeleteSessionKey(session.key)
+    setDeleteFriendlyId(session.friendlyId)
+    setDeleteSessionTitle(
+      session.label ||
+        session.title ||
+        session.derivedTitle ||
+        session.friendlyId,
+    )
+    setDeleteDialogOpen(true)
+  }
+
+  function handleConfirmDelete() {
+    if (deleteSessionKey && deleteFriendlyId) {
+      const isActive = deleteFriendlyId === activeFriendlyId
+      void deleteSession(deleteSessionKey, deleteFriendlyId, isActive)
+    }
+    setDeleteDialogOpen(false)
+    setDeleteSessionKey(null)
+    setDeleteFriendlyId(null)
+  }
 
   // Automatically switch tab when opening based on current route
   useEffect(() => {
     if (open) {
       setActiveTab(isChatRoute ? 'sessions' : 'apps')
-      setSessionSearch('')
     }
   }, [open, isChatRoute])
 
@@ -332,41 +261,6 @@ export function MobileHamburgerMenu({
     void navigate({ to })
     setOpen(false)
   }
-
-  const pinnedKeySet = useMemo(() => new Set(pinnedSessionKeys), [pinnedSessionKeys])
-  const isSessionPinned = useCallback(
-    (s: SessionMeta) => {
-      return (
-        pinnedKeySet.has(s.key) ||
-        (Boolean(s.friendlyId) && pinnedKeySet.has(s.friendlyId))
-      )
-    },
-    [pinnedKeySet],
-  )
-
-  const filteredSessions = useMemo(() => {
-    if (!sessions) return []
-    const q = sessionSearch.trim().toLowerCase()
-    if (!q) return sessions
-    return sessions.filter((s) => {
-      const title = getSessionTitle(s).toLowerCase()
-      const key = (s.friendlyId || s.key || '').toLowerCase()
-      return title.includes(q) || key.includes(q)
-    })
-  }, [sessions, sessionSearch])
-
-  const { pinnedSessions, unpinnedSessions } = useMemo(() => {
-    const pinned: Array<SessionMeta> = []
-    const unpinned: Array<SessionMeta> = []
-    for (const session of filteredSessions) {
-      if (isSessionPinned(session)) {
-        pinned.push(session)
-      } else {
-        unpinned.push(session)
-      }
-    }
-    return { pinnedSessions: pinned, unpinnedSessions: unpinned }
-  }, [filteredSessions, isSessionPinned])
 
   return (
     <>
@@ -464,10 +358,6 @@ export function MobileHamburgerMenu({
             <span>New Session</span>
           </button>
 
-          {/* Active Project Switcher */}
-          <div className="pt-0.5">
-            <ProjectSwitcher variant="mobile" />
-          </div>
 
           {/* Segmented Switch: Sessions vs Workspace */}
           <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 p-1 text-xs font-medium">
@@ -518,127 +408,18 @@ export function MobileHamburgerMenu({
 
         {/* Content area: Sessions Tab */}
         {activeTab === 'sessions' && (
-          <div className="flex-1 min-h-0 flex flex-col px-3 pt-1">
-            {/* Search filter if there are several sessions */}
-            {sessions.length > 4 && (
-              <div className="mb-2 relative shrink-0">
-                <HugeiconsIcon
-                  icon={Search01Icon}
-                  size={14}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-400"
-                />
-                <input
-                  type="text"
-                  value={sessionSearch}
-                  onChange={(e) => setSessionSearch(e.target.value)}
-                  placeholder="Search sessions..."
-                  className="w-full text-xs rounded-lg pl-8 pr-7 py-1.5 bg-primary-100/60 text-ink placeholder:text-primary-400 border border-transparent focus:border-accent-300 focus:outline-none transition-colors"
-                />
-                {sessionSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setSessionSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-primary-400 hover:text-primary-600 text-xs px-1"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Scrollable session list */}
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-0.5">
-              {filteredSessions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 px-3 text-center text-primary-400">
-                  <HugeiconsIcon
-                    icon={Chat01Icon}
-                    size={28}
-                    strokeWidth={1.5}
-                    className="mb-2 opacity-50"
-                  />
-                  <p className="text-xs font-medium text-primary-600">
-                    {sessionSearch
-                      ? 'No sessions found matching query'
-                      : sessionsLoading
-                        ? 'Loading sessions...'
-                        : 'No sessions yet'}
-                  </p>
-                  <p className="mt-1 text-[11px] text-primary-400">
-                    {sessionSearch
-                      ? 'Try a different search keyword.'
-                      : 'Tap "+ New Session" to start a conversation.'}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  {/* Pinned sessions section */}
-                  {pinnedSessions.length > 0 && (
-                    <div className="space-y-1 pb-1">
-                      <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500">
-                        <HugeiconsIcon icon={PinIcon} size={11} strokeWidth={2} />
-                        <span>Pinned</span>
-                      </div>
-                      {pinnedSessions.map((session) => (
-                        <MobileSessionItem
-                          key={session.key}
-                          session={session}
-                          active={session.friendlyId === activeFriendlyId}
-                          isPinned={true}
-                          onSelect={() => {
-                            hapticTap()
-                            void navigate({
-                              to: '/chat/$sessionKey',
-                              params: {
-                                sessionKey: session.friendlyId || session.key,
-                              },
-                            })
-                            setOpen(false)
-                          }}
-                          onTogglePin={() => {
-                            togglePinnedSession(session.key || session.friendlyId)
-                          }}
-                        />
-                      ))}
-                      {unpinnedSessions.length > 0 && (
-                        <div className="my-1 border-t border-primary-200/80" />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Regular / unpinned sessions section */}
-                  {unpinnedSessions.length > 0 && (
-                    <div className="space-y-1">
-                      {pinnedSessions.length > 0 && (
-                        <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500">
-                          <span>Recent</span>
-                        </div>
-                      )}
-                      {unpinnedSessions.map((session) => (
-                        <MobileSessionItem
-                          key={session.key}
-                          session={session}
-                          active={session.friendlyId === activeFriendlyId}
-                          isPinned={false}
-                          onSelect={() => {
-                            hapticTap()
-                            void navigate({
-                              to: '/chat/$sessionKey',
-                              params: {
-                                sessionKey: session.friendlyId || session.key,
-                              },
-                            })
-                            setOpen(false)
-                          }}
-                          onTogglePin={() => {
-                            togglePinnedSession(session.key || session.friendlyId)
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+          <div className="flex-1 min-h-0 flex flex-col px-2 pt-1 overflow-y-auto">
+            <SidebarSessions
+              sessions={sessions}
+              activeFriendlyId={activeFriendlyId}
+              onSelect={() => setOpen(false)}
+              onRename={handleOpenRename}
+              onDelete={handleOpenDelete}
+              loading={sessionsLoading}
+              fetching={false}
+              error={null}
+              onRetry={() => {}}
+            />
           </div>
         )}
 
@@ -767,6 +548,23 @@ export function MobileHamburgerMenu({
           </div>
         </div>
       </div>
+
+      {renameDialogOpen && (
+        <SessionRenameDialog
+          open={renameDialogOpen}
+          onOpenChange={setRenameDialogOpen}
+          initialTitle={renameSessionTitle}
+          onSave={handleSaveRename}
+        />
+      )}
+      {deleteDialogOpen && (
+        <SessionDeleteDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          sessionTitle={deleteSessionTitle}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </>
   )
 }

@@ -16,6 +16,11 @@ import {
 } from '../../server/session-utils'
 import { isAuthenticated } from '@/server/auth-middleware'
 import { getLocalSession, getLocalMessages } from '../../server/local-session-store'
+import { readSessionMessagesFromStateDb } from '../../server/projects-backend'
+import {
+  getAntigravitySessionHistory,
+  isAntigravitySession,
+} from '../../server/antigravity-bridge'
 
 export const Route = createFileRoute('/api/history')({
   server: {
@@ -40,6 +45,25 @@ export const Route = createFileRoute('/api/history')({
           const limit = Number(url.searchParams.get('limit') || '200')
           const rawSessionKey = url.searchParams.get('sessionKey')?.trim()
           const friendlyId = url.searchParams.get('friendlyId')?.trim()
+
+          // Fast path for Antigravity sessions before resolveSessionKey tries to create a Hermes session
+          const candidateId = rawSessionKey || friendlyId || ''
+          if (
+            candidateId &&
+            candidateId !== 'new' &&
+            candidateId !== 'main' &&
+            (await isAntigravitySession(candidateId))
+          ) {
+            const agyMessages = await getAntigravitySessionHistory(candidateId)
+            const boundedAgy = limit > 0 ? agyMessages.slice(-limit) : agyMessages
+            return json({
+              sessionKey: candidateId,
+              sessionId: candidateId,
+              source: 'antigravity',
+              messages: boundedAgy,
+            })
+          }
+
           let { sessionKey } = await resolveSessionKey({
             rawSessionKey,
             friendlyId,
@@ -58,14 +82,6 @@ export const Route = createFileRoute('/api/history')({
               messages: [],
             })
           }
-          // "main" doesn't exist in Claude — resolve it to the user's real
-          // main chat session. We prefer (in order):
-          //   1. The most recent session with a real human-set title
-          //      (label !== id, e.g. "hows everything"). This is what users
-          //      actually mean by "main".
-          //   2. The most recent non-internal session with messages.
-          // Cron + Operations per-agent sessions are skipped so the
-          // orchestrator chat doesn't latch onto runtime junk.
           if (sessionKey === 'main' && !pinPortableMain) {
             try {
               const sessions = await listSessions(30, 0)
@@ -111,6 +127,15 @@ export const Route = createFileRoute('/api/history')({
             messages = []
           }
 
+          // Fallback to multi-profile state.db if dashboard/gateway didn't return messages for a profile session
+          if (messages.length === 0) {
+            const dbFound = readSessionMessagesFromStateDb(sessionKey, limit)
+            if (dbFound && dbFound.messages.length > 0) {
+              messages = dbFound.messages as any
+              sessionModel = sessionModel || dbFound.model
+            }
+          }
+
           // Fallback to local session store for portable/local model sessions
           if (messages.length === 0) {
             const localSession = getLocalSession(sessionKey)
@@ -127,6 +152,17 @@ export const Route = createFileRoute('/api/history')({
                   historyIndex: index,
                   model: (m as Record<string, unknown>).model || localSession.model || undefined,
                 })),
+              })
+            }
+
+            // Also check Antigravity history as fallback
+            const agyFallback = await getAntigravitySessionHistory(sessionKey)
+            if (agyFallback.length > 0) {
+              return json({
+                sessionKey,
+                sessionId: sessionKey,
+                source: 'antigravity',
+                messages: limit > 0 ? agyFallback.slice(-limit) : agyFallback,
               })
             }
           }

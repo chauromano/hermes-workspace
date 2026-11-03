@@ -15,6 +15,8 @@ import {
   ensureProviderInConfig,
   getDiscoveredModels,
 } from '../../server/local-provider-discovery'
+import { listAntigravityModels } from '../../server/antigravity-bridge'
+import { getActiveProfileName } from '../../server/profiles-browser'
 
 const CLAUDE_HOME = process.env.HERMES_HOME ?? process.env.CLAUDE_HOME ?? path.join(os.homedir(), '.hermes')
 const MODELS_PATH = path.join(CLAUDE_HOME, 'models.json')
@@ -179,6 +181,9 @@ function readClaudeDefaultModel(): ModelEntry | null {
         'unknown'
     }
     if (!modelId) return null
+    if (provider === 'antigravity' && !modelId.startsWith('antigravity/')) {
+      modelId = `antigravity/${modelId}`
+    }
     return { id: modelId, name: modelId, provider }
   } catch {
     return null
@@ -547,6 +552,16 @@ export const Route = createFileRoute('/api/models')({
             ensureProviderInConfig(m.provider)
           }
 
+          // Merge Antigravity Host Bridge models
+          const agyRawModels = await listAntigravityModels()
+          const agyModels: Array<ModelEntry> = agyRawModels.map((m) => ({
+            id: `antigravity/${m.id}`,
+            name: m.name,
+            provider: 'antigravity',
+            source: 'antigravity-bridge',
+            effort: m.effort,
+          }))
+
           // If visible_models is configured and includeAll is false, filter the returned list
           if (!includeAll && visibleModels.length > 0) {
             const visibleSet = new Set(visibleModels.map((x) => x.toLowerCase()))
@@ -554,6 +569,14 @@ export const Route = createFileRoute('/api/models')({
               const id = (m.id || '').toLowerCase()
               return visibleSet.has(id) || (defaultModel && m.id === defaultModel.id)
             })
+          }
+
+          if (agyModels.length > 0) {
+            const activeProfile = getActiveProfileName()
+            models =
+              activeProfile === 'antigravity'
+                ? mergeModelEntries(agyModels, models)
+                : mergeModelEntries(models, agyModels)
           }
 
           const configuredProviders = Array.from(
