@@ -132,6 +132,22 @@ function isClaude46Model(model: string): boolean {
   return normalized.includes('4-6') || normalized.includes('claude-4.6')
 }
 
+function getPopupPosition(triggerEl: HTMLElement | null, menuWidth = 240) {
+  if (!triggerEl || typeof window === 'undefined') return { left: 16, bottom: 80 }
+  const rect = triggerEl.getBoundingClientRect()
+  const left = Math.max(12, Math.min(rect.left, window.innerWidth - menuWidth - 12))
+  const bottom = Math.max(12, window.innerHeight - rect.top + 8)
+  return { left, bottom }
+}
+
+const DEFAULT_AGY_MODELS = [
+  { id: 'antigravity/gemini-3.8-flash', name: 'Gemini 3.8 Flash', provider: 'antigravity', isLocal: false },
+  { id: 'antigravity/gemini-4-argon', name: 'Gemini 4 Argon', provider: 'antigravity', isLocal: false },
+  { id: 'antigravity/claude-opus-5-5', name: 'Claude Opus 5.5', provider: 'antigravity', isLocal: false },
+  { id: 'antigravity/claude-sonnet-5-5', name: 'Claude Sonnet 5.5', provider: 'antigravity', isLocal: false },
+  { id: 'antigravity/gpt-oss-120b', name: 'GPT-OSS 120B', provider: 'antigravity', isLocal: false },
+]
+
 type SessionStatusApiResponse = {
   ok?: boolean
   payload?: unknown
@@ -1450,34 +1466,6 @@ function ChatComposerComponent({
     setValue(savedDraft ?? '')
   }, [draftStorageKey])
 
-  useEffect(() => {
-    if (
-      !isModelMenuOpen &&
-      !isProfileMenuOpen &&
-      !isThinkingMenuOpen
-    )
-      return
-    function handleOutsideClick(event: MouseEvent) {
-      if (isMobileViewport) return
-      const target = event.target as Node
-      if (modelSelectorRef.current?.contains(target)) return
-      if (profileMenuRef.current?.contains(target)) return
-      if (thinkingMenuRef.current?.contains(target)) return
-      setIsModelMenuOpen(false)
-      setIsProviderSwitcherExpanded(false)
-      setIsProfileMenuOpen(false)
-      setIsThinkingMenuOpen(false)
-    }
-
-    document.addEventListener('mousedown', handleOutsideClick)
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick)
-    }
-  }, [
-    isModelMenuOpen,
-    isProfileMenuOpen,
-    isThinkingMenuOpen,
-  ])
 
   const persistDraft = useCallback(
     function persistDraft(nextValue: string) {
@@ -2481,45 +2469,61 @@ function ChatComposerComponent({
                       <span className="truncate">{activeProfileName}</span>
                       <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
                     </button>
-                    {isProfileMenuOpen && (
+                    {typeof document !== 'undefined' && isProfileMenuOpen && createPortal(
                       <>
-                        <div className="fixed inset-0 z-[199]" onClick={() => setIsProfileMenuOpen(false)} />
-                        <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[14rem] max-h-[18rem] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="fixed inset-0 z-[9998]" onClick={() => setIsProfileMenuOpen(false)} />
+                        <div
+                          className="fixed z-[9999] min-w-[14rem] max-h-[18rem] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900"
+                          style={{
+                            left: `${getPopupPosition(profileMenuRef.current, 224).left}px`,
+                            bottom: `${getPopupPosition(profileMenuRef.current, 224).bottom}px`,
+                          }}
+                        >
                           <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
                             Agent profile
                           </div>
-                          {(profilesQuery.data?.profiles ?? []).map((profile) => {
-                            const selected = profile.name === activeProfileName
-                            return (
-                              <button
-                                key={profile.name}
-                                type="button"
-                                onClick={() => {
-                                  if (selected) {
+                          {profilesQuery.isLoading && (
+                            <div className="px-3 py-2 text-xs text-neutral-400 animate-pulse">Loading profiles…</div>
+                          )}
+                          {(() => {
+                            const list = [...(profilesQuery.data?.profiles ?? [])]
+                            if (!list.some((p) => p.name === 'default')) {
+                              list.unshift({ name: 'default' })
+                            }
+                            return list.map((profile) => {
+                              const selected = profile.name === activeProfileName
+                              return (
+                                <button
+                                  key={profile.name}
+                                  type="button"
+                                  onClick={() => {
+                                    if (selected) {
+                                      setIsProfileMenuOpen(false)
+                                      return
+                                    }
+                                    profileActivateMutation.mutate(profile.name)
                                     setIsProfileMenuOpen(false)
-                                    return
-                                  }
-                                  profileActivateMutation.mutate(profile.name)
-                                  setIsProfileMenuOpen(false)
-                                }}
-                                className={cn(
-                                  'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                  selected
-                                    ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                    : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                )}
-                              >
-                                <span className="flex items-center gap-2">
-                                  <span className="truncate font-medium">{profile.name}</span>
-                                  {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
-                                </span>
-                                {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
-                              </button>
-                            )
-                          })}
+                                  }}
+                                  className={cn(
+                                    'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer',
+                                    selected
+                                      ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                      : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                  )}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <span className="truncate font-medium">{profile.name}</span>
+                                    {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
+                                  </span>
+                                  {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
+                                </button>
+                              )
+                            })
+                          })()}
                           {profilesQuery.isError ? <div className="px-3 py-2 text-xs text-red-500">Failed to load profiles</div> : null}
                         </div>
-                      </>
+                      </>,
+                      document.body
                     )}
                   </div>
                 )}
@@ -2561,40 +2565,47 @@ function ChatComposerComponent({
                               <span>{thinkingLabel(thinkingLevel)}</span>
                               <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
                             </button>
-                            {isThinkingMenuOpen && (
-                    <>
-                      <div className="fixed inset-0 z-[199]" onClick={() => setIsThinkingMenuOpen(false)} />
-                      <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                              {((isAgyMode
-                                ? [
-                                    ['low', 'Low'],
-                                    ['medium', 'Medium'],
-                                    ['high', 'High'],
-                                  ]
-                                : [
-                                    ['off', 'None'],
-                                    ['low', 'Low'],
-                                    ['medium', 'Medium'],
-                                    ['high', 'High'],
-                                  ]) as Array<[ThinkingLevel, string]>).map(([level, label]) => (
-                                  <button
-                                    key={level}
-                                    type="button"
-                                    onClick={() => handleThinkingSelect(level)}
-                                    className={cn(
-                                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                      thinkingLevel === level
-                                        ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                        : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                    )}
-                                  >
-                                    <span>{label}</span>
-                                    {thinkingLevel === level ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          )}
+                            {typeof document !== 'undefined' && isThinkingMenuOpen && createPortal(
+                              <>
+                                <div className="fixed inset-0 z-[9998]" onClick={() => setIsThinkingMenuOpen(false)} />
+                                <div
+                                  className="fixed z-[9999] min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900"
+                                  style={{
+                                    left: `${getPopupPosition(thinkingMenuRef.current, 160).left}px`,
+                                    bottom: `${getPopupPosition(thinkingMenuRef.current, 160).bottom}px`,
+                                  }}
+                                >
+                                  {((isAgyMode
+                                    ? [
+                                        ['low', 'Low'],
+                                        ['medium', 'Medium'],
+                                        ['high', 'High'],
+                                      ]
+                                    : [
+                                        ['off', 'None'],
+                                        ['low', 'Low'],
+                                        ['medium', 'Medium'],
+                                        ['high', 'High'],
+                                      ]) as Array<[ThinkingLevel, string]>).map(([level, label]) => (
+                                      <button
+                                        key={level}
+                                        type="button"
+                                        onClick={() => handleThinkingSelect(level)}
+                                        className={cn(
+                                          'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer',
+                                          thinkingLevel === level
+                                            ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                            : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                        )}
+                                      >
+                                        <span>{label}</span>
+                                        {thinkingLevel === level ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
+                                      </button>
+                                    ))}
+                                </div>
+                              </>,
+                              document.body
+                            )}
                         </div>
 
                         {!hideModelSelector ? (
@@ -2619,10 +2630,16 @@ function ChatComposerComponent({
                               <span className="truncate">{formatModelName(modelButtonLabel)}</span>
                       <HugeiconsIcon icon={ArrowDown01Icon} size={10} className="shrink-0 text-primary-400 dark:text-neutral-500" />
                     </button>
-                            {!isMobileViewport && isModelMenuOpen && (
+                            {typeof document !== 'undefined' && !isMobileViewport && isModelMenuOpen && createPortal(
                               <>
-                                <div className="fixed inset-0 z-[199]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
-                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
+                                <div className="fixed inset-0 z-[9998]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
+                                <div
+                                  className="fixed z-[9999] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col"
+                                  style={{
+                                    left: `${getPopupPosition(modelSelectorRef.current, 380).left}px`,
+                                    bottom: `${getPopupPosition(modelSelectorRef.current, 380).bottom}px`,
+                                  }}
+                                >
                                   <div className="border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
                                     <div className="relative flex items-center">
                                       <svg className="absolute left-2.5 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2654,9 +2671,12 @@ function ChatComposerComponent({
                                   </div>
                                   <div className="max-h-[20rem] overflow-y-auto overflow-x-hidden p-1">
                                     {(() => {
+                                      if (modelsQuery.isLoading && !modelsQuery.data && !isAgyMode) {
+                                        return <div className="p-4 text-center text-sm text-neutral-500 animate-pulse">Loading models…</div>
+                                      }
                                       const allModels = modelsQuery.data?.models ?? []
                                       const defaultProvider = modelsQuery.data?.currentProvider ?? ''
-                                      if (allModels.length === 0) {
+                                      if (allModels.length === 0 && !isAgyMode) {
                                         return <div className="p-4 text-center text-sm text-neutral-500">No models available</div>
                                       }
                                       const parsed = allModels
@@ -2674,7 +2694,7 @@ function ChatComposerComponent({
                                         const seen = new Set<string>()
                                         const deduped: typeof parsed = []
                                         for (const m of parsed) {
-                                          const rawBase = m.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                                          const rawBase = m.id.replace(/^(antigravity|google|anthropic|openai)\//, '').replace(/-(low|medium|high)$/, '')
                                           if (!seen.has(rawBase)) {
                                             seen.add(rawBase)
                                             deduped.push({
@@ -2685,7 +2705,7 @@ function ChatComposerComponent({
                                             })
                                           }
                                         }
-                                        displayModels = deduped
+                                        displayModels = deduped.length > 0 ? deduped : DEFAULT_AGY_MODELS
                                       }
 
                                       const query = modelSearchQuery.trim().toLowerCase()
@@ -2836,7 +2856,8 @@ function ChatComposerComponent({
                                     })()}
                                   </div>
                                 </div>
-                              </>
+                              </>,
+                              document.body
                             )}
                           </div>
                         ) : null}
@@ -3021,9 +3042,16 @@ function ChatComposerComponent({
                       {/* Content Area */}
                       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-6 space-y-1">
                         {(() => {
+                          if (modelsQuery.isLoading && !modelsQuery.data && !isAgyMode) {
+                            return (
+                              <div className="p-6 text-center text-sm text-neutral-500 animate-pulse">
+                                Loading models…
+                              </div>
+                            )
+                          }
                           const allModels = modelsQuery.data?.models ?? []
                           const defaultProvider = modelsQuery.data?.currentProvider ?? ''
-                          if (allModels.length === 0) {
+                          if (allModels.length === 0 && !isAgyMode) {
                             return (
                               <div className="p-6 text-center text-sm text-neutral-500">
                                 <p className="font-medium text-neutral-700 dark:text-neutral-300 mb-1">
@@ -3050,7 +3078,7 @@ function ChatComposerComponent({
                             const seen = new Set<string>()
                             const deduped: typeof parsed = []
                             for (const m of parsed) {
-                              const rawBase = m.id.replace(/^antigravity\//, '').replace(/-(low|medium|high)$/, '')
+                              const rawBase = m.id.replace(/^(antigravity|google|anthropic|openai)\//, '').replace(/-(low|medium|high)$/, '')
                               if (!seen.has(rawBase)) {
                                 seen.add(rawBase)
                                 deduped.push({
@@ -3061,7 +3089,7 @@ function ChatComposerComponent({
                                 })
                               }
                             }
-                            displayModels = deduped
+                            displayModels = deduped.length > 0 ? deduped : DEFAULT_AGY_MODELS
                           }
 
                           // Providers list for quick pill filter
