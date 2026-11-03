@@ -177,6 +177,9 @@ export const Route = createFileRoute('/api/sessions')({
             s.projectId = project?.id ?? null
             s.projectName = project?.name ?? null
             s.projectSlug = project?.slug ?? null
+            s.profileName = s.profileName || s.agentProfile || (s.source === 'antigravity' ? 'antigravity' : 'default')
+            s.agentProfile = s.profileName
+            s.parentSessionId = s.parentSessionId || s.parent_session_id || null
 
             const actMeta = activityMap.get(sid)
             s.lastPromptAt =

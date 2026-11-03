@@ -37,8 +37,8 @@ import {
   listAntigravitySessions,
   openAntigravityStream,
 } from '../../server/antigravity-bridge'
-import { getActiveProfileName } from '../../server/profiles-browser'
-import { getActiveProjectId, getProject } from '../../server/projects-backend'
+import { getActiveProfileName, readProfile } from '../../server/profiles-browser'
+import { getActiveProjectId, getProject, setSessionProfile, listProjects } from '../../server/projects-backend'
 import {
   collectSyntheticLiveToolEvents,
   createSyntheticLiveToolTracker,
@@ -337,6 +337,14 @@ export const Route = createFileRoute('/api/send-stream')({
             ? await isAntigravitySession(candidateIdForAgy)
             : false
         const activeProfileName = getActiveProfileName()
+        const effectiveProfileName =
+          (typeof (body as any).profile === 'string' && (body as any).profile.trim()) ||
+          activeProfileName ||
+          'default'
+        let profileDetail: ReturnType<typeof readProfile> | null = null
+        try {
+          profileDetail = readProfile(effectiveProfileName)
+        } catch {}
         const isAntigravityTurn =
           isExistingAgySession ||
           activeProfileName === 'antigravity' ||
@@ -368,6 +376,9 @@ export const Route = createFileRoute('/api/send-stream')({
             })
             sessionKey = resolved.sessionKey
             resolvedFriendlyId = resolved.sessionKey
+            if (sessionKey && sessionKey !== 'new') {
+              try { setSessionProfile(sessionKey, effectiveProfileName) } catch {}
+            }
           }
         } catch (err) {
           const errorMsg = normalizeClaudeErrorMessage(err)
@@ -407,6 +418,16 @@ export const Route = createFileRoute('/api/send-stream')({
           resolvedFriendlyId = sessionKey
         }
 
+        // Default standalone profile workspace if no project active
+        try {
+          if (!listProjects().active_id && effectiveProfileName !== 'default') {
+            const defSpace = `/workspace/hermes_default_spaces/${effectiveProfileName}`
+            const fs = await import('node:fs')
+            if (!fs.existsSync(defSpace)) {
+              fs.mkdirSync(defSpace, { recursive: true })
+            }
+          }
+        } catch {}
         const workspaceScope = await loadWorkspaceCatalog().catch(() => null)
         const scopedMessage = buildWorkspaceScopedTextMessage(
           getChatMessage(message, attachments),
@@ -1343,7 +1364,7 @@ export const Route = createFileRoute('/api/send-stream')({
                   message: scopedMessage,
                   model:
                     typeof body.model === 'string' ? body.model : undefined,
-                  system_message: thinking,
+                  system_message: [profileDetail?.systemPrompt, thinking].filter(Boolean).join('\n\n') || undefined,
                   attachments: attachments || undefined,
                 },
                 {

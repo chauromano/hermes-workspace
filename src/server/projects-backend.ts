@@ -757,12 +757,12 @@ export function getStateDbPath(): string {
   return primary
 }
 
-export function getAllStateDbPaths(): Array<{ profile: string; path: string }> {
+export function getAllStateDbPaths(): Array<{ profile: string; path: string; profileName: string; dbPath: string }> {
   const root = getHermesRoot()
-  const out: Array<{ profile: string; path: string }> = []
+  const out: Array<{ profile: string; path: string; profileName: string; dbPath: string }> = []
   const rootDb = getStateDbPath()
   if (existsSync(rootDb)) {
-    out.push({ profile: 'default', path: rootDb })
+    out.push({ profile: 'default', path: rootDb, profileName: 'default', dbPath: rootDb })
   }
   const profilesDir = join(root, 'profiles')
   if (existsSync(profilesDir)) {
@@ -773,7 +773,7 @@ export function getAllStateDbPaths(): Array<{ profile: string; path: string }> {
         try {
           const st = statSync(pDb)
           if (st.isFile() && st.size > 0) {
-            out.push({ profile: name, path: pDb })
+            out.push({ profile: name, path: pDb, profileName: name, dbPath: pDb })
           }
         } catch {}
       }
@@ -965,7 +965,7 @@ export function readSessionsFromStateDb(
   const seen = new Map<string, Record<string, unknown>>()
   for (const { profile, path: dbPath } of getAllStateDbPaths()) {
     try {
-      const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name FROM sessions WHERE COALESCE(archived, 0) = 0 AND COALESCE(hidden, 0) = 0 ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
+      const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name, parent_session_id FROM sessions WHERE COALESCE(archived, 0) = 0 AND COALESCE(hidden, 0) = 0 ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
       const raw = runSqlite(dbPath, sql)
       if (!raw) continue
       const rows = JSON.parse(raw) as Array<Record<string, any>>
@@ -1002,7 +1002,9 @@ export function readSessionsFromStateDb(
           lastPromptAt: updatedMs,
           isPinned: Boolean(s.pinned),
           cwd: cwd || null,
-          agentProfile: s.profile_name || profile,
+          profileName: (s.profile_name && String(s.profile_name).trim()) || profile || 'default',
+          agentProfile: (s.profile_name && String(s.profile_name).trim()) || profile || 'default',
+          parentSessionId: s.parent_session_id || null,
         })
       }
     } catch {}
@@ -1012,6 +1014,68 @@ export function readSessionsFromStateDb(
     .slice(0, limit * 2)
   cachedDbSessions = { sessions: result, timestamp: now }
   return result
+}
+
+
+export function getSessionMetaMap(
+  sessionIds: string[],
+): Map<string, { cwd: string | null; profileName: string; parentSessionId: string | null }> {
+  const map = new Map<
+    string,
+    { cwd: string | null; profileName: string; parentSessionId: string | null }
+  >()
+  if (sessionIds.length === 0) return map
+
+  const inList = sessionIds.map(sqliteQuote).join(', ')
+  for (const { profile, path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const raw = runSqlite(
+        dbPath,
+        `SELECT id, cwd, profile_name, parent_session_id FROM sessions WHERE id IN (${inList});`,
+      )
+      if (raw) {
+        const rows = JSON.parse(raw) as Array<{
+          id: string
+          cwd?: string | null
+          profile_name?: string | null
+          parent_session_id?: string | null
+        }>
+        for (const row of rows) {
+          if (!map.has(row.id)) {
+            map.set(row.id, {
+              cwd: row.cwd && row.cwd.trim() ? row.cwd.trim() : null,
+              profileName:
+                (row.profile_name && row.profile_name.trim()) || profile || 'default',
+              parentSessionId: row.parent_session_id || null,
+            })
+          }
+        }
+      }
+    } catch {}
+  }
+  return map
+}
+
+export function setSessionProfile(sessionId: string, profileName: string): void {
+  if (!sessionId || !profileName) return
+  const safeProfile = sqliteQuote(profileName.trim())
+  const safeId = sqliteQuote(sessionId.trim())
+  for (const { path: dbPath } of getAllStateDbPaths()) {
+    try {
+      runSqliteExec(
+        dbPath,
+        `UPDATE sessions SET profile_name = ${safeProfile} WHERE id = ${safeId};`,
+      )
+    } catch {}
+  }
+}
+
+export function readMessagesFromAllStateDbs(
+  sessionId: string,
+  limit = 500,
+): Array<Record<string, any>> {
+  const res = readSessionMessagesFromStateDb(sessionId, limit)
+  return res ? res.messages : []
 }
 
 export function readSessionMessagesFromStateDb(

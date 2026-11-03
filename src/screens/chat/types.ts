@@ -102,6 +102,9 @@ export type SessionSummary = {
   source?: string | null
   surface?: string | null
   model?: string | null
+  profileName?: string | null
+  agentProfile?: string | null
+  parentSessionId?: string | null
 }
 
 export type SessionListResponse = {
@@ -135,6 +138,9 @@ export type SessionMeta = {
   source?: string | null
   surface?: string | null
   model?: string | null
+  profileName?: string | null
+  agentProfile?: string | null
+  parentSessionId?: string | null
 }
 
 export type PathsPayload = {

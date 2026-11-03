@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   Add01Icon,
@@ -28,6 +29,7 @@ type ProfileSummary = {
   model?: string
   provider?: string
   description?: string
+  avatarUrl?: string
   skillCount: number
   sessionCount: number
   hasEnv: boolean
@@ -38,6 +40,7 @@ type ProfileDetail = {
   name: string
   path: string
   active: boolean
+  avatarUrl?: string
   config: Record<string, unknown>
   description: string
   envPath?: string
@@ -104,6 +107,40 @@ function ProfileStat({
 
 export function ProfilesScreen() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+
+  const handleAvatarUpload = async (profileName: string, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image exceeds maximum size of 5 MB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const dataUrl = reader.result as string
+      try {
+        const res = await fetch('/api/profiles/avatar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: profileName, dataUrl }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          toast.success(`Updated avatar for @${profileName}`)
+          void queryClient.invalidateQueries({ queryKey: ['profiles'] })
+          void detailQuery.refetch()
+        } else {
+          toast.error(data.error || 'Failed to update avatar')
+        }
+      } catch (e: any) {
+        toast.error(e?.message || 'Failed to update avatar')
+      }
+    }
+    reader.readAsDataURL(file)
+  }
   const [createOpen, setCreateOpen] = useState(false)
   const [detailsName, setDetailsName] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<ProfileSummary | null>(null)
@@ -342,7 +379,7 @@ export function ProfilesScreen() {
 
               {/* Centered avatar hero */}
               <div className="flex flex-col items-center pt-6 pb-1">
-                <div className="relative">
+                <div className="relative group/avatar cursor-pointer">
                   <div
                     className={cn(
                       'rounded-full p-1',
@@ -352,7 +389,7 @@ export function ProfilesScreen() {
                     )}
                   >
                     <img
-                      src="/claude-avatar.webp"
+                      src={profile.avatarUrl || (profile.name === 'antigravity' ? '/antigravity-avatar.webp' : '/claude-avatar.webp')}
                       alt={profile.name}
                       className={cn(
                         'size-20 rounded-full border-2 object-cover',
@@ -365,8 +402,26 @@ export function ProfilesScreen() {
                           ? 'none'
                           : 'grayscale(0.5) brightness(0.9)',
                       }}
+                      onError={(e) => {
+                        ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                      }}
                     />
                   </div>
+                  <label
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover/avatar:opacity-100 transition-opacity cursor-pointer text-white"
+                    title="Upload Custom Avatar"
+                  >
+                    <HugeiconsIcon icon={Edit02Icon} size={18} strokeWidth={2} />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) void handleAvatarUpload(profile.name, f)
+                      }}
+                    />
+                  </label>
                   {profile.active && (
                     <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full border-2 border-white bg-emerald-500 px-2 py-0.5 dark:border-neutral-950">
                       <HugeiconsIcon
@@ -417,6 +472,24 @@ export function ProfilesScreen() {
 
               {/* Actions */}
               <div className="mt-4 flex border-t border-primary-200 dark:border-neutral-800">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleActivate(profile.name)
+                    void navigate({
+                      to: '/chat/$sessionKey',
+                      params: { sessionKey: 'new' },
+                    })
+                  }}
+                  className="flex flex-1 items-center justify-center gap-1.5 border-r border-primary-200 py-2.5 text-xs font-semibold text-accent-600 transition-colors hover:bg-primary-100 dark:border-neutral-800 dark:text-accent-400 dark:hover:bg-neutral-900"
+                >
+                  <HugeiconsIcon
+                    icon={ArrowRight01Icon}
+                    size={13}
+                    strokeWidth={2}
+                  />{' '}
+                  Chat
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleActivate(profile.name)}
@@ -865,11 +938,31 @@ export function ProfilesScreen() {
           <div className="shrink-0 border-b border-primary-200 px-6 pb-4 pt-5 dark:border-neutral-800">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <img
-                  src="/claude-avatar.webp"
-                  alt={detailsName || ''}
-                  className="size-12 rounded-full border-2 border-primary-200 object-cover dark:border-neutral-700"
-                />
+                <div className="relative group/dialogAvatar shrink-0">
+                  <img
+                    src={detailQuery.data?.profile?.avatarUrl || (detailsName === 'antigravity' ? '/antigravity-avatar.webp' : '/claude-avatar.webp')}
+                    alt={detailsName || ''}
+                    className="size-12 rounded-full border-2 border-primary-200 object-cover dark:border-neutral-700"
+                    onError={(e) => {
+                      ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                    }}
+                  />
+                  <label
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover/dialogAvatar:opacity-100 transition-opacity cursor-pointer text-white"
+                    title="Upload Custom Avatar"
+                  >
+                    <HugeiconsIcon icon={Edit02Icon} size={14} strokeWidth={2} />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f && detailsName) void handleAvatarUpload(detailsName, f)
+                      }}
+                    />
+                  </label>
+                </div>
                 <div className="min-w-0">
                   <DialogTitle className="text-base font-semibold">
                     {detailsName}

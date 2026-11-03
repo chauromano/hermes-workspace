@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowRight01Icon,
@@ -8,6 +9,7 @@ import {
   FilterHorizontalIcon,
   Folder01Icon,
   FolderAddIcon,
+  UserGroupIcon,
   MoreVerticalIcon,
   PlusSignIcon,
   Tick02Icon,
@@ -168,6 +170,44 @@ export const SidebarSessions = memo(function SidebarSessions({
     setDraggedKey(null)
   }
 
+  const profilesQuery = useQuery({
+    queryKey: ['profiles', 'list'],
+    queryFn: async () => {
+      const res = await fetch('/api/profiles/list')
+      if (!res.ok) return { profiles: [], activeProfile: 'default' }
+      return res.json() as Promise<{
+        profiles: Array<{ name: string; avatarUrl?: string; model?: string; description?: string }>
+        activeProfile: string
+      }>
+    },
+    staleTime: 30_000,
+  })
+  const profiles = profilesQuery.data?.profiles || []
+  const profileAvatarMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const p of profiles) {
+      if (p.avatarUrl) map.set(p.name, p.avatarUrl)
+    }
+    return map
+  }, [profiles])
+
+  const handleStartProfileChat = async (profileName: string) => {
+    hapticTap()
+    try {
+      await fetch('/api/profiles/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: profileName }),
+      })
+    } catch {}
+    setActiveProjectMutation.mutate(null)
+    void navigate({
+      to: '/chat/$sessionKey',
+      params: { sessionKey: 'new' },
+    })
+    onSelect?.()
+  }
+
   const handleStartProjectChat = (projectId: string | null) => {
     hapticTap()
     setActiveProjectMutation.mutate(projectId)
@@ -182,7 +222,7 @@ export const SidebarSessions = memo(function SidebarSessions({
   function renderSessionList(
     groupKey: string,
     items: Array<SessionMeta>,
-    showProjectSubtitle: boolean,
+    subtitleMode: 'profile' | 'project' | 'both' | 'none',
   ) {
     if (items.length === 0) return null
 
@@ -200,7 +240,8 @@ export const SidebarSessions = memo(function SidebarSessions({
             session={session}
             active={session.friendlyId === activeFriendlyId}
             isPinned={pinnedSessionKeys.includes(session.key)}
-            showProjectSubtitle={showProjectSubtitle}
+            subtitleMode={subtitleMode}
+            profileAvatarUrl={profileAvatarMap.get(session.profileName || session.agentProfile || (session.source === 'antigravity' ? 'antigravity' : 'default'))}
             isSessionActive={isSessionActive(session)}
             isSessionBlocked={isSessionBlocked(session)}
             draggable={sortBy === 'custom_order'}
@@ -306,7 +347,57 @@ export const SidebarSessions = memo(function SidebarSessions({
     return { active, idle }
   }, [groupBy, sortedSessions, waitingSessionKeys, streamingState])
 
-  const sectionTitle = groupBy === 'project' ? 'Projects' : 'Conversations'
+  // Groups when groupBy === 'profile'
+  const profileGroups = useMemo(() => {
+    if (groupBy !== 'profile') return []
+    const map = new Map<string, Array<SessionMeta>>()
+    const knownProfileNames = new Set(profiles.map((p) => p.name))
+    if (!knownProfileNames.has('default')) knownProfileNames.add('default')
+
+    for (const name of knownProfileNames) {
+      map.set(name, [])
+    }
+
+    for (const session of sortedSessions) {
+      const pName =
+        session.profileName ||
+        session.agentProfile ||
+        (session.source === 'antigravity' ? 'antigravity' : 'default')
+      if (!map.has(pName)) {
+        map.set(pName, [])
+      }
+      map.get(pName)!.push(session)
+    }
+
+    const groups: Array<{
+      name: string
+      avatarUrl?: string
+      model?: string
+      items: Array<SessionMeta>
+    }> = []
+
+    for (const p of profiles) {
+      groups.push({
+        name: p.name,
+        avatarUrl: p.avatarUrl,
+        model: p.model,
+        items: map.get(p.name) || [],
+      })
+      map.delete(p.name)
+    }
+
+    for (const [name, items] of map.entries()) {
+      groups.push({
+        name,
+        avatarUrl: name === 'antigravity' ? '/antigravity-avatar.webp' : undefined,
+        items,
+      })
+    }
+
+    return groups
+  }, [groupBy, profiles, sortedSessions])
+
+  const sectionTitle = groupBy === 'project' ? 'Projects' : groupBy === 'profile' ? 'Profiles' : 'Conversations'
 
   return (
     <div className="flex h-full flex-col flex-1 min-h-0 w-full">
@@ -336,9 +427,11 @@ export const SidebarSessions = memo(function SidebarSessions({
                     <span className="capitalize">
                       {groupBy === 'project'
                         ? 'Project'
-                        : groupBy === 'status'
-                          ? 'Status'
-                          : 'None'}
+                        : groupBy === 'profile'
+                          ? 'Profile'
+                          : groupBy === 'status'
+                            ? 'Status'
+                            : 'None'}
                     </span>
                     <HugeiconsIcon icon={ArrowRight01Icon} size={12} />
                   </div>
@@ -350,6 +443,15 @@ export const SidebarSessions = memo(function SidebarSessions({
                   >
                     <span>Project</span>
                     {groupBy === 'project' && (
+                      <HugeiconsIcon icon={Tick02Icon} size={14} className="text-accent-600" />
+                    )}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => setGroupBy('profile')}
+                    className="flex items-center justify-between text-xs py-1.5 px-2"
+                  >
+                    <span>Profile</span>
+                    {groupBy === 'profile' && (
                       <HugeiconsIcon icon={Tick02Icon} size={14} className="text-accent-600" />
                     )}
                   </MenuItem>
@@ -568,14 +670,63 @@ export const SidebarSessions = memo(function SidebarSessions({
                         No conversations yet
                       </div>
                     ) : (
-                      renderSessionList(group.id, group.items, false)
+                      renderSessionList(group.id, group.items, 'profile')
                     )}
                   </div>
                 ))}
               </div>
             )}
 
-            {/* 2. Group By: Status */}
+            {/* 2. Group By: Profile */}
+            {groupBy === 'profile' && (
+              <div className="space-y-4">
+                {profileGroups.map((group) => (
+                  <div key={group.name} className="space-y-1">
+                    <div className="group/hdr flex items-center justify-between px-2 py-1 text-primary-700 dark:text-neutral-300">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <img
+                          src={group.avatarUrl || (group.name === 'antigravity' ? '/antigravity-avatar.webp' : '/claude-avatar.webp')}
+                          alt={group.name}
+                          className="size-4 rounded-full object-cover shrink-0"
+                          onError={(e) => {
+                            ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                          }}
+                        />
+                        <span className="truncate text-xs font-medium">
+                          @{group.name}
+                        </span>
+                        {group.model && (
+                          <span className="text-[10px] text-primary-400 dark:text-neutral-500 truncate max-w-[100px] font-mono">
+                            {group.model.split('/').pop()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover/hdr:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => handleStartProfileChat(group.name)}
+                          className="hover:text-accent-600 dark:hover:text-neutral-100 p-0.5 rounded transition-colors"
+                          title={`New conversation with @${group.name}`}
+                          aria-label={`New conversation with @${group.name}`}
+                        >
+                          <HugeiconsIcon icon={PlusSignIcon} size={13} strokeWidth={2} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {group.items.length === 0 ? (
+                      <div className="px-6 py-1 text-xs text-primary-400/80 dark:text-neutral-500">
+                        No conversations yet
+                      </div>
+                    ) : (
+                      renderSessionList(`profile:${group.name}`, group.items, 'project')
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 3. Group By: Status */}
             {groupBy === 'status' && (
               <div className="space-y-4">
                 {/* Active Group */}
@@ -588,7 +739,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                         ({statusGroups.active.length})
                       </span>
                     </div>
-                    {renderSessionList('status:active', statusGroups.active, true)}
+                    {renderSessionList('status:active', statusGroups.active, 'both')}
                   </div>
                 )}
 
@@ -605,7 +756,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                       ({statusGroups.idle.length})
                     </span>
                   </div>
-                  {renderSessionList('status:idle', statusGroups.idle, true)}
+                  {renderSessionList('status:idle', statusGroups.idle, 'both')}
                 </div>
               </div>
             )}
@@ -613,7 +764,7 @@ export const SidebarSessions = memo(function SidebarSessions({
             {/* 3. Group By: None */}
             {groupBy === 'none' && (
               <div className="space-y-1">
-                {renderSessionList('none:all', sortedSessions, true)}
+                {renderSessionList('none:all', sortedSessions, 'both')}
               </div>
             )}
           </>

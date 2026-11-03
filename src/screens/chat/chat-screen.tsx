@@ -579,6 +579,21 @@ export function ChatScreen({
       setActiveProjectMutation.mutate(targetProjectId)
     }
   }, [activeSession?.key, activeSession?.projectId, activeId])
+
+  useEffect(() => {
+    if (!activeSession || isNewChat) return
+    const targetProfile = (activeSession.profileName || activeSession.agentProfile)?.trim()
+    if (!targetProfile) return
+    fetch('/api/profiles/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: targetProfile }),
+    })
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      })
+      .catch(() => {})
+  }, [activeSession?.key, activeSession?.profileName, (activeSession as any)?.agentProfile, isNewChat, queryClient])
   const {
     historyQuery,
     historyMessages,

@@ -12,6 +12,7 @@ export type ProfileSummary = {
   provider?: string
   description?: string
   systemPrompt?: string
+  avatarUrl?: string
   skillCount: number
   sessionCount: number
   hasEnv: boolean
@@ -25,6 +26,7 @@ export type ProfileDetail = {
   config: Record<string, unknown>
   description: string
   systemPrompt: string
+  avatarUrl?: string
   envPath?: string
   hasEnv: boolean
   sessionsDir?: string
@@ -87,7 +89,7 @@ function validateProfileName(name: string): string {
  * Validate a profile name that will only be *read* (e.g. `cloneFrom` source).
  * Any existing profile name is allowed, including 'default'.
  */
-function validateProfileIdentifier(name: string): string {
+export function validateProfileIdentifier(name: string): string {
   const trimmed = name.trim()
   if (!trimmed) throw new Error('Profile name is required')
   if (
@@ -98,6 +100,37 @@ function validateProfileIdentifier(name: string): string {
     throw new Error('Invalid profile name')
   }
   return trimmed
+}
+
+
+export const AVATAR_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'svg'] as const
+
+export function resolveProfileDir(name: string): string {
+  const normalized = name.trim() || 'default'
+  return normalized === 'default'
+    ? getClaudeRoot()
+    : path.join(getProfilesRoot(), validateProfileIdentifier(normalized))
+}
+
+export function findProfileAvatarPath(name: string): string | null {
+  const dir = resolveProfileDir(name)
+  if (!fs.existsSync(dir)) return null
+  for (const ext of AVATAR_EXTENSIONS) {
+    const candidate = path.join(dir, `avatar.${ext}`)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+export function getProfileAvatarUrl(name: string): string | undefined {
+  const found = findProfileAvatarPath(name)
+  if (!found) return undefined
+  try {
+    const mtime = Math.floor(fs.statSync(found).mtimeMs)
+    return `/api/profiles/avatar?name=${encodeURIComponent(name.trim() || 'default')}&v=${mtime}`
+  } catch {
+    return `/api/profiles/avatar?name=${encodeURIComponent(name.trim() || 'default')}`
+  }
 }
 
 function safeReadText(filePath: string): string {
@@ -254,6 +287,7 @@ async function fetchDashboardProfiles(): Promise<{
       model: p.model,
       provider: p.provider,
       description: p.description,
+      avatarUrl: getProfileAvatarUrl(p.name),
       skillCount: p.skill_count ?? 0,
       sessionCount: p.session_count ?? 0,
       hasEnv: p.has_env ?? false,
@@ -435,6 +469,7 @@ export function listProfiles(): Array<ProfileSummary> {
         provider: providerName,
         description: extractDescription(config) || undefined,
         systemPrompt: extractSystemPrompt(config, profilePath) || undefined,
+        avatarUrl: getProfileAvatarUrl(name),
         skillCount,
         sessionCount,
         hasEnv: fs.existsSync(envPath),
@@ -477,6 +512,7 @@ export function listProfiles(): Array<ProfileSummary> {
     provider: defaultProvider,
     description: extractDescription(config) || undefined,
     systemPrompt: extractSystemPrompt(config, root) || undefined,
+    avatarUrl: getProfileAvatarUrl('default'),
     skillCount: countFilesRecursive(
       path.join(root, 'skills'),
       (full) => path.basename(full) === 'SKILL.md',
@@ -516,6 +552,7 @@ export function readProfile(name: string): ProfileDetail {
     config,
     description: extractDescription(config),
     systemPrompt: extractSystemPrompt(config, profilePath),
+    avatarUrl: getProfileAvatarUrl(normalized),
     envPath: fs.existsSync(envPath) ? envPath : undefined,
     hasEnv: fs.existsSync(envPath),
     sessionsDir: fs.existsSync(sessionsDir) ? sessionsDir : undefined,

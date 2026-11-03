@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type SessionGroupBy = 'project' | 'status' | 'none'
+export type SessionGroupBy = 'project' | 'profile' | 'status' | 'none'
 export type SessionSortBy = 'last_updated' | 'last_prompt' | 'custom_order'
 export type SessionFilterDays = '7_days' | '30_days' | 'none'
 

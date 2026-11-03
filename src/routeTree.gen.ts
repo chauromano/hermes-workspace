@@ -140,6 +140,7 @@ import { Route as ApiProfilesReadRouteImport } from './routes/api/profiles/read'
 import { Route as ApiProfilesListRouteImport } from './routes/api/profiles/list'
 import { Route as ApiProfilesDeleteRouteImport } from './routes/api/profiles/delete'
 import { Route as ApiProfilesCreateRouteImport } from './routes/api/profiles/create'
+import { Route as ApiProfilesAvatarRouteImport } from './routes/api/profiles/avatar'
 import { Route as ApiProfilesActivateRouteImport } from './routes/api/profiles/activate'
 import { Route as ApiOauthPollTokenRouteImport } from './routes/api/oauth.poll-token'
 import { Route as ApiOauthDeviceCodeRouteImport } from './routes/api/oauth.device-code'
@@ -838,6 +839,11 @@ const ApiProfilesCreateRoute = ApiProfilesCreateRouteImport.update({
   path: '/api/profiles/create',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProfilesAvatarRoute = ApiProfilesAvatarRouteImport.update({
+  id: '/api/profiles/avatar',
+  path: '/api/profiles/avatar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiProfilesActivateRoute = ApiProfilesActivateRouteImport.update({
   id: '/api/profiles/activate',
   path: '/api/profiles/activate',
@@ -1185,6 +1191,7 @@ export interface FileRoutesByFullPath {
   '/api/oauth/device-code': typeof ApiOauthDeviceCodeRoute
   '/api/oauth/poll-token': typeof ApiOauthPollTokenRoute
   '/api/profiles/activate': typeof ApiProfilesActivateRoute
+  '/api/profiles/avatar': typeof ApiProfilesAvatarRoute
   '/api/profiles/create': typeof ApiProfilesCreateRoute
   '/api/profiles/delete': typeof ApiProfilesDeleteRoute
   '/api/profiles/list': typeof ApiProfilesListRoute
@@ -1356,6 +1363,7 @@ export interface FileRoutesByTo {
   '/api/oauth/device-code': typeof ApiOauthDeviceCodeRoute
   '/api/oauth/poll-token': typeof ApiOauthPollTokenRoute
   '/api/profiles/activate': typeof ApiProfilesActivateRoute
+  '/api/profiles/avatar': typeof ApiProfilesAvatarRoute
   '/api/profiles/create': typeof ApiProfilesCreateRoute
   '/api/profiles/delete': typeof ApiProfilesDeleteRoute
   '/api/profiles/list': typeof ApiProfilesListRoute
@@ -1529,6 +1537,7 @@ export interface FileRoutesById {
   '/api/oauth/device-code': typeof ApiOauthDeviceCodeRoute
   '/api/oauth/poll-token': typeof ApiOauthPollTokenRoute
   '/api/profiles/activate': typeof ApiProfilesActivateRoute
+  '/api/profiles/avatar': typeof ApiProfilesAvatarRoute
   '/api/profiles/create': typeof ApiProfilesCreateRoute
   '/api/profiles/delete': typeof ApiProfilesDeleteRoute
   '/api/profiles/list': typeof ApiProfilesListRoute
@@ -1703,6 +1712,7 @@ export interface FileRouteTypes {
     | '/api/oauth/device-code'
     | '/api/oauth/poll-token'
     | '/api/profiles/activate'
+    | '/api/profiles/avatar'
     | '/api/profiles/create'
     | '/api/profiles/delete'
     | '/api/profiles/list'
@@ -1874,6 +1884,7 @@ export interface FileRouteTypes {
     | '/api/oauth/device-code'
     | '/api/oauth/poll-token'
     | '/api/profiles/activate'
+    | '/api/profiles/avatar'
     | '/api/profiles/create'
     | '/api/profiles/delete'
     | '/api/profiles/list'
@@ -2046,6 +2057,7 @@ export interface FileRouteTypes {
     | '/api/oauth/device-code'
     | '/api/oauth/poll-token'
     | '/api/profiles/activate'
+    | '/api/profiles/avatar'
     | '/api/profiles/create'
     | '/api/profiles/delete'
     | '/api/profiles/list'
@@ -2200,6 +2212,7 @@ export interface RootRouteChildren {
   ApiOauthDeviceCodeRoute: typeof ApiOauthDeviceCodeRoute
   ApiOauthPollTokenRoute: typeof ApiOauthPollTokenRoute
   ApiProfilesActivateRoute: typeof ApiProfilesActivateRoute
+  ApiProfilesAvatarRoute: typeof ApiProfilesAvatarRoute
   ApiProfilesCreateRoute: typeof ApiProfilesCreateRoute
   ApiProfilesDeleteRoute: typeof ApiProfilesDeleteRoute
   ApiProfilesListRoute: typeof ApiProfilesListRoute
@@ -3136,6 +3149,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiProfilesCreateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/profiles/avatar': {
+      id: '/api/profiles/avatar'
+      path: '/api/profiles/avatar'
+      fullPath: '/api/profiles/avatar'
+      preLoaderRoute: typeof ApiProfilesAvatarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/profiles/activate': {
       id: '/api/profiles/activate'
       path: '/api/profiles/activate'
@@ -3777,6 +3797,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOauthDeviceCodeRoute: ApiOauthDeviceCodeRoute,
   ApiOauthPollTokenRoute: ApiOauthPollTokenRoute,
   ApiProfilesActivateRoute: ApiProfilesActivateRoute,
+  ApiProfilesAvatarRoute: ApiProfilesAvatarRoute,
   ApiProfilesCreateRoute: ApiProfilesCreateRoute,
   ApiProfilesDeleteRoute: ApiProfilesDeleteRoute,
   ApiProfilesListRoute: ApiProfilesListRoute,

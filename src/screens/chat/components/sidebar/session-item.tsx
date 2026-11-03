@@ -24,7 +24,9 @@ export type SessionItemProps = {
   session: SessionMeta
   active: boolean
   isPinned: boolean
+  subtitleMode?: 'profile' | 'project' | 'both' | 'none'
   showProjectSubtitle?: boolean
+  profileAvatarUrl?: string
   isSessionActive?: boolean
   isSessionBlocked?: boolean
   draggable?: boolean
@@ -102,7 +104,9 @@ function SessionItemComponent({
   session,
   active,
   isPinned,
+  subtitleMode,
   showProjectSubtitle = false,
+  profileAvatarUrl,
   isSessionActive = false,
   isSessionBlocked = false,
   draggable = false,
@@ -130,6 +134,12 @@ function SessionItemComponent({
   )
 
   const projectName = session.projectName || 'Personal Sandbox'
+  const profileName =
+    session.profileName ||
+    session.agentProfile ||
+    (session.source === 'antigravity' ? 'antigravity' : 'default')
+  const effectiveSubtitleMode =
+    subtitleMode ?? (showProjectSubtitle ? 'project' : 'none')
 
   return (
     <div
@@ -177,20 +187,6 @@ function SessionItemComponent({
         <div className="flex min-w-0 flex-1 flex-col justify-center">
           {/* Main Title Row */}
           <div className="flex min-w-0 items-center gap-1.5">
-            {session.source === 'antigravity' && (
-              <span
-                className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:bg-indigo-400/20 dark:text-indigo-300 border border-indigo-500/25"
-                title={
-                  session.surface === 'both'
-                    ? 'Antigravity (Desktop + CLI synced)'
-                    : session.surface === 'cli'
-                      ? 'Antigravity CLI session'
-                      : 'Antigravity Desktop session'
-                }
-              >
-                AGY
-              </span>
-            )}
             <span
               className={cn(
                 'truncate text-[13px] leading-tight text-primary-900 dark:text-neutral-200',
@@ -202,15 +198,52 @@ function SessionItemComponent({
             </span>
           </div>
 
-          {/* Subtitle with Project Name (shown in Status and None group modes) */}
-          {showProjectSubtitle && (
-            <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-primary-500 dark:text-neutral-400">
-              <HugeiconsIcon
-                icon={Folder01Icon}
-                size={11}
-                className="shrink-0 opacity-70"
-              />
-              <span className="truncate">{projectName}</span>
+          {/* Subtitle Row */}
+          {effectiveSubtitleMode !== 'none' && (
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-primary-500 dark:text-neutral-400">
+              {effectiveSubtitleMode === 'profile' && (
+                <div className="flex min-w-0 items-center gap-1">
+                  <img
+                    src={profileAvatarUrl || (profileName === 'antigravity' ? '/antigravity-avatar.webp' : '/claude-avatar.webp')}
+                    alt={profileName}
+                    className="size-3.5 rounded-full object-cover shrink-0"
+                    onError={(e) => {
+                      ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                    }}
+                  />
+                  <span className="truncate">@{profileName}</span>
+                </div>
+              )}
+              {effectiveSubtitleMode === 'project' && (
+                <div className="flex min-w-0 items-center gap-1">
+                  <HugeiconsIcon
+                    icon={Folder01Icon}
+                    size={11}
+                    className="shrink-0 opacity-70"
+                  />
+                  <span className="truncate">{projectName}</span>
+                </div>
+              )}
+              {effectiveSubtitleMode === 'both' && (
+                <div className="flex min-w-0 items-center gap-1 truncate">
+                  <img
+                    src={profileAvatarUrl || (profileName === 'antigravity' ? '/antigravity-avatar.webp' : '/claude-avatar.webp')}
+                    alt={profileName}
+                    className="size-3.5 rounded-full object-cover shrink-0"
+                    onError={(e) => {
+                      ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                    }}
+                  />
+                  <span className="truncate shrink-0 max-w-[80px]">@{profileName}</span>
+                  <span className="shrink-0 opacity-40">·</span>
+                  <HugeiconsIcon
+                    icon={Folder01Icon}
+                    size={11}
+                    className="shrink-0 opacity-70"
+                  />
+                  <span className="truncate">{projectName}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -305,7 +338,9 @@ function SessionItemComponent({
 function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
   if (prev.active !== next.active) return false
   if (prev.isPinned !== next.isPinned) return false
+  if (prev.subtitleMode !== next.subtitleMode) return false
   if (prev.showProjectSubtitle !== next.showProjectSubtitle) return false
+  if (prev.profileAvatarUrl !== next.profileAvatarUrl) return false
   if (prev.isSessionActive !== next.isSessionActive) return false
   if (prev.isSessionBlocked !== next.isSessionBlocked) return false
   if (prev.draggable !== next.draggable) return false
@@ -324,6 +359,8 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
     prev.session.lastPromptAt === next.session.lastPromptAt &&
     prev.session.projectId === next.session.projectId &&
     prev.session.projectName === next.session.projectName &&
+    prev.session.profileName === next.session.profileName &&
+    prev.session.agentProfile === next.session.agentProfile &&
     prev.session.status === next.session.status &&
     prev.session.titleStatus === next.session.titleStatus &&
     prev.session.titleSource === next.session.titleSource &&
