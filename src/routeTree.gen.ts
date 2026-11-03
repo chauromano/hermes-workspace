@@ -129,8 +129,10 @@ import { Route as ApiSkillsUninstallRouteImport } from './routes/api/skills/unin
 import { Route as ApiSkillsToggleRouteImport } from './routes/api/skills/toggle'
 import { Route as ApiSkillsInstallRouteImport } from './routes/api/skills/install'
 import { Route as ApiSkillsHubSearchRouteImport } from './routes/api/skills/hub-search'
+import { Route as ApiSessionsSideTasksRouteImport } from './routes/api/sessions/side-tasks'
 import { Route as ApiSessionsSendRouteImport } from './routes/api/sessions/send'
 import { Route as ApiSessionsSearchRouteImport } from './routes/api/sessions/search'
+import { Route as ApiSessionsDelegateRouteImport } from './routes/api/sessions/delegate'
 import { Route as ApiRunsActiveRouteImport } from './routes/api/runs/active'
 import { Route as ApiProfilesUpdateRouteImport } from './routes/api/profiles/update'
 import { Route as ApiProfilesToggleSkillRouteImport } from './routes/api/profiles/toggle-skill'
@@ -784,6 +786,11 @@ const ApiSkillsHubSearchRoute = ApiSkillsHubSearchRouteImport.update({
   path: '/hub-search',
   getParentRoute: () => ApiSkillsRoute,
 } as any)
+const ApiSessionsSideTasksRoute = ApiSessionsSideTasksRouteImport.update({
+  id: '/side-tasks',
+  path: '/side-tasks',
+  getParentRoute: () => ApiSessionsRoute,
+} as any)
 const ApiSessionsSendRoute = ApiSessionsSendRouteImport.update({
   id: '/send',
   path: '/send',
@@ -792,6 +799,11 @@ const ApiSessionsSendRoute = ApiSessionsSendRouteImport.update({
 const ApiSessionsSearchRoute = ApiSessionsSearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => ApiSessionsRoute,
+} as any)
+const ApiSessionsDelegateRoute = ApiSessionsDelegateRouteImport.update({
+  id: '/delegate',
+  path: '/delegate',
   getParentRoute: () => ApiSessionsRoute,
 } as any)
 const ApiRunsActiveRoute = ApiRunsActiveRouteImport.update({
@@ -1201,8 +1213,10 @@ export interface FileRoutesByFullPath {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/sessions/delegate': typeof ApiSessionsDelegateRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
+  '/api/sessions/side-tasks': typeof ApiSessionsSideTasksRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
@@ -1373,8 +1387,10 @@ export interface FileRoutesByTo {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/sessions/delegate': typeof ApiSessionsDelegateRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
+  '/api/sessions/side-tasks': typeof ApiSessionsSideTasksRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
@@ -1547,8 +1563,10 @@ export interface FileRoutesById {
   '/api/profiles/toggle-skill': typeof ApiProfilesToggleSkillRoute
   '/api/profiles/update': typeof ApiProfilesUpdateRoute
   '/api/runs/active': typeof ApiRunsActiveRoute
+  '/api/sessions/delegate': typeof ApiSessionsDelegateRoute
   '/api/sessions/search': typeof ApiSessionsSearchRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
+  '/api/sessions/side-tasks': typeof ApiSessionsSideTasksRoute
   '/api/skills/hub-search': typeof ApiSkillsHubSearchRoute
   '/api/skills/install': typeof ApiSkillsInstallRoute
   '/api/skills/toggle': typeof ApiSkillsToggleRoute
@@ -1722,8 +1740,10 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/sessions/delegate'
     | '/api/sessions/search'
     | '/api/sessions/send'
+    | '/api/sessions/side-tasks'
     | '/api/skills/hub-search'
     | '/api/skills/install'
     | '/api/skills/toggle'
@@ -1894,8 +1914,10 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/sessions/delegate'
     | '/api/sessions/search'
     | '/api/sessions/send'
+    | '/api/sessions/side-tasks'
     | '/api/skills/hub-search'
     | '/api/skills/install'
     | '/api/skills/toggle'
@@ -2067,8 +2089,10 @@ export interface FileRouteTypes {
     | '/api/profiles/toggle-skill'
     | '/api/profiles/update'
     | '/api/runs/active'
+    | '/api/sessions/delegate'
     | '/api/sessions/search'
     | '/api/sessions/send'
+    | '/api/sessions/side-tasks'
     | '/api/skills/hub-search'
     | '/api/skills/install'
     | '/api/skills/toggle'
@@ -3072,6 +3096,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSkillsHubSearchRouteImport
       parentRoute: typeof ApiSkillsRoute
     }
+    '/api/sessions/side-tasks': {
+      id: '/api/sessions/side-tasks'
+      path: '/side-tasks'
+      fullPath: '/api/sessions/side-tasks'
+      preLoaderRoute: typeof ApiSessionsSideTasksRouteImport
+      parentRoute: typeof ApiSessionsRoute
+    }
     '/api/sessions/send': {
       id: '/api/sessions/send'
       path: '/send'
@@ -3084,6 +3115,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/api/sessions/search'
       preLoaderRoute: typeof ApiSessionsSearchRouteImport
+      parentRoute: typeof ApiSessionsRoute
+    }
+    '/api/sessions/delegate': {
+      id: '/api/sessions/delegate'
+      path: '/delegate'
+      fullPath: '/api/sessions/delegate'
+      preLoaderRoute: typeof ApiSessionsDelegateRouteImport
       parentRoute: typeof ApiSessionsRoute
     }
     '/api/runs/active': {
@@ -3600,15 +3638,19 @@ const ApiMemoryRouteWithChildren = ApiMemoryRoute._addFileChildren(
 )
 
 interface ApiSessionsRouteChildren {
+  ApiSessionsDelegateRoute: typeof ApiSessionsDelegateRoute
   ApiSessionsSearchRoute: typeof ApiSessionsSearchRoute
   ApiSessionsSendRoute: typeof ApiSessionsSendRoute
+  ApiSessionsSideTasksRoute: typeof ApiSessionsSideTasksRoute
   ApiSessionsSessionKeyActiveRunRoute: typeof ApiSessionsSessionKeyActiveRunRoute
   ApiSessionsSessionKeyStatusRoute: typeof ApiSessionsSessionKeyStatusRoute
 }
 
 const ApiSessionsRouteChildren: ApiSessionsRouteChildren = {
+  ApiSessionsDelegateRoute: ApiSessionsDelegateRoute,
   ApiSessionsSearchRoute: ApiSessionsSearchRoute,
   ApiSessionsSendRoute: ApiSessionsSendRoute,
+  ApiSessionsSideTasksRoute: ApiSessionsSideTasksRoute,
   ApiSessionsSessionKeyActiveRunRoute: ApiSessionsSessionKeyActiveRunRoute,
   ApiSessionsSessionKeyStatusRoute: ApiSessionsSessionKeyStatusRoute,
 }

@@ -61,7 +61,7 @@ function getDatabase(dbPath: string): DatabaseSync {
   if (!db) {
     try {
       db = new DatabaseSync(dbPath)
-      db.exec('PRAGMA busy_timeout = 5000;')
+      db.exec('PRAGMA busy_timeout = 500;')
       db.prepare('SELECT 1').get()
       dbCache.set(dbPath, db)
     } catch {
@@ -1009,6 +1009,60 @@ export function readSessionsFromStateDb(
       }
     } catch {}
   }
+
+  // Also merge sessions from projects.db session_metadata
+  const projDb = getProjectsDbPath()
+  if (existsSync(projDb)) {
+    try {
+      ensureSessionMetadataTable(projDb)
+      const raw = runSqlite(
+        projDb,
+        `SELECT id, title, profile_name, parent_session_id, cwd, started_at, last_activity_at, message_count FROM session_metadata ORDER BY last_activity_at DESC LIMIT ${limit};`,
+      )
+      if (raw) {
+        const rows = JSON.parse(raw) as Array<Record<string, any>>
+        for (const s of rows) {
+          if (!s.id || seen.has(s.id)) continue
+          const cwd = s.cwd && String(s.cwd).trim() ? String(s.cwd).trim() : ''
+          sessionCwdCache.set(s.id, { cwd, timestamp: now })
+          const updatedMs = s.last_activity_at
+            ? Math.floor(s.last_activity_at * 1000)
+            : s.started_at
+              ? Math.floor(s.started_at * 1000)
+              : now
+          seen.set(s.id, {
+            key: s.id,
+            id: s.id,
+            friendlyId: s.id,
+            kind: 'chat',
+            status: 'idle',
+            model: '',
+            label: s.title || undefined,
+            title: s.title || undefined,
+            derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
+            preview: undefined,
+            tokenCount: 0,
+            totalTokens: 0,
+            message_count: s.message_count || 0,
+            tool_call_count: 0,
+            messageCount: s.message_count || 0,
+            toolCallCount: 0,
+            cost: 0,
+            createdAt: s.started_at ? Math.floor(s.started_at * 1000) : now,
+            startedAt: s.started_at ? Math.floor(s.started_at * 1000) : now,
+            updatedAt: updatedMs,
+            lastPromptAt: updatedMs,
+            isPinned: false,
+            cwd: cwd || null,
+            profileName: s.profile_name || 'default',
+            agentProfile: s.profile_name || 'default',
+            parentSessionId: s.parent_session_id || null,
+          })
+        }
+      }
+    } catch {}
+  }
+
   const result = Array.from(seen.values())
     .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, limit * 2)
@@ -1068,6 +1122,212 @@ export function setSessionProfile(sessionId: string, profileName: string): void 
       )
     } catch {}
   }
+}
+
+function ensureSessionMetadataTable(dbPath: string): void {
+  try {
+    runSqliteExec(
+      dbPath,
+      `CREATE TABLE IF NOT EXISTS session_metadata (
+        id TEXT PRIMARY KEY,
+        parent_session_id TEXT,
+        profile_name TEXT,
+        cwd TEXT,
+        title TEXT,
+        started_at REAL,
+        last_activity_at REAL,
+        message_count INTEGER DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_metadata_parent ON session_metadata(parent_session_id);`,
+    )
+  } catch {}
+}
+
+export function updateSessionMetadata(
+  sessionId: string,
+  updates: {
+    parentSessionId?: string | null
+    profileName?: string | null
+    cwd?: string | null
+    title?: string | null
+  },
+): void {
+  if (!sessionId) return
+  const safeId = sqliteQuote(sessionId.trim())
+  const now = Date.now() / 1000
+  cachedDbSessions = null
+
+  // 1. Persist to projects.db (WAL mode, dedicated workspace db)
+  const projDb = getProjectsDbPath()
+  if (existsSync(projDb)) {
+    try {
+      ensureSessionMetadataTable(projDb)
+      const safeParent = updates.parentSessionId ? sqliteQuote(updates.parentSessionId.trim()) : 'NULL'
+      const safeProfile = updates.profileName ? sqliteQuote(updates.profileName.trim()) : "'default'"
+      const safeCwd = updates.cwd ? sqliteQuote(updates.cwd.trim()) : "''"
+      const safeTitle = updates.title ? sqliteQuote(updates.title.trim()) : 'NULL'
+
+      runSqliteExec(
+        projDb,
+        `INSERT INTO session_metadata (id, parent_session_id, profile_name, cwd, title, started_at, last_activity_at)
+         VALUES (${safeId}, ${safeParent}, ${safeProfile}, ${safeCwd}, ${safeTitle}, ${now}, ${now})
+         ON CONFLICT(id) DO UPDATE SET
+           ${updates.parentSessionId !== undefined ? `parent_session_id = ${safeParent},` : ''}
+           ${updates.profileName !== undefined ? `profile_name = ${safeProfile},` : ''}
+           ${updates.cwd !== undefined ? `cwd = ${safeCwd},` : ''}
+           ${updates.title !== undefined ? `title = ${safeTitle},` : ''}
+           last_activity_at = ${now};`,
+      )
+    } catch (err) {
+      console.warn('[projects-backend] Failed to update session_metadata in projects.db:', err)
+    }
+  }
+
+  // 2. Best-effort update to state.db
+  const setClauses: string[] = []
+  if (updates.parentSessionId !== undefined) {
+    setClauses.push(
+      `parent_session_id = ${updates.parentSessionId ? sqliteQuote(updates.parentSessionId.trim()) : 'NULL'}`,
+    )
+  }
+  if (updates.profileName !== undefined) {
+    setClauses.push(
+      `profile_name = ${updates.profileName ? sqliteQuote(updates.profileName.trim()) : 'NULL'}`,
+    )
+  }
+  if (updates.cwd !== undefined) {
+    setClauses.push(
+      `cwd = ${updates.cwd ? sqliteQuote(updates.cwd.trim()) : "''"}`,
+    )
+  }
+  if (updates.title !== undefined) {
+    setClauses.push(
+      `title = ${updates.title ? sqliteQuote(updates.title.trim()) : 'NULL'}`,
+    )
+  }
+  if (setClauses.length > 0) {
+    const sql = `UPDATE sessions SET ${setClauses.join(', ')} WHERE id = ${safeId};`
+    // Best-effort update to root state.db and profile state.db
+    const rootDb = getStateDbPath()
+    try {
+      runSqliteExec(rootDb, sql)
+    } catch {}
+    if (updates.profileName && updates.profileName !== 'default') {
+      const pDb = join(getHermesRoot(), 'profiles', updates.profileName, 'state.db')
+      if (existsSync(pDb)) {
+        try {
+          runSqliteExec(pDb, sql)
+        } catch {}
+      }
+    }
+  }
+}
+
+export function appendAssistantMessageToSession(
+  sessionId: string,
+  content: string,
+): void {
+  if (!sessionId || !content) return
+  const safeId = sqliteQuote(sessionId.trim())
+  const safeContent = sqliteQuote(content.trim())
+  const now = Date.now() / 1000
+
+  // 1. Update session_metadata in projects.db
+  const projDb = getProjectsDbPath()
+  if (existsSync(projDb)) {
+    try {
+      ensureSessionMetadataTable(projDb)
+      runSqliteExec(
+        projDb,
+        `UPDATE session_metadata SET last_activity_at = ${now}, message_count = COALESCE(message_count, 0) + 1 WHERE id = ${safeId};`,
+      )
+    } catch {}
+  }
+
+  // 2. Insert into messages table in state.db (omitting id column so AUTOINCREMENT assigns an integer)
+  const sql = `INSERT INTO messages (session_id, role, content, timestamp, token_count) VALUES (${safeId}, 'assistant', ${safeContent}, ${now}, 0); UPDATE sessions SET last_activity_at = ${now}, message_count = COALESCE(message_count, 0) + 1 WHERE id = ${safeId};`
+  for (const { path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const check = runSqlite(dbPath, `SELECT id FROM sessions WHERE id = ${safeId} LIMIT 1;`)
+      if (check && JSON.parse(check).length > 0) {
+        runSqliteExec(dbPath, sql)
+        break
+      }
+    } catch {}
+  }
+}
+
+export function listChildSessions(parentSessionKey: string): Array<{
+  id: string
+  title: string | null
+  profile_name: string | null
+  started_at: number | null
+  last_activity_at: number | null
+  message_count: number
+  tool_call_count: number
+  lastAssistantMessage?: string | null
+}> {
+  if (!parentSessionKey || !parentSessionKey.trim()) return []
+  const safeParentId = sqliteQuote(parentSessionKey.trim())
+  const results: Array<any> = []
+  const seen = new Set<string>()
+
+  // 1. Read from projects.db session_metadata
+  const projDb = getProjectsDbPath()
+  if (existsSync(projDb)) {
+    try {
+      ensureSessionMetadataTable(projDb)
+      const raw = runSqlite(
+        projDb,
+        `SELECT id, title, profile_name, started_at, last_activity_at, message_count, 0 as tool_call_count FROM session_metadata WHERE parent_session_id = ${safeParentId} ORDER BY started_at DESC;`,
+      )
+      if (raw) {
+        const rows = JSON.parse(raw) as Array<any>
+        for (const row of rows) {
+          seen.add(row.id)
+          results.push({
+            ...row,
+            lastAssistantMessage: null,
+          })
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Read from state.db sessions
+  for (const { path: dbPath } of getAllStateDbPaths()) {
+    try {
+      const sql = `SELECT id, title, profile_name, started_at, last_activity_at, message_count, tool_call_count FROM sessions WHERE parent_session_id = ${safeParentId} ORDER BY started_at DESC;`
+      const raw = runSqlite(dbPath, sql)
+      if (!raw) continue
+      const rows = JSON.parse(raw) as Array<any>
+      for (const row of rows) {
+        if (!seen.has(row.id)) {
+          seen.add(row.id)
+          // Try to fetch latest assistant message preview
+          let lastAssistantMessage: string | null = null
+          try {
+            const msgSql = `SELECT content FROM messages WHERE session_id = ${sqliteQuote(row.id)} AND role = 'assistant' ORDER BY timestamp DESC LIMIT 1;`
+            const msgRaw = runSqlite(dbPath, msgSql)
+            if (msgRaw) {
+              const msgRows = JSON.parse(msgRaw) as Array<{ content: string }>
+              if (msgRows.length > 0) {
+                lastAssistantMessage = msgRows[0].content
+              }
+            }
+          } catch {}
+
+          results.push({
+            ...row,
+            lastAssistantMessage,
+          })
+        }
+      }
+    } catch {}
+  }
+
+  results.sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
+  return results
 }
 
 export function readMessagesFromAllStateDbs(

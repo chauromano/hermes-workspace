@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Folder01Icon } from '@hugeicons/core-free-icons'
+import { Link } from '@tanstack/react-router'
+import { Folder01Icon, ArrowLeft01Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import {
   TooltipContent,
@@ -108,6 +109,9 @@ type ChatHeaderProps = {
   onToggleFocusMode?: () => void
   onUndo?: () => void
   onClear?: () => void
+  parentSessionId?: string | null
+  parentSessionTitle?: string | null
+  profileName?: string | null
 }
 
 function ChatHeaderComponent({
@@ -138,6 +142,9 @@ function ChatHeaderComponent({
   onToggleFocusMode,
   onUndo,
   onClear,
+  parentSessionId,
+  parentSessionTitle,
+  profileName,
 }: ChatHeaderProps) {
   const [clearConfirm, setClearConfirm] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -254,6 +261,21 @@ function ChatHeaderComponent({
             : undefined
         }
       >
+        {parentSessionId && (
+          <div className="flex items-center justify-between gap-2 bg-accent-500/10 border-b border-accent-500/20 px-3 py-1.5 text-xs">
+            <span className="truncate text-primary-700 dark:text-neutral-200">
+              Side task with <strong>@{profileName || 'profile'}</strong>
+            </span>
+            <Link
+              to="/chat/$sessionKey"
+              params={{ sessionKey: parentSessionId }}
+              className="shrink-0 font-semibold text-accent-600 dark:text-accent-400 hover:underline flex items-center gap-1"
+            >
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
+              <span>Back</span>
+            </Link>
+          </div>
+        )}
         <div className="px-3 h-12 flex items-center gap-0">
           {/* Hamburger lines — ChatGPT style, large tap target */}
           <button
@@ -321,6 +343,22 @@ function ChatHeaderComponent({
 
   return (
     <div ref={wrapperRef} className="shrink-0 bg-surface">
+      {parentSessionId && (
+        <div className="flex items-center justify-between gap-2 bg-accent-500/10 border-b border-accent-500/20 px-4 py-1.5 text-xs">
+          <span className="truncate text-primary-700 dark:text-neutral-200">
+            Side-task session with <strong>@{profileName || 'profile'}</strong>
+            {parentSessionTitle ? ` · from "${parentSessionTitle}"` : ''}
+          </span>
+          <Link
+            to="/chat/$sessionKey"
+            params={{ sessionKey: parentSessionId }}
+            className="shrink-0 font-semibold text-accent-600 dark:text-accent-400 hover:underline flex items-center gap-1"
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={12} />
+            <span>← Back to Main Conversation</span>
+          </Link>
+        </div>
+      )}
       <div className="px-4 h-12 flex items-center">
         {showFileExplorerButton ? (
           <TooltipProvider>

@@ -1841,6 +1841,23 @@ function ChatComposerComponent({
   const isSlashMenuOpen =
     slashCommandQuery !== null && !disabled && !isSlashMenuDismissed
 
+  // @profile mention detection at start of input
+  const atProfileQuery = useMemo(() => {
+    const trimmed = value.trimStart()
+    if (!trimmed.startsWith('@')) return null
+    const match = trimmed.match(/^@([a-z0-9_-]*)$/i)
+    if (!match) return null
+    return match[1].toLowerCase()
+  }, [value])
+
+  const matchingMentionProfiles = useMemo(() => {
+    if (atProfileQuery === null) return []
+    const list = profilesQuery.data?.profiles ?? []
+    return list.filter((p) => p.name.toLowerCase().startsWith(atProfileQuery))
+  }, [atProfileQuery, profilesQuery.data?.profiles])
+
+  const isAtMenuOpen = atProfileQuery !== null && matchingMentionProfiles.length > 0 && !disabled
+
   const handleClearDraft = useCallback(() => {
     reset()
   }, [reset])
@@ -2287,6 +2304,52 @@ function ChatComposerComponent({
           commands={slashCommands}
           onSelect={handleSelectSlashCommand}
         />
+
+        {/* @Profile Mention Popover */}
+        {isAtMenuOpen && (
+          <div className="absolute bottom-full left-3 mb-2 z-50 w-72 max-h-56 overflow-y-auto rounded-xl border border-primary-200 dark:border-neutral-800 bg-surface shadow-xl p-1">
+            <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary-400 dark:text-neutral-500">
+              Delegate Side Task To Profile
+            </div>
+            {matchingMentionProfiles.map((p) => {
+              const avatar =
+                p.avatarUrl ||
+                (p.name === 'antigravity'
+                  ? '/antigravity-avatar.webp'
+                  : '/claude-avatar.webp')
+              return (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => {
+                    setValue(`@${p.name} `)
+                    promptRef.current?.focus()
+                  }}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left text-xs hover:bg-primary-100 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <img
+                    src={avatar}
+                    alt={p.name}
+                    className="size-5 rounded-full object-cover shrink-0"
+                    onError={(e) => {
+                      ;(e.currentTarget as HTMLImageElement).src = '/claude-avatar.webp'
+                    }}
+                  />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="font-semibold text-primary-900 dark:text-neutral-100 truncate">
+                      @{p.name}
+                    </span>
+                    {p.description && (
+                      <span className="text-[10px] text-primary-500 dark:text-neutral-400 truncate">
+                        {p.description}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {isDraggingOver ? (
           <div className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-[18px] border-2 border-dashed border-primary-400 bg-primary-50/90 text-sm font-medium text-primary-700">

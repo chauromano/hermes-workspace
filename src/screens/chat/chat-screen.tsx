@@ -35,6 +35,7 @@ import {
   updateSessionLastMessage,
 } from './chat-queries'
 import { ChatHeader } from './components/chat-header'
+import { SideTaskBar } from './components/side-task-bar'
 import { ChatMessageList } from './components/chat-message-list'
 import { ChatEmptyState } from './components/chat-empty-state'
 import { ChatComposer } from './components/chat-composer'
@@ -2499,6 +2500,56 @@ export function ChatScreen({
       // Scroll to bottom immediately so user sees their message + incoming response
       requestAnimationFrame(() => scrollChatToBottom('smooth'))
 
+      // Check for @profile delegation pattern: /^@([a-z0-9_-]+)\s+([\s\S]+)$/i
+      const delegateMatch = trimmedBody.match(/^@([a-z0-9_-]+)\s+([\s\S]+)$/i)
+      const currentActiveProfile = activeSession?.profileName || (activeSession as any)?.agentProfile || 'default'
+      const targetDelegateProfile = delegateMatch ? delegateMatch[1].toLowerCase() : null
+
+      if (
+        delegateMatch &&
+        targetDelegateProfile &&
+        targetDelegateProfile !== currentActiveProfile &&
+        !isNewChat
+      ) {
+        const delegatePrompt = delegateMatch[2].trim()
+        const parentKey =
+          forcedSessionKey ||
+          resolvedSessionKey ||
+          activeCanonicalKey ||
+          activeSessionKey
+
+        if (parentKey && parentKey !== 'new') {
+          const { optimisticMessage } = createOptimisticMessage(
+            trimmedBody,
+            attachmentPayload,
+          )
+          appendHistoryMessage(queryClient, parentKey, activeFriendlyId, optimisticMessage)
+
+          fetch('/api/sessions/delegate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              parentSessionKey: parentKey,
+              targetProfile: targetDelegateProfile,
+              prompt: delegatePrompt,
+              projectId: activeId || activeSession?.projectId,
+            }),
+          })
+            .then(async (res) => {
+              if (res.ok) {
+                await queryClient.invalidateQueries({
+                  queryKey: ['side-tasks', parentKey],
+                })
+              }
+            })
+            .catch((err) => {
+              console.error('[chat-screen] Delegation failed:', err)
+            })
+
+          return
+        }
+      }
+
       const attachmentPayload: Array<ChatAttachment> = attachments.map(
         (attachment) => ({
           ...attachment,
@@ -2865,6 +2916,13 @@ export function ChatScreen({
               onToggleFocusMode={handleToggleFocusMode}
               onUndo={undefined}
               onClear={undefined}
+              parentSessionId={activeSession?.parentSessionId}
+              parentSessionTitle={
+                activeSession?.parentSessionId
+                  ? sessions?.find((s) => s.key === activeSession.parentSessionId || s.id === activeSession.parentSessionId)?.title
+                  : undefined
+              }
+              profileName={activeSession?.profileName || (activeSession as any)?.agentProfile}
             />
           )}
 
@@ -2975,6 +3033,16 @@ export function ChatScreen({
               researchCard={researchCard}
               isCompacting={isCompacting}
               sending={sending}
+            />
+          )}
+          {!isNewChat && (
+            <SideTaskBar
+              parentSessionKey={
+                forcedSessionKey ||
+                resolvedSessionKey ||
+                activeCanonicalKey ||
+                activeSessionKey
+              }
             />
           )}
           {showComposer ? (
