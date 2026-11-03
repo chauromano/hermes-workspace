@@ -97,14 +97,14 @@ export function ProjectSessionChip({
     )
   }
 
-  const isAgyLocked =
-    isLocked ||
+  const isAgySession = Boolean(
     source === 'antigravity' ||
-    (typeof sessionKey === 'string' &&
-      (sessionKey.startsWith('agy_') ||
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionKey)))
+      (typeof sessionKey === 'string' &&
+        (sessionKey.startsWith('agy_') ||
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionKey))),
+  )
 
-  if (isAgyLocked) {
+  if (isLocked) {
     return (
       <div
         className={cn(
@@ -113,7 +113,7 @@ export function ProjectSessionChip({
           compact ? 'px-2 py-0.5 text-[11px] max-w-[130px]' : 'px-2.5 py-1 max-w-[200px]',
           className,
         )}
-        title={lockReason || `Workspace locked to ${displayName} for Antigravity session`}
+        title={lockReason || `Workspace locked to ${displayName}`}
       >
         <svg
           width={compact ? 11 : 12}
@@ -134,6 +134,17 @@ export function ProjectSessionChip({
       </div>
     )
   }
+
+  // Filter projects for Antigravity sessions: limit to projects with host or accessible paths
+  const selectableProjects = isAgySession
+    ? projects.filter(
+        (p) =>
+          p.primary_path &&
+          (/^[a-zA-Z]:[/\\]/.test(p.primary_path.trim()) ||
+            p.primary_path.startsWith('/workspace') ||
+            p.name.toLowerCase().includes('homelab')),
+      )
+    : projects
 
   return (
     <>
@@ -169,77 +180,41 @@ export function ProjectSessionChip({
         >
           <div className="px-2.5 py-1.5 border-b border-[var(--theme-border)] mb-1">
             <span className="block text-[10px] font-semibold text-[var(--theme-muted)] uppercase tracking-wider">
-              Session Project
+              {isAgySession ? 'Antigravity Project' : 'Session Project'}
             </span>
             <p className="text-[11px] text-[var(--theme-muted)] mt-0.5 leading-tight">
               Changing project updates this session&apos;s working directory.
             </p>
           </div>
 
-          {/* Personal Sandbox Option */}
-          <MenuItem
-            onClick={() => handleSelect(null)}
-            className={cn(
-              'flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-xs text-[var(--theme-text)] hover:bg-[var(--theme-hover)] transition-colors cursor-pointer',
-              isPersonalSandbox && 'bg-accent-500/10 text-accent-600 dark:text-accent-400 font-semibold',
-            )}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <HugeiconsIcon icon={Folder01Icon} size={14} className="shrink-0 text-[var(--theme-muted)]" />
-              <div className="min-w-0 text-left">
-                <span className="truncate block">Personal Sandbox</span>
-                <span className="text-[10px] text-[var(--theme-muted)] font-mono block">/workspace</span>
+          {/* Personal Sandbox Option (Only for native Hermes sessions) */}
+          {!isAgySession && (
+            <MenuItem
+              onClick={() => handleSelect(null)}
+              className={cn(
+                'flex items-center justify-between w-full rounded-lg px-2.5 py-1.5 text-xs text-[var(--theme-text)] hover:bg-[var(--theme-hover)] transition-colors cursor-pointer',
+                isPersonalSandbox && 'bg-accent-500/10 text-accent-600 dark:text-accent-400 font-semibold',
+              )}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <HugeiconsIcon icon={Folder01Icon} size={14} className="shrink-0 text-[var(--theme-muted)]" />
+                <div className="min-w-0 text-left">
+                  <span className="truncate block">Personal Sandbox</span>
+                  <span className="text-[10px] text-[var(--theme-muted)] font-mono block">/workspace</span>
+                </div>
               </div>
-            </div>
-            {isPersonalSandbox && (
-              <HugeiconsIcon icon={CheckmarkCircle01Icon} size={13} className="text-accent-600 shrink-0" />
-            )}
-          </MenuItem>
+              {isPersonalSandbox && (
+                <HugeiconsIcon icon={CheckmarkCircle01Icon} size={13} className="text-accent-600 shrink-0" />
+              )}
+            </MenuItem>
+          )}
 
           {/* Project List */}
-          {projects.length > 0 && (
+          {selectableProjects.length > 0 && (
             <div className="max-h-48 overflow-y-auto scrollbar-thin py-0.5 space-y-0.5 border-t border-[var(--theme-border)] mt-1 pt-1">
-              {projects.map((proj) => {
+              {selectableProjects.map((proj) => {
                 const isSelected = effectiveProjectId === proj.id
-                const isAgyLocked =
-    isLocked ||
-    source === 'antigravity' ||
-    (typeof sessionKey === 'string' &&
-      (sessionKey.startsWith('agy_') ||
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionKey)))
-
-  if (isAgyLocked) {
-    return (
-      <div
-        className={cn(
-          'inline-flex items-center gap-1 rounded-full border select-none font-medium text-xs',
-          'border-accent-500/30 bg-accent-500/10 text-accent-700 dark:text-accent-300',
-          compact ? 'px-2 py-0.5 text-[11px] max-w-[130px]' : 'px-2.5 py-1 max-w-[200px]',
-          className,
-        )}
-        title={lockReason || `Workspace locked to ${displayName} for Antigravity session`}
-      >
-        <svg
-          width={compact ? 11 : 12}
-          height={compact ? 11 : 12}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="shrink-0 text-accent-500"
-          aria-hidden="true"
-        >
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-        <span className="truncate">{displayName}</span>
-      </div>
-    )
-  }
-
-  return (
+                return (
                   <MenuItem
                     key={proj.id}
                     onClick={() => handleSelect(proj.id)}

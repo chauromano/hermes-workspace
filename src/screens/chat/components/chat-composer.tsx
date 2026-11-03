@@ -599,6 +599,14 @@ function isCurrentModel(
   // Current model is "something/<entryId>"
   if (cm.endsWith(`/${eid}`)) return true
 
+  // Entry ID is "something/<currentModel>"
+  if (eid.endsWith(`/${cm}`)) return true
+
+  // Strip prefixes for bare comparison
+  const bareCm = cm.replace(/^[^/]+\//, '')
+  const bareEid = eid.replace(/^[^/]+\//, '')
+  if (bareCm && bareCm === bareEid) return true
+
   // Resolved entry key matches current model exactly
   const resolved = eprov ? `${eprov}/${eid}` : eid
   if (resolved === cm) return true
@@ -925,12 +933,6 @@ function ChatComposerComponent({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false)
   const [isThinkingMenuOpen, setIsThinkingMenuOpen] = useState(false)
-  const [isAgyModeMenuOpen, setIsAgyModeMenuOpen] = useState(false)
-  const [agyMode, setAgyMode] = useState<'auto' | 'accept_edits' | 'plan'>(() => {
-    if (typeof window === 'undefined') return 'auto'
-    const saved = window.localStorage.getItem('hermes-agy-mode')
-    return saved === 'accept_edits' || saved === 'plan' ? saved : 'auto'
-  })
   const [isProviderSwitcherExpanded, setIsProviderSwitcherExpanded] =
     useState(false)
   const [isWebSearchMode, _setIsWebSearchMode] = useState(false)
@@ -963,7 +965,6 @@ function ChatComposerComponent({
   const modelSelectorRef = useRef<HTMLDivElement | null>(null)
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null)
-  const agyModeMenuRef = useRef<HTMLDivElement | null>(null)
   const composerWrapperRef = useRef<HTMLDivElement | null>(null)
   const focusFrameRef = useRef<number | null>(null)
 
@@ -1431,8 +1432,7 @@ function ChatComposerComponent({
     if (
       !isModelMenuOpen &&
       !isProfileMenuOpen &&
-      !isThinkingMenuOpen &&
-      !isAgyModeMenuOpen
+      !isThinkingMenuOpen
     )
       return
     function handleOutsideClick(event: MouseEvent) {
@@ -1441,12 +1441,10 @@ function ChatComposerComponent({
       if (modelSelectorRef.current?.contains(target)) return
       if (profileMenuRef.current?.contains(target)) return
       if (thinkingMenuRef.current?.contains(target)) return
-      if (agyModeMenuRef.current?.contains(target)) return
       setIsModelMenuOpen(false)
       setIsProviderSwitcherExpanded(false)
       setIsProfileMenuOpen(false)
       setIsThinkingMenuOpen(false)
-      setIsAgyModeMenuOpen(false)
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
@@ -1457,7 +1455,6 @@ function ChatComposerComponent({
     isModelMenuOpen,
     isProfileMenuOpen,
     isThinkingMenuOpen,
-    isAgyModeMenuOpen,
   ])
 
   const persistDraft = useCallback(
@@ -2421,7 +2418,7 @@ function ChatComposerComponent({
                 )}
 
                                 {/* 1. Agent Profile Pill */}
-                {isAntigravitySession ? (
+                {isAgyMode ? (
                   <div
                     className="inline-flex h-7 md:h-8 max-w-[7.5rem] sm:max-w-[10rem] items-center gap-1 md:gap-1.5 rounded-full bg-accent-500/10 dark:bg-accent-500/20 border border-accent-500/30 px-2 md:px-2.5 text-[11px] md:text-xs font-medium text-accent-700 dark:text-accent-300 shrink-0 select-none"
                     title="Profile is locked to Antigravity for this session"
@@ -2548,12 +2545,18 @@ function ChatComposerComponent({
                     <>
                       <div className="fixed inset-0 z-[199]" onClick={() => setIsThinkingMenuOpen(false)} />
                       <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                {([
-                                  ['off', 'None'],
-                                  ['low', 'Low'],
-                                  ['medium', 'Medium'],
-                                  ['high', 'High'],
-                                ] as Array<[ThinkingLevel, string]>).map(([level, label]) => (
+                              {((isAgyMode
+                                ? [
+                                    ['low', 'Low'],
+                                    ['medium', 'Medium'],
+                                    ['high', 'High'],
+                                  ]
+                                : [
+                                    ['off', 'None'],
+                                    ['low', 'Low'],
+                                    ['medium', 'Medium'],
+                                    ['high', 'High'],
+                                  ]) as Array<[ThinkingLevel, string]>).map(([level, label]) => (
                                   <button
                                     key={level}
                                     type="button"
@@ -2573,92 +2576,6 @@ function ChatComposerComponent({
                             </>
                           )}
                         </div>
-
-                        {(activeProfileName === 'antigravity' ||
-                          modelButtonLabel.startsWith('antigravity/') ||
-                          modelButtonLabel.includes('gemini-4-argon') ||
-                          modelButtonLabel.includes('gemini-3-flash-agent')) && (
-                          <div
-                            className="relative flex min-w-0 items-center shrink-0"
-                            ref={agyModeMenuRef}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsAgyModeMenuOpen((open) => !open)
-                                setIsProfileMenuOpen(false)
-                                setIsThinkingMenuOpen(false)
-                                setIsModelMenuOpen(false)
-                              }}
-                              className={cn(
-                                'inline-flex h-7 md:h-8 items-center gap-1 md:gap-1.5 rounded-full px-2 md:px-2.5 text-[11px] md:text-xs font-medium transition-colors shrink-0 cursor-pointer border',
-                                agyMode === 'auto'
-                                  ? 'bg-indigo-500/15 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/25'
-                                  : agyMode === 'plan'
-                                    ? 'bg-amber-500/15 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
-                                    : 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25',
-                                isAgyModeMenuOpen && 'ring-1 ring-accent-500',
-                              )}
-                              title="Antigravity Execution Mode"
-                            >
-                              <span className="font-bold text-[10px]">AGY</span>
-                              <span>
-                                {agyMode === 'auto'
-                                  ? 'Auto'
-                                  : agyMode === 'accept_edits'
-                                    ? 'Accept Edits'
-                                    : 'Plan'}
-                              </span>
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                            </button>
-                            {isAgyModeMenuOpen && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-[199]"
-                                  onClick={() => setIsAgyModeMenuOpen(false)}
-                                />
-                                <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[13rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                                    Antigravity Mode
-                                  </div>
-                                  {(
-                                    [
-                                      ['auto', 'Auto (Turbo)', 'Auto-approve commands & edits'],
-                                      ['accept_edits', 'Accept Edits', 'Auto-approve file edits only'],
-                                      ['plan', 'Plan Only', 'Read-only planning mode'],
-                                    ] as const
-                                  ).map(([modeKey, label, desc]) => (
-                                    <button
-                                      key={modeKey}
-                                      type="button"
-                                      onClick={() => {
-                                        setAgyMode(modeKey)
-                                        if (typeof window !== 'undefined') {
-                                          window.localStorage.setItem('hermes-agy-mode', modeKey)
-                                        }
-                                        setIsAgyModeMenuOpen(false)
-                                      }}
-                                      className={cn(
-                                        'flex w-full flex-col rounded-lg px-3 py-2 text-left text-xs transition-colors',
-                                        agyMode === modeKey
-                                          ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                          : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                      )}
-                                    >
-                                      <div className="flex items-center justify-between font-medium">
-                                        <span>{label}</span>
-                                        {agyMode === modeKey && (
-                                          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-                                        )}
-                                      </div>
-                                      <span className="text-[10px] text-neutral-400">{desc}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )}
 
                         {!hideModelSelector ? (
                           <div
@@ -2766,6 +2683,7 @@ function ChatComposerComponent({
                                       }
                                       const activeModelId = persistedSessionModel || currentModel
                                       const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
+                                        if (isAgyMode) return false
                                         if (query) return false
                                         if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
                                         const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
@@ -3110,6 +3028,7 @@ function ChatComposerComponent({
                           }
                           const activeModelId = persistedSessionModel || currentModel
                           const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
+                            if (isAgyMode) return false
                             if (query || mobileProviderFilter !== 'all') return false
                             if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
                             const hasActive = groupList.some((m) => isCurrentModel(activeModelId, m.id, m.provider))
