@@ -400,10 +400,10 @@ export function useRealtimeChatHistory({
 
             // Clear realtime buffer immediately — no more stale data in render
             store.clearRealtimeBuffer(effectiveSessionKey)
-            clearCompletedStreaming()
 
             // Background refetch for long-term consistency — doesn't block render
             queryClient.invalidateQueries({ queryKey: key, refetchType: 'all' }).then(() => {
+              clearCompletedStreaming()
               // Re-inject the completed assistant message if compaction dropped it
               if (completedAssistant) {
                 const refetchData =

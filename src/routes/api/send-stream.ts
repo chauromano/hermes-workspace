@@ -638,6 +638,7 @@ export const Route = createFileRoute('/api/send-stream')({
 
                 let currentSessionKey = sessionKey
                 let startedEmitted = false
+                let agyDoneEmitted = false
                 let accumulated = ''
                 let accumulatedThinking = ''
                 let resolvedModelUsed = effectiveAgyModel
@@ -814,6 +815,7 @@ export const Route = createFileRoute('/api/send-stream')({
                         runId,
                       })
                     } else if (evName === 'done') {
+                      agyDoneEmitted = true
                       const cid =
                         typeof payload.conversationId === 'string' && payload.conversationId
                           ? payload.conversationId
@@ -864,6 +866,28 @@ export const Route = createFileRoute('/api/send-stream')({
                   }
                 }
 
+                if (!agyDoneEmitted && startedEmitted) {
+                  persistActiveRun((runSessionKey, activeId) =>
+                    markRunStatus(runSessionKey, activeId, 'complete'),
+                  )
+                  sendEvent('done', {
+                    state: 'complete',
+                    sessionKey: currentSessionKey,
+                    friendlyId: currentSessionKey,
+                    runId,
+                    model: resolvedModelUsed,
+                    message: {
+                      role: 'assistant',
+                      model: resolvedModelUsed,
+                      content: [
+                        ...(accumulatedThinking
+                          ? [{ type: 'thinking', thinking: accumulatedThinking }]
+                          : []),
+                        { type: 'text', text: accumulated },
+                      ],
+                    },
+                  })
+                }
                 closeStream()
                 return
               }

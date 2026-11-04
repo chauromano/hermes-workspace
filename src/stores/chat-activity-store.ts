@@ -87,7 +87,6 @@ async function pollGatewayState(): Promise<AgentActivity> {
       if (updatedAt > 0) {
         const staleness = now - updatedAt
         if (staleness < 5000) return 'responding'
-        if (staleness < 15000) return 'thinking'
       }
 
       // Also check status field if available
