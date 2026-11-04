@@ -85,6 +85,7 @@ export type OpenAICompatMessage = {
 
 export type OpenAIChatOptions = {
   model?: string
+  provider?: string
   stream?: boolean
   temperature?: number
   signal?: AbortSignal
@@ -95,6 +96,7 @@ export type OpenAIChatOptions = {
 
 type OpenAIChatRequest = {
   model: string
+  provider?: string
   messages: Array<{
     role: string
     content: string | Array<OpenAICompatContentPart>
@@ -121,6 +123,7 @@ export async function buildRequestBody(
       : await getDefaultModel()
   return {
     model,
+    ...(options.provider ? { provider: options.provider } : {}),
     messages,
     stream: options.stream === true,
     temperature: options.temperature,

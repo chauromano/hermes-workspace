@@ -341,23 +341,20 @@ export const Route = createFileRoute('/api/send-stream')({
           (typeof (body as any).profile === 'string' && (body as any).profile.trim()) ||
           activeProfileName ||
           'default'
+        const requestProvider =
+          typeof (body as any).provider === 'string'
+            ? (body as any).provider.trim()
+            : ''
         let profileDetail: ReturnType<typeof readProfile> | null = null
         try {
           profileDetail = readProfile(effectiveProfileName)
         } catch {}
         const isAntigravityTurn =
-          isExistingAgySession ||
-          activeProfileName === 'antigravity' ||
-          requestModelRaw.toLowerCase().startsWith('antigravity/') ||
-          requestModelRaw.toLowerCase().startsWith('google-antigravity/') ||
-          requestModelRaw.toLowerCase().includes('gemini-4-argon') ||
-          requestModelRaw.toLowerCase().includes('gemini-3.8-flash') ||
-          requestModelRaw.toLowerCase().includes('claude-opus-5-5') ||
-          requestModelRaw.toLowerCase().includes('claude-sonnet-5-5') ||
-          requestModelRaw.toLowerCase().includes('gpt-oss-120b')
+          effectiveProfileName === 'antigravity' ||
+          isExistingAgySession
 
         console.log(
-          `[send-stream] dispatch: session=${rawSessionKey || requestedFriendlyId || 'new'} model="${requestModelRaw}" profile=${effectiveProfileName} isAntigravityTurn=${isAntigravityTurn}`,
+          `[send-stream] dispatch: session=${rawSessionKey || requestedFriendlyId || 'new'} model="${requestModelRaw}" provider="${requestProvider}" profile=${effectiveProfileName} isAntigravityTurn=${isAntigravityTurn}`,
         )
 
         // Resolve session key
@@ -629,12 +626,7 @@ export const Route = createFileRoute('/api/send-stream')({
 
                 const isRecognizedAgyModel =
                   requestModelRaw.toLowerCase().startsWith('antigravity/') ||
-                  requestModelRaw.toLowerCase().startsWith('google-antigravity/') ||
-                  requestModelRaw.toLowerCase().includes('gemini-4-argon') ||
-                  requestModelRaw.toLowerCase().includes('gemini-3.8-flash') ||
-                  requestModelRaw.toLowerCase().includes('claude-opus-5-5') ||
-                  requestModelRaw.toLowerCase().includes('claude-sonnet-5-5') ||
-                  requestModelRaw.toLowerCase().includes('gpt-oss-120b')
+                  requestModelRaw.toLowerCase().startsWith('google-antigravity/')
 
                 let effectiveAgyModel = isRecognizedAgyModel ? requestModelRaw : ''
                 if (!effectiveAgyModel && isExistingAgySession && existingSessionModel) {
@@ -977,6 +969,7 @@ export const Route = createFileRoute('/api/send-stream')({
                         conversationHistory: effectiveHistory,
                         model:
                           typeof body.model === 'string' ? body.model : undefined,
+                        provider: requestProvider || undefined,
                         sessionId: portableSessionKey,
                         signal: abortController.signal,
                       })
@@ -1114,6 +1107,7 @@ export const Route = createFileRoute('/api/send-stream')({
 
                   const stream = await openaiChat(portableMessages, {
                     model: localBaseUrl ? bareModel : (typeof body.model === 'string' ? body.model : undefined),
+                    provider: requestProvider || undefined,
                     temperature:
                       typeof body.temperature === 'number'
                         ? body.temperature

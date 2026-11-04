@@ -63,6 +63,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: 'Google',
   minimax: 'MiniMax',
   antigravity: 'Antigravity',
+  vertex: 'Vertex AI',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama',
 }
 
 export function formatModelName(raw: string | undefined | null): string {

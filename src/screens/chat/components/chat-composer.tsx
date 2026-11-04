@@ -271,7 +271,7 @@ async function fetchInstalledSkills(): Promise<Array<InstalledSkillSummary>> {
     .filter((entry): entry is InstalledSkillSummary => entry !== null)
 }
 
-async function fetchModels(): Promise<{
+async function fetchModels(profile?: string): Promise<{
   ok?: boolean
   models?: Array<ModelCatalogEntry>
   configuredProviders?: Array<string>
@@ -280,10 +280,9 @@ async function fetchModels(): Promise<{
   providers?: Array<ClaudeProviderOption>
 }> {
   // Use the curated /api/models endpoint which returns only models
-  // actually configured and available (OCPlatform gateway + local providers).
-  // Previously this hit /api/claude-proxy/api/available-models which returned
-  // every upstream provider model — flooding the picker with unusable options.
-  const response = await fetch('/api/models')
+  // actually configured and available for the active profile.
+  const url = profile ? `/api/models?profile=${encodeURIComponent(profile)}` : '/api/models'
+  const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Models request failed (${response.status})`)
   }
@@ -611,6 +610,20 @@ function isCurrentModel(
   const eid = entryId.trim()
   const eprov = entryProvider.trim()
   if (!cm || !eid) return false
+
+  // If currentModel explicitly specifies this provider: "eprov/eid" or "eprov/something/eid"
+  if (eprov && cm.startsWith(`${eprov}/`)) {
+    const remainder = cm.slice(eprov.length + 1)
+    if (remainder === eid || remainder.endsWith(`/${eid}`)) return true
+  }
+
+  // If currentModel specifies another known provider prefix, do not match this provider
+  if (eprov && cm.includes('/')) {
+    const prefix = cm.split('/')[0]
+    if (prefix !== eprov && ['vertex', 'openrouter', 'openai-codex', 'ollama', 'antigravity', 'anthropic'].includes(prefix)) {
+      return false
+    }
+  }
 
   // Exact match (bare ID)
   if (cm === eid) return true
@@ -1151,12 +1164,14 @@ function ChatComposerComponent({
 
   const isAntigravitySession = Boolean(
     currentSession?.source === 'antigravity' ||
+      currentSession?.profileName === 'antigravity' ||
+      currentSession?.agentProfile === 'antigravity' ||
       (typeof sessionKey === 'string' && sessionKey.startsWith('agy_')) ||
       (typeof sessionKey === 'string' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           sessionKey,
         ) &&
-        (currentSession ? currentSession.source === 'antigravity' : true)),
+        currentSession?.source === 'antigravity'),
   )
 
   const isAgyModelId = useCallback((id: string, prov?: string) => {
@@ -1165,12 +1180,7 @@ function ChatComposerComponent({
     const lower = (id || '').toLowerCase()
     return (
       lower.startsWith('antigravity/') ||
-      lower.startsWith('google-antigravity/') ||
-      lower.includes('gemini-4-argon') ||
-      lower.includes('gemini-3.8-flash') ||
-      lower.includes('claude-opus-5-5') ||
-      lower.includes('claude-sonnet-5-5') ||
-      lower.includes('gpt-oss-120b')
+      lower.startsWith('google-antigravity/')
     )
   }, [])
 
@@ -1224,6 +1234,11 @@ function ChatComposerComponent({
 
       if (isAgyMode && !isAgyModelId(model, provider)) {
         toast('Only Antigravity models can be used in this session')
+        setIsModelMenuOpen(false)
+        return
+      }
+      if (!isAgyMode && isAgyModelId(model, provider)) {
+        toast('Antigravity models can only be used with the Antigravity profile')
         setIsModelMenuOpen(false)
         return
       }
@@ -2750,7 +2765,7 @@ function ChatComposerComponent({
                                           const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
                                           return { id: mId, name: mName, provider: mProvider, isLocal }
                                         })
-                                        .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
+                                        .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : !isAgyModelId(m.id, m.provider)))
 
                                       let displayModels = parsed
                                       if (isAgyMode) {
@@ -2823,7 +2838,7 @@ function ChatComposerComponent({
                                               entry.provider,
                                             )
                                         return (
-                                          <div key={entry.id} className="group relative flex items-center">
+                                          <div key={`${entry.provider || "unknown"}:${entry.id}`} className="group relative flex items-center">
                                             <button
                                               type="button"
                                               onClick={() => {
@@ -2837,7 +2852,14 @@ function ChatComposerComponent({
                                                   : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/50'
                                               }`}
                                             >
-                                              <span className="flex-1 truncate">{entry.name}</span>
+                                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                <span className="truncate">{entry.name}</span>
+                                                {entry.provider && (
+                                                  <span className="shrink-0 text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border border-neutral-200/60 dark:border-neutral-700/60">
+                                                    {entry.provider}
+                                                  </span>
+                                                )}
+                                              </div>
                                               {entry.isLocal ? <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700">local</span> : null}
                                               {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
                                             </button>
@@ -3134,7 +3156,7 @@ function ChatComposerComponent({
                               const isLocal = typeof m !== 'string' && (m as Record<string, unknown>).description === 'local'
                               return { id: mId, name: mName, provider: mProvider, isLocal }
                             })
-                            .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : true))
+                            .filter((m) => (isAgyMode ? isAgyModelId(m.id, m.provider) : !isAgyModelId(m.id, m.provider)))
 
                           let displayModels = parsed
                           if (isAgyMode) {
@@ -3211,7 +3233,7 @@ function ChatComposerComponent({
                               setMobileProviderFilter('all')
                             }
                             return (
-                              <div key={entry.id} className="relative flex items-center mb-1.5 touch-manipulation">
+                              <div key={`${entry.provider || "unknown"}:${entry.id}`} className="relative flex items-center mb-1.5 touch-manipulation">
                                 <button
                                   type="button"
                                   onClick={onSelect}
@@ -3232,6 +3254,11 @@ function ChatComposerComponent({
                                       <span className={cn('truncate text-[14px] leading-snug', isActive ? 'font-semibold' : 'font-medium')}>
                                         {entry.name}
                                       </span>
+                                      {entry.provider && (
+                                        <span className="shrink-0 text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-200/70 dark:bg-neutral-700/70 text-neutral-600 dark:text-neutral-300">
+                                          {entry.provider}
+                                        </span>
+                                      )}
                                       {entry.isLocal && (
                                         <span className="text-[10px] text-neutral-500 px-1.5 py-0.2 rounded-full bg-neutral-200/70 dark:bg-neutral-700/70 shrink-0">
                                           local

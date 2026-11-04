@@ -498,6 +498,31 @@ export const Route = createFileRoute('/api/models')({
         try {
           const url = new URL(request.url)
           const includeAll = url.searchParams.get('include_all') === 'true'
+          const requestedProfile = url.searchParams.get('profile') || getActiveProfileName()
+          const streamTimeouts = readStreamTimeouts()
+
+          // If the profile is exclusively 'antigravity', return ONLY antigravity models
+          if (requestedProfile === 'antigravity') {
+            const agyRawModels = await listAntigravityModels()
+            const agyModels: Array<ModelEntry> = agyRawModels.map((m) => ({
+              id: `antigravity/${m.id}`,
+              name: m.name,
+              provider: 'antigravity',
+              source: 'antigravity-bridge',
+              effort: m.effort,
+            }))
+            return json({
+              ok: true,
+              object: 'list',
+              data: agyModels,
+              models: agyModels,
+              visibleModels: agyModels.map((m) => m.id),
+              configuredProviders: ['antigravity'],
+              source: 'antigravity-bridge',
+              ...streamTimeouts,
+            })
+          }
+
           const visibleModels = readVisibleModelsFromConfig()
 
           // Primary: read user-configured models from ~/.hermes/models.json
@@ -552,16 +577,6 @@ export const Route = createFileRoute('/api/models')({
             ensureProviderInConfig(m.provider)
           }
 
-          // Merge Antigravity Host Bridge models
-          const agyRawModels = await listAntigravityModels()
-          const agyModels: Array<ModelEntry> = agyRawModels.map((m) => ({
-            id: `antigravity/${m.id}`,
-            name: m.name,
-            provider: 'antigravity',
-            source: 'antigravity-bridge',
-            effort: m.effort,
-          }))
-
           // If visible_models is configured and includeAll is false, filter the returned list
           if (!includeAll && visibleModels.length > 0) {
             const visibleSet = new Set(visibleModels.map((x) => x.toLowerCase()))
@@ -571,12 +586,28 @@ export const Route = createFileRoute('/api/models')({
             })
           }
 
-          if (agyModels.length > 0) {
-            const activeProfile = getActiveProfileName()
-            models =
-              activeProfile === 'antigravity'
-                ? mergeModelEntries(agyModels, models)
-                : mergeModelEntries(models, agyModels)
+          // For non-antigravity profiles, strictly exclude antigravity models.
+          // If include_all is requested without a specific profile, keep them at the end.
+          if (includeAll && !url.searchParams.get('profile')) {
+            const agyRawModels = await listAntigravityModels()
+            const agyModels: Array<ModelEntry> = agyRawModels.map((m) => ({
+              id: `antigravity/${m.id}`,
+              name: m.name,
+              provider: 'antigravity',
+              source: 'antigravity-bridge',
+              effort: m.effort,
+            }))
+            if (agyModels.length > 0) {
+              models = mergeModelEntries(models, agyModels)
+            }
+          } else {
+            models = models.filter(
+              (m) =>
+                m.provider !== 'antigravity' &&
+                m.provider !== 'google-antigravity' &&
+                !(m.id || '').toLowerCase().startsWith('antigravity/') &&
+                !(m.id || '').toLowerCase().startsWith('google-antigravity/'),
+            )
           }
 
           const configuredProviders = Array.from(
@@ -588,8 +619,6 @@ export const Route = createFileRoute('/api/models')({
                 .filter(Boolean),
             ),
           )
-
-          const streamTimeouts = readStreamTimeouts()
 
           return json({
             ok: true,

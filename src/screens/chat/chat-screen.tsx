@@ -1091,6 +1091,7 @@ export function ChatScreen({
   )
   const isAntigravitySession = Boolean(
     activeSession?.source === 'antigravity' ||
+    (activeSession as any)?.profileName === 'antigravity' ||
     (typeof activeFriendlyId === 'string' && activeFriendlyId.startsWith('agy_')) ||
     (typeof resolvedSessionKey === 'string' && resolvedSessionKey.startsWith('agy_')) ||
     (typeof activeFriendlyId === 'string' &&
@@ -1101,12 +1102,7 @@ export function ChatScreen({
     const l = (m || '').toLowerCase()
     return (
       l.startsWith('antigravity/') ||
-      l.startsWith('google-antigravity/') ||
-      l.includes('gemini-4-argon') ||
-      l.includes('gemini-3.8-flash') ||
-      l.includes('claude-opus-5-5') ||
-      l.includes('claude-sonnet-5-5') ||
-      l.includes('gpt-oss-120b')
+      l.startsWith('google-antigravity/')
     )
   }
   const baseModel = sessionModelOverride || _localModelOverride || sessionModel || gatewayModel
@@ -2089,6 +2085,17 @@ export function ChatScreen({
         }
       }
 
+      let dispatchModel = currentModel || undefined
+      let dispatchProvider: string | undefined = undefined
+      if (dispatchModel && dispatchModel.includes('/')) {
+        const parts = dispatchModel.split('/')
+        const possibleProv = parts[0]
+        if (['vertex', 'openrouter', 'openai-codex', 'ollama', 'antigravity', 'anthropic'].includes(possibleProv)) {
+          dispatchProvider = possibleProv
+          dispatchModel = parts.slice(1).join('/')
+        }
+      }
+
       void startStreaming({
         sessionKey,
         friendlyId,
@@ -2099,7 +2106,8 @@ export function ChatScreen({
         thinking:
           currentThinkingLevel === 'off' ? undefined : currentThinkingLevel,
         fastMode,
-        model: currentModel || undefined,
+        model: dispatchModel,
+        provider: dispatchProvider,
         idempotencyKey: optimisticClientId || crypto.randomUUID(),
       }).catch((err: unknown) => {
         const messageText = err instanceof Error ? err.message : String(err)
