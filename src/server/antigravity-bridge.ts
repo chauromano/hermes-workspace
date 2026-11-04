@@ -251,17 +251,37 @@ export async function openAntigravityStream(params: {
   cwd?: string
   signal?: AbortSignal
 }): Promise<Response> {
-  return fetch(`${DEFAULT_BRIDGE_URL}/stream`, {
-    method: 'POST',
-    headers: getBridgeHeaders({ Accept: 'text/event-stream' }),
-    body: JSON.stringify({
-      conversationId: params.conversationId,
-      prompt: params.prompt,
-      model: params.model,
-      effort: params.effort,
-      mode: params.mode || 'auto',
-      cwd: params.cwd,
-    }),
-    signal: params.signal,
-  })
+  const timeoutController = new AbortController()
+  const connectTimer = setTimeout(() => {
+    timeoutController.abort(new Error('Antigravity bridge connection timed out on port 9292 (is scripts/agy_bridge.py running?)'))
+  }, 10_000)
+
+  const combinedSignal = params.signal
+    ? AbortSignal.any([params.signal, timeoutController.signal])
+    : timeoutController.signal
+
+  try {
+    const res = await fetch(`${DEFAULT_BRIDGE_URL}/stream`, {
+      method: 'POST',
+      headers: getBridgeHeaders({ Accept: 'text/event-stream' }),
+      body: JSON.stringify({
+        conversationId: params.conversationId,
+        prompt: params.prompt,
+        model: params.model,
+        effort: params.effort,
+        mode: params.mode || 'auto',
+        cwd: params.cwd,
+      }),
+      signal: combinedSignal,
+    })
+    clearTimeout(connectTimer)
+    return res
+  } catch (err: unknown) {
+    clearTimeout(connectTimer)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('ECONNREFUSED') || msg.includes('fetch failed')) {
+      throw new Error(`Antigravity bridge is offline at ${DEFAULT_BRIDGE_URL}. Ensure scripts/agy_bridge.py is running on the host.`)
+    }
+    throw err
+  }
 }

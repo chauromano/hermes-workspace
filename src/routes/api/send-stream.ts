@@ -356,6 +356,10 @@ export const Route = createFileRoute('/api/send-stream')({
           requestModelRaw.toLowerCase().includes('claude-sonnet-5-5') ||
           requestModelRaw.toLowerCase().includes('gpt-oss-120b')
 
+        console.log(
+          `[send-stream] dispatch: session=${rawSessionKey || requestedFriendlyId || 'new'} model="${requestModelRaw}" profile=${effectiveProfileName} isAntigravityTurn=${isAntigravityTurn}`,
+        )
+
         // Resolve session key
         let sessionKey: string
         let resolvedFriendlyId: string
