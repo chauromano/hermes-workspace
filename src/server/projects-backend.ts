@@ -54,16 +54,23 @@ function sqliteQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
+function isStateDb(dbPath: string): boolean {
+  const norm = dbPath.replace(/\\/g, '/').toLowerCase()
+  return norm.endsWith('state.db') || norm.includes('/state.db')
+}
+
 const dbCache = new Map<string, DatabaseSync>()
 
-function getDatabase(dbPath: string): DatabaseSync {
-  let db = dbCache.get(dbPath)
+function getDatabase(dbPath: string, readOnly = false): DatabaseSync {
+  const shouldBeReadOnly = readOnly || isStateDb(dbPath)
+  const cacheKey = `${dbPath}:${shouldBeReadOnly ? 'ro' : 'rw'}`
+  let db = dbCache.get(cacheKey)
   if (!db) {
     try {
-      db = new DatabaseSync(dbPath)
-      db.exec('PRAGMA busy_timeout = 500;')
+      db = new DatabaseSync(dbPath, { readOnly: shouldBeReadOnly })
+      db.exec('PRAGMA busy_timeout = 10000;')
       db.prepare('SELECT 1').get()
-      dbCache.set(dbPath, db)
+      dbCache.set(cacheKey, db)
     } catch {
       const normalized = dbPath.replace(/\\/g, '/')
       db = new DatabaseSync(`file:${normalized}?immutable=1`)
@@ -74,7 +81,7 @@ function getDatabase(dbPath: string): DatabaseSync {
 
 function runSqlite(dbPath: string, sql: string): string {
   try {
-    const db = getDatabase(dbPath)
+    const db = getDatabase(dbPath, isStateDb(dbPath))
     const rows = db.prepare(sql).all()
     return JSON.stringify(rows)
   } catch (err: unknown) {
@@ -85,8 +92,13 @@ function runSqlite(dbPath: string, sql: string): string {
 }
 
 function runSqliteExec(dbPath: string, sql: string): void {
+  if (isStateDb(dbPath)) {
+    // Hermes agent gateway owns state.db. Foreign processes must never write directly
+    // to state.db across Docker bind mounts to prevent lockouts and DeletedWalGenerationError.
+    return
+  }
   try {
-    const db = getDatabase(dbPath)
+    const db = getDatabase(dbPath, false)
     db.exec(sql)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
@@ -930,10 +942,9 @@ export function setSessionProject(
     projectName = 'Personal Sandbox'
   }
 
-  for (const { path: dbPath } of getAllStateDbPaths()) {
+  if (sessionId) {
     try {
-      const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
-      runSqliteExec(dbPath, sql)
+      updateSessionState(sessionId, { cwd: targetPath || '' })
     } catch {}
   }
 
@@ -1112,16 +1123,9 @@ export function getSessionMetaMap(
 
 export function setSessionProfile(sessionId: string, profileName: string): void {
   if (!sessionId || !profileName) return
-  const safeProfile = sqliteQuote(profileName.trim())
-  const safeId = sqliteQuote(sessionId.trim())
-  for (const { path: dbPath } of getAllStateDbPaths()) {
-    try {
-      runSqliteExec(
-        dbPath,
-        `UPDATE sessions SET profile_name = ${safeProfile} WHERE id = ${safeId};`,
-      )
-    } catch {}
-  }
+  try {
+    updateSessionState(sessionId, { profileName })
+  } catch {}
 }
 
 function ensureSessionMetadataTable(dbPath: string): void {
