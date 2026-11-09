@@ -31,16 +31,23 @@ type ProjectSessionChipProps = {
   projectName?: string | null
   className?: string
   compact?: boolean
+  /** `composer` renders a borderless pill that matches the chat composer toolbar. */
+  variant?: 'default' | 'composer'
+  /** Hide the text label (icon-only trigger) — used when the composer is narrow. */
+  iconOnly?: boolean
+  /** Optional class name applied to the label text and arrow (e.g. for responsive hiding). */
+  labelClassName?: string
 }
 
-export function ProjectSessionChip({
+/**
+ * Shared project-selection logic for a chat session. Used by the composer
+ * project pill (desktop) and the mobile chat-settings sheet.
+ */
+export function useSessionProjectSelection({
   sessionKey,
   projectId,
   projectName,
-  className,
-  compact = false,
-}: ProjectSessionChipProps) {
-  const [modalOpen, setModalOpen] = useState(false)
+}: Pick<ProjectSessionChipProps, 'sessionKey' | 'projectId' | 'projectName'>) {
   const [overrideTarget, setOverrideTarget] = useState<{ id: string | null; name: string } | null>(null)
   const { projects, activeId } = useProjects()
   const setSessionProjectMutation = useSetSessionProject()
@@ -91,36 +98,78 @@ export function ProjectSessionChip({
     )
   }
 
+  return {
+    projects,
+    effectiveProjectId,
+    currentProject,
+    displayName,
+    isPersonalSandbox,
+    handleSelect,
+  }
+}
+
+export function ProjectSessionChip({
+  sessionKey,
+  projectId,
+  projectName,
+  className,
+  compact = false,
+  variant = 'default',
+  iconOnly = false,
+  labelClassName,
+}: ProjectSessionChipProps) {
+  const [modalOpen, setModalOpen] = useState(false)
+  const {
+    projects,
+    effectiveProjectId,
+    displayName,
+    isPersonalSandbox,
+    handleSelect,
+  } = useSessionProjectSelection({ sessionKey, projectId, projectName })
+  const isComposer = variant === 'composer'
+
   return (
     <>
       <MenuRoot>
         <MenuTrigger
           className={cn(
-            'inline-flex items-center gap-1 rounded-full border transition-all cursor-pointer select-none font-medium text-xs',
-            'border-[var(--theme-border)] bg-[var(--theme-card)] hover:bg-[var(--theme-hover)] text-[var(--theme-text)]',
-            compact ? 'px-2 py-0.5 text-[11px] max-w-[120px]' : 'px-2.5 py-1 max-w-[190px]',
+            'inline-flex items-center gap-1 rounded-full transition-all cursor-pointer select-none font-medium text-xs',
+            isComposer
+              ? 'h-8 gap-1.5 px-2.5 max-w-[11rem] bg-transparent text-primary-600 hover:bg-primary-100 dark:hover:bg-primary-800/60 aria-expanded:bg-primary-100 dark:aria-expanded:bg-primary-800/60'
+              : [
+                  'border border-[var(--theme-border)] bg-[var(--theme-card)] hover:bg-[var(--theme-hover)] text-[var(--theme-text)]',
+                  compact ? 'px-2 py-0.5 text-[11px] max-w-[120px]' : 'px-2.5 py-1 max-w-[190px]',
+                ],
+            iconOnly && 'w-8 justify-center px-0',
             className,
           )}
-          title={`Session Project: ${displayName} (Click to change)`}
+          title={`Project: ${displayName} (click to change)`}
+          aria-label={`Project: ${displayName}`}
         >
           <HugeiconsIcon
             icon={isPersonalSandbox ? Folder01Icon : FolderOpenIcon}
-            size={compact ? 12 : 13}
+            size={isComposer ? 15 : compact ? 12 : 13}
+            strokeWidth={isComposer ? 1.6 : undefined}
             className={cn(
               'shrink-0',
               isPersonalSandbox ? 'text-[var(--theme-muted)]' : 'text-accent-500',
             )}
           />
-          <span className="truncate">{displayName}</span>
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={compact ? 10 : 11}
-            className="shrink-0 opacity-40 ml-0.5"
-          />
+          {iconOnly ? null : (
+            <>
+              <span className={cn('truncate', labelClassName)}>{displayName}</span>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={compact ? 10 : 11}
+                className={cn('shrink-0 opacity-40 ml-0.5', labelClassName)}
+              />
+            </>
+          )}
         </MenuTrigger>
 
         <MenuContent
           align="start"
+          side={isComposer ? 'top' : 'bottom'}
           className="z-50 min-w-[240px] max-w-[300px] rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-1.5 shadow-xl text-xs space-y-0.5"
         >
           <div className="px-2.5 py-1.5 border-b border-[var(--theme-border)] mb-1">

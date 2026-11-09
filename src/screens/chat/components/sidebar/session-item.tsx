@@ -10,10 +10,11 @@ import {
   Pen01Icon,
   PinIcon,
 } from '@hugeicons/core-free-icons'
-import { memo, useMemo } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getMessageTimestamp } from '../../utils'
 import type { SessionMeta } from '../../types'
 import { cn } from '@/lib/utils'
+import { hapticTap } from '@/lib/haptics'
 import {
   MenuContent,
   MenuItem,
@@ -41,6 +42,9 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
 })
+
+/** Hold duration (ms) before a touch press opens the session action menu. */
+const LONG_PRESS_MS = 450
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -146,11 +150,75 @@ function SessionItemComponent({
     updatedAt,
   ])
 
+  // ── Touch support ──────────────────────────────────────────────────────
+  // Hover-revealed tools are unreachable on touch screens. On coarse pointers
+  // the "⋯" trigger is always visible, and a long-press anywhere on the row
+  // opens the same action menu (suppressing the navigation tap).
+  const [menuOpen, setMenuOpen] = useState(false)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressFiredRef = useRef(false)
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null)
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+    pressOriginRef.current = null
+  }, [])
+
+  useEffect(() => clearLongPress, [clearLongPress])
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLAnchorElement>) => {
+      if (event.pointerType !== 'touch') return
+      longPressFiredRef.current = false
+      pressOriginRef.current = { x: event.clientX, y: event.clientY }
+      clearTimeout(longPressTimerRef.current ?? undefined)
+      longPressTimerRef.current = setTimeout(() => {
+        longPressFiredRef.current = true
+        longPressTimerRef.current = null
+        hapticTap()
+        setMenuOpen(true)
+      }, LONG_PRESS_MS)
+    },
+    [],
+  )
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLAnchorElement>) => {
+      const origin = pressOriginRef.current
+      if (!origin) return
+      const dx = Math.abs(event.clientX - origin.x)
+      const dy = Math.abs(event.clientY - origin.y)
+      // Treat as scroll/swipe — cancel long-press
+      if (dx > 8 || dy > 8) clearLongPress()
+    },
+    [clearLongPress],
+  )
+
   return (
     <Link
       to="/chat/$sessionKey"
       params={{ sessionKey: session.friendlyId }}
-      onClick={() => {
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={clearLongPress}
+      onPointerCancel={clearLongPress}
+      onContextMenu={(event) => {
+        // Prevent the native long-press callout on touch; desktop right-click
+        // opens our menu too, which is a nice bonus.
+        event.preventDefault()
+        setMenuOpen(true)
+      }}
+      onClick={(event) => {
+        if (longPressFiredRef.current) {
+          // Long-press opened the menu — do not navigate.
+          event.preventDefault()
+          event.stopPropagation()
+          longPressFiredRef.current = false
+          return
+        }
         try {
           localStorage.setItem('claude-last-session', session.friendlyId)
         } catch {}
@@ -158,7 +226,9 @@ function SessionItemComponent({
       }}
       className={cn(
         'group flex items-center gap-2 w-full text-left px-2.5 py-1.5 rounded-md transition-all duration-150',
-        'select-none relative',
+        'select-none relative [-webkit-touch-callout:none]',
+        'pointer-coarse:py-2',
+        menuOpen && !active && 'bg-primary-200/60 dark:bg-primary-800/50',
         active
           ? 'bg-accent-500/10 text-accent-500 font-semibold'
           : 'text-primary-900 dark:text-neutral-100 hover:bg-primary-200/60 dark:hover:bg-primary-800/50',
@@ -207,10 +277,11 @@ function SessionItemComponent({
         ) : null}
       </div>
 
-      {/* Pinned Icon Indicator (visible on row when pinned and not hovered) */}
+      {/* Pinned Icon Indicator (visible on row when pinned and not hovered).
+          Hidden on touch, where the left icon already shows the pin. */}
       {isPinned && (
         <span
-          className="flex size-5 items-center justify-center text-accent-500 shrink-0 group-hover:hidden"
+          className="flex size-5 items-center justify-center text-accent-500 shrink-0 group-hover:hidden pointer-coarse:hidden"
           title="Pinned session"
         >
           <HugeiconsIcon icon={PinIcon} size={12} strokeWidth={2} />
@@ -219,11 +290,12 @@ function SessionItemComponent({
 
       {/* Active Dot (when not pinned) */}
       {active && !isPinned && (
-        <span className="size-1.5 rounded-full bg-accent-500 shrink-0 mr-1 group-hover:hidden" />
+        <span className="size-1.5 rounded-full bg-accent-500 shrink-0 mr-1 group-hover:hidden pointer-coarse:hidden" />
       )}
 
       {/* Actions: Quick Pin Button + More Menu */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {/* Quick pin — hover-only affordance; on touch it lives in the menu */}
         <button
           type="button"
           onClick={(event) => {
@@ -234,7 +306,7 @@ function SessionItemComponent({
           aria-label={isPinned ? 'Unpin session' : 'Pin session'}
           title={isPinned ? 'Unpin session' : 'Pin session'}
           className={cn(
-            'inline-flex size-6 items-center justify-center rounded-md transition-all',
+            'inline-flex size-6 items-center justify-center rounded-md transition-all pointer-coarse:hidden',
             isPinned
               ? 'text-accent-500 hover:bg-accent-500/20 opacity-0 group-hover:opacity-100'
               : 'text-primary-400 hover:text-primary-900 dark:hover:text-primary-100 hover:bg-primary-200 dark:hover:bg-primary-700 opacity-0 group-hover:opacity-100',
@@ -247,9 +319,13 @@ function SessionItemComponent({
           />
         </button>
 
-        <MenuRoot>
+        <MenuRoot open={menuOpen} onOpenChange={setMenuOpen}>
           <MenuTrigger
             type="button"
+            onPointerDown={(event) => {
+              // Don't start the row long-press timer from the trigger itself
+              event.stopPropagation()
+            }}
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -258,6 +334,8 @@ function SessionItemComponent({
               'inline-flex size-6 items-center justify-center rounded-md text-primary-500 dark:text-primary-400',
               'opacity-0 transition-opacity group-hover:opacity-100 hover:bg-primary-200 dark:hover:bg-primary-700',
               'aria-expanded:opacity-100 aria-expanded:bg-primary-200 dark:aria-expanded:bg-primary-700',
+              // Touch: always visible, larger tap target, subtle until pressed
+              'pointer-coarse:size-8 pointer-coarse:-mr-1 pointer-coarse:opacity-60 pointer-coarse:active:opacity-100 pointer-coarse:active:bg-primary-200 dark:pointer-coarse:active:bg-primary-700',
             )}
             aria-label="Session options"
           >

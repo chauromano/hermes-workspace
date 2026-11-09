@@ -62,6 +62,16 @@ import {
 } from '@/hooks/use-search-modal'
 import { setLocalModelOverride } from '@/screens/chat/local-model-override'
 import { formatModelName } from '@/lib/format-model-name'
+import {
+  ProjectSessionChip,
+  useSessionProjectSelection,
+} from '@/components/projects/project-session-chip'
+import {
+  BrainGlyph,
+  ComposerSettingsSheet,
+  EffortSegmented,
+  ProfileGlyph,
+} from './composer-settings-sheet'
 
 type ChatComposerAttachment = {
   id: string
@@ -100,6 +110,11 @@ type ChatComposerProps = {
    * must stay inline instead of docking fixed to the viewport bottom. */
   embedded?: boolean
   hideModelSelector?: boolean
+  /** Session key used for project assignment ('new' for a fresh chat).
+   * When undefined the project control is hidden (e.g. embedded composers). */
+  projectSessionKey?: string
+  projectId?: string | null
+  projectName?: string | null
 }
 
 type ChatComposerHelpers = {
@@ -882,8 +897,18 @@ function ChatComposerComponent({
   onAbort,
   embedded = false,
   hideModelSelector = false,
+  projectSessionKey,
+  projectId,
+  projectName,
 }: ChatComposerProps) {
   const queryClient = useQueryClient()
+  const showProjectControl = projectSessionKey !== undefined
+  const projectSelection = useSessionProjectSelection({
+    sessionKey: projectSessionKey,
+    projectId,
+    projectName,
+  })
+  const [isSettingsSheetOpen, setIsSettingsSheetOpen] = useState(false)
   const mobileKeyboardInset = useWorkspaceStore((s) => s.mobileKeyboardInset)
   const mobileComposerFocused = useWorkspaceStore(
     (s) => s.mobileComposerFocused,
@@ -2268,29 +2293,11 @@ function ChatComposerComponent({
         ) : null}
 
         {isMobileViewport ? (
-          /* ── Mobile: Telegram-style single-row bar ── */
+          /* ── Mobile: textarea on top, compact control row below ──
+             Row: [+] [profile·project chip → settings sheet] … [model·effort] [send] */
           <>
-            <div className="flex items-center gap-2 px-3 py-2">
-              {/* + button — opens bottom sheet actions menu */}
-              <button
-                type="button"
-                aria-label="Actions"
-                disabled={disabled}
-                onPointerDown={(event) => {
-                  event.stopPropagation()
-                }}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  ;(document.activeElement as HTMLElement)?.blur()
-                  setIsModelMenuOpen(false)
-                  setIsMobileActionsMenuOpen((prev) => !prev)
-                }}
-                className="size-8 shrink-0 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-primary-600 active:bg-neutral-200 dark:active:bg-white/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <HugeiconsIcon icon={Add01Icon} size={18} strokeWidth={1.5} />
-              </button>
-
-              {/* Textarea — flex-1, auto-growing */}
+            <div className="flex flex-col gap-0.5 px-2 pt-1.5 pb-1.5">
+              {/* Textarea — full width, auto-growing */}
               <PromptInputTextarea
                 placeholder={promptPlaceholder}
                 autoFocus={!isMobileViewport}
@@ -2310,8 +2317,88 @@ function ChatComposerComponent({
                     setMobileKeyboardInset(0)
                   }
                 }}
-                className="min-h-[36px] max-h-[120px] flex-1 text-base leading-snug"
+                className="min-h-[36px] max-h-[120px] w-full pl-2 text-base leading-snug"
               />
+
+              <div className="flex min-w-0 items-center gap-1">
+              {/* + button — opens bottom sheet actions menu */}
+              <button
+                type="button"
+                aria-label="Add attachment and more"
+                disabled={disabled}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  ;(document.activeElement as HTMLElement)?.blur()
+                  setIsModelMenuOpen(false)
+                  setIsMobileActionsMenuOpen((prev) => !prev)
+                }}
+                className="size-8 shrink-0 rounded-full bg-neutral-100 dark:bg-white/10 flex items-center justify-center text-primary-600 active:bg-neutral-200 dark:active:bg-white/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <HugeiconsIcon icon={Add01Icon} size={18} strokeWidth={1.5} />
+              </button>
+
+              {/* Context chip — agent profile + project. Tap to reveal all chat settings. */}
+              {!hideModelSelector ? (
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    ;(document.activeElement as HTMLElement)?.blur()
+                    setIsMobileActionsMenuOpen(false)
+                    setIsModelMenuOpen(false)
+                    setIsSettingsSheetOpen(true)
+                  }}
+                  className="flex h-8 min-w-0 max-w-[48%] shrink items-center gap-1.5 rounded-full pl-1 pr-2.5 text-xs font-medium text-primary-600 active:bg-neutral-100 dark:active:bg-white/10"
+                  aria-label={`Chat settings: profile ${activeProfileName}${showProjectControl ? `, project ${projectSelection.displayName}` : ''}`}
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold uppercase text-primary-600 dark:bg-primary-800 dark:text-primary-200">
+                    {activeProfileName.slice(0, 1)}
+                  </span>
+                  <span className="truncate">
+                    {showProjectControl
+                      ? projectSelection.displayName
+                      : activeProfileName}
+                  </span>
+                  <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="shrink-0 opacity-50" />
+                </button>
+              ) : null}
+
+              <div className="min-w-0 flex-1" />
+
+              {/* Model + effort chip — opens model sheet (effort control at top) */}
+              {!hideModelSelector ? (
+                <button
+                  type="button"
+                  disabled={isModelSwitcherDisabled}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    ;(document.activeElement as HTMLElement)?.blur()
+                    setIsMobileActionsMenuOpen(false)
+                    setIsModelMenuOpen(true)
+                  }}
+                  className="flex h-8 min-w-0 shrink items-center gap-1 rounded-full px-2.5 text-xs font-medium text-primary-600 active:bg-neutral-100 disabled:opacity-50 dark:active:bg-white/10"
+                  aria-label={`Model ${modelButtonLabel}, effort ${thinkingLabel(thinkingLevel)}`}
+                >
+                  <span className="max-w-[6.5rem] truncate">
+                    {formatModelName(modelButtonLabel)}
+                  </span>
+                  <span
+                    className={cn(
+                      'flex shrink-0 items-center gap-0.5 text-primary-400',
+                      thinkingLevel === 'off' && 'opacity-60',
+                    )}
+                  >
+                    <BrainGlyph size={11} />
+                    {thinkingLabel(thinkingLevel).slice(0, thinkingLevel === 'medium' ? 3 : 4)}
+                  </span>
+                  <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="shrink-0 opacity-50" />
+                </button>
+              ) : null}
 
               {/* Right side: stop / send / mic */}
               <div className="shrink-0">
@@ -2400,7 +2487,34 @@ function ChatComposerComponent({
                   </button>
                 )}
               </div>
+              </div>
             </div>
+
+            {/* Mobile chat settings — profile, project, model, effort */}
+            {!hideModelSelector ? (
+              <ComposerSettingsSheet
+                open={isSettingsSheetOpen}
+                onClose={() => setIsSettingsSheetOpen(false)}
+                profiles={profilesQuery.data?.profiles ?? []}
+                activeProfileName={activeProfileName}
+                profilePending={profileActivateMutation.isPending}
+                profilesError={profilesQuery.isError}
+                onSelectProfile={(name) => profileActivateMutation.mutate(name)}
+                showProject={showProjectControl}
+                project={projectSelection}
+                modelLabel={modelButtonLabel}
+                modelDisabled={isModelSwitcherDisabled}
+                onOpenModelPicker={() => {
+                  setIsSettingsSheetOpen(false)
+                  setIsModelMenuOpen(true)
+                }}
+                thinkingLevel={thinkingLevel}
+                onThinkingChange={(level) => {
+                  if (onThinkingLevelChange) onThinkingLevelChange(level)
+                  else setInternalThinkingLevel(level)
+                }}
+              />
+            ) : null}
 
             {typeof document !== 'undefined' && isMobileActionsMenuOpen
               ? createPortal(
@@ -2447,35 +2561,27 @@ function ChatComposerComponent({
                           </span>
                         </button>
 
-                        {/* Model selector — opens model picker sheet on top */}
+                        {/* Chat settings — profile, project, model, effort */}
                         <button
                           type="button"
-                          disabled={isModelSwitcherDisabled}
+                          disabled={hideModelSelector}
                           onClick={(event) => {
                             event.stopPropagation()
-                            if (!isModelSwitcherDisabled) {
-                              setIsMobileActionsMenuOpen(false)
-                              setIsModelMenuOpen(true)
-                            }
+                            setIsMobileActionsMenuOpen(false)
+                            setIsSettingsSheetOpen(true)
                           }}
                           className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-1.5 text-left disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] transition-transform"
                         >
-                          <div className="flex w-full items-center justify-between">
-                            <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
-                              <HugeiconsIcon
-                                icon={ArrowDown01Icon}
-                                size={22}
-                                strokeWidth={1.5}
-                              />
-                            </span>
-                            <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-                          </div>
+                          <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
+                            <ProfileGlyph size={22} />
+                          </span>
                           <div className="flex flex-col min-w-0 w-full mt-0.5">
-                            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                              Model
+                            <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                              Chat settings
                             </span>
-                            <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate max-w-full" title={modelButtonLabel}>
-                              {modelButtonLabel}
+                            <span className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-full">
+                              @{activeProfileName}
+                              {showProjectControl ? ` · ${projectSelection.displayName}` : ''}
                             </span>
                           </div>
                         </button>
@@ -2580,6 +2686,22 @@ function ChatComposerComponent({
                         >
                           <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={2} />
                         </button>
+                      </div>
+
+                      {/* Thinking effort — sits with the model, like frontier chat apps */}
+                      <div className="px-4 pt-3">
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                          <BrainGlyph size={12} />
+                          Thinking effort
+                        </div>
+                        <EffortSegmented
+                          value={thinkingLevel}
+                          onChange={(level) => {
+                            if (onThinkingLevelChange) onThinkingLevelChange(level)
+                            else setInternalThinkingLevel(level)
+                          }}
+                          size="lg"
+                        />
                       </div>
 
                       {/* Search Bar */}
@@ -2903,207 +3025,183 @@ function ChatComposerComponent({
               }}
               className="min-h-[44px]"
             />
-            <PromptInputActions className="justify-between px-1.5 md:px-3 gap-0.5 md:gap-2">
-              <div className="flex min-w-0 flex-1 items-center gap-0 md:gap-1">
-                <PromptInputAction tooltip="Add attachment">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    className="rounded-lg text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-500"
-                    aria-label="Add attachment"
-                    disabled={disabled}
-                    onClick={handleOpenAttachmentPicker}
-                  >
-                    <HugeiconsIcon
-                      icon={AttachmentIcon}
-                      size={20}
-                      strokeWidth={1.5}
-                    />
-                  </Button>
-                </PromptInputAction>
-                {hasDraft && !isLoading && (
-                  <PromptInputAction tooltip="Clear draft">
+            {/* ── Desktop toolbar (frontier-chat style) ──
+                Left:  [+] [agent profile] [project]  ·  Right: [context] [model · effort] [mic] [send]
+                Labels collapse to icons when the composer is narrow (container queries). */}
+            <PromptInputActions className="@container justify-between gap-1 px-2 md:px-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-0.5">
+                {/* + menu — attach files & quick actions */}
+                <div
+                  className="relative flex shrink-0 items-center"
+                  ref={controlsMenuRef}
+                >
+                  <PromptInputAction tooltip="Add files and more">
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      className="rounded-lg text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-red-600"
-                      aria-label="Clear draft"
-                      onClick={handleClearDraft}
-                    >
-                      <HugeiconsIcon
-                        icon={Cancel01Icon}
-                        size={20}
-                        strokeWidth={1.5}
-                      />
-                    </Button>
-                  </PromptInputAction>
-                )}
-                {/* Token counter — bottom bar, mirrors Hermes style, triggers at ~25 tokens */}
-                {value.length >= 100 && (
-                  <span className="ml-1 text-[10px] text-primary-400 tabular-nums select-none">
-                    ~{Math.ceil(value.length / 4)} tokens
-                  </span>
-                )}
-
-                {!hideModelSelector ? (
-                  <div
-                    className="relative ml-0.5 flex min-w-0 items-center"
-                    ref={controlsMenuRef}
-                  >
-                    <button
-                      type="button"
+                      className={cn(
+                        'rounded-full text-primary-500 hover:bg-primary-100 dark:hover:bg-primary-800 hover:text-primary-700',
+                        isControlsMenuOpen && 'bg-primary-100 text-primary-700 dark:bg-primary-800',
+                      )}
+                      aria-label="Add files and more"
+                      aria-expanded={isControlsMenuOpen}
+                      disabled={disabled}
                       onClick={() => {
                         setIsControlsMenuOpen((open) => !open)
                         setIsProfileMenuOpen(false)
                         setIsThinkingMenuOpen(false)
                         setIsModelMenuOpen(false)
                       }}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-primary-100/70 px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 dark:hover:bg-primary-800/60"
-                      title={`Chat controls · ${modelButtonLabel}`}
-                      aria-label={`Chat controls, current model: ${modelButtonLabel}`}
                     >
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
+                      <HugeiconsIcon
+                        icon={Add01Icon}
+                        size={20}
+                        strokeWidth={1.5}
+                        className={cn(
+                          'transition-transform duration-150',
+                          isControlsMenuOpen && 'rotate-45',
+                        )}
+                      />
+                    </Button>
+                  </PromptInputAction>
+                  {isControlsMenuOpen ? (
+                    <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[15rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          setIsControlsMenuOpen(false)
+                          handleOpenAttachmentPicker(event)
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-800/60"
                       >
-                        <line x1="4" y1="6" x2="20" y2="6" />
-                        <line x1="4" y1="12" x2="20" y2="12" />
-                        <line x1="4" y1="18" x2="20" y2="18" />
-                        <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
-                        <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
-                        <circle cx="11" cy="18" r="2" fill="currentColor" stroke="none" />
-                      </svg>
-                      <span className="max-w-[5rem] truncate sm:max-w-[8rem] md:max-w-[10rem]">{formatModelName(modelButtonLabel)}</span>
-                      <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                    </button>
-                    {isControlsMenuOpen ? (
-                      <div className="absolute bottom-full left-0 z-[190] mb-2 w-[min(32rem,calc(100vw-2rem))] min-w-[18rem] overflow-visible rounded-2xl border border-neutral-200 bg-white p-2 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                        <div className="mb-2 px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                          Chat controls
-                        </div>
-                        <div className="flex flex-wrap items-start gap-2">
-                          <div
-                            className="relative flex min-w-0 items-center"
-                            ref={profileMenuRef}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsProfileMenuOpen((open) => !open)
-                                setIsThinkingMenuOpen(false)
-                                setIsModelMenuOpen(false)
-                              }}
-                              disabled={disabled || profileActivateMutation.isPending}
-                              className="inline-flex h-8 max-w-[8rem] items-center gap-1.5 rounded-full bg-primary-100/70 px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-primary-800/60"
-                              title={
-                                activeProfile
-                                  ? `${activeProfile.name}${profileMeta(activeProfile) ? ` · ${profileMeta(activeProfile)}` : ''}`
-                                  : activeProfileName
-                              }
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                                <circle cx="12" cy="7" r="4" />
-                              </svg>
-                              <span className="truncate">{activeProfileName}</span>
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
-                            </button>
-                            {isProfileMenuOpen && (
-                              <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[14rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                                  Agent profile
-                                </div>
-                                {(profilesQuery.data?.profiles ?? []).map((profile) => {
-                                  const selected = profile.name === activeProfileName
-                                  return (
-                                    <button
-                                      key={profile.name}
-                                      type="button"
-                                      onClick={() => {
-                                        if (selected) {
-                                          setIsProfileMenuOpen(false)
-                                          return
-                                        }
-                                        profileActivateMutation.mutate(profile.name)
-                                      }}
-                                      className={cn(
-                                        'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                        selected
-                                          ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                          : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                      )}
-                                    >
-                                      <span className="flex items-center gap-2">
-                                        <span className="truncate font-medium">{profile.name}</span>
-                                        {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
-                                      </span>
-                                      {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
-                                    </button>
-                                  )
-                                })}
-                                {profilesQuery.isError ? <div className="px-3 py-2 text-xs text-red-500">Failed to load profiles</div> : null}
-                              </div>
-                            )}
-                          </div>
+                        <HugeiconsIcon icon={AttachmentIcon} size={16} strokeWidth={1.6} className="text-neutral-500" />
+                        <span className="flex-1">Upload files or images</span>
+                        <span className="text-[10px] text-neutral-400">or paste / drop</span>
+                      </button>
+                      {hasDraft && !isLoading ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsControlsMenuOpen(false)
+                            handleClearDraft()
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-neutral-200 dark:hover:bg-red-900/20"
+                        >
+                          <HugeiconsIcon icon={Delete01Icon} size={16} strokeWidth={1.6} className="text-neutral-500" />
+                          Clear draft
+                        </button>
+                      ) : null}
+                      {onNewSession ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsControlsMenuOpen(false)
+                            onNewSession()
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50 dark:text-neutral-200 dark:hover:bg-neutral-800/60"
+                        >
+                          <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={1.6} className="text-neutral-500" />
+                          New session
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
 
-                          <div
-                            className="relative flex min-w-0 items-center"
-                            ref={thinkingMenuRef}
-                          >
+                {/* Agent profile */}
+                {!hideModelSelector ? (
+                  <div
+                    className="relative flex min-w-0 items-center"
+                    ref={profileMenuRef}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen((open) => !open)
+                        setIsControlsMenuOpen(false)
+                        setIsThinkingMenuOpen(false)
+                        setIsModelMenuOpen(false)
+                      }}
+                      disabled={disabled || profileActivateMutation.isPending}
+                      className={cn(
+                        'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-primary-800/60',
+                        isProfileMenuOpen && 'bg-primary-100 dark:bg-primary-800/60',
+                      )}
+                      title={
+                        activeProfile
+                          ? `Agent profile: ${activeProfile.name}${profileMeta(activeProfile) ? ` · ${profileMeta(activeProfile)}` : ''}`
+                          : `Agent profile: ${activeProfileName}`
+                      }
+                      aria-label={`Agent profile: ${activeProfileName}`}
+                    >
+                      <ProfileGlyph size={14} />
+                      <span className="hidden max-w-[7rem] truncate @md:inline">
+                        {activeProfileName}
+                      </span>
+                      <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="hidden shrink-0 opacity-40 @md:inline" />
+                    </button>
+                    {isProfileMenuOpen && (
+                      <div className="absolute bottom-full left-0 z-[200] mb-2 max-h-[22rem] min-w-[14rem] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
+                        <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                          Agent profile
+                        </div>
+                        {(profilesQuery.data?.profiles ?? []).map((profile) => {
+                          const selected = profile.name === activeProfileName
+                          return (
                             <button
+                              key={profile.name}
                               type="button"
                               onClick={() => {
-                                setIsThinkingMenuOpen((open) => !open)
-                                setIsProfileMenuOpen(false)
-                                setIsModelMenuOpen(false)
+                                if (selected) {
+                                  setIsProfileMenuOpen(false)
+                                  return
+                                }
+                                profileActivateMutation.mutate(profile.name)
                               }}
                               className={cn(
-                                'inline-flex h-8 items-center gap-1.5 rounded-full bg-primary-100/70 px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-200/80 dark:hover:bg-primary-800/60',
-                                thinkingLevel === 'off' && 'opacity-70',
+                                'flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                                selected
+                                  ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
+                                  : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
                               )}
-                              title={`Reasoning effort: ${thinkingLabel(thinkingLevel)}`}
                             >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" />
-                                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" />
-                              </svg>
-                              <span>{thinkingLabel(thinkingLevel)}</span>
-                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} />
+                              <span className="flex items-center gap-2">
+                                <span className="truncate font-medium">{profile.name}</span>
+                                {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
+                              </span>
+                              {profileMeta(profile) ? <span className="mt-0.5 max-w-[12rem] truncate text-[11px] text-neutral-500">{profileMeta(profile)}</span> : null}
                             </button>
-                            {isThinkingMenuOpen && (
-                              <div className="absolute bottom-full left-0 z-[200] mb-2 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-200 bg-white p-1 shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-150 dark:border-neutral-700 dark:bg-neutral-900">
-                                {([
-                                  ['off', 'None'],
-                                  ['low', 'Low'],
-                                  ['medium', 'Medium'],
-                                  ['high', 'High'],
-                                ] as Array<[ThinkingLevel, string]>).map(([level, label]) => (
-                                  <button
-                                    key={level}
-                                    type="button"
-                                    onClick={() => handleThinkingSelect(level)}
-                                    className={cn(
-                                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                                      thinkingLevel === level
-                                        ? 'bg-neutral-100 text-neutral-950 dark:bg-neutral-800 dark:text-neutral-50'
-                                        : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
-                                    )}
-                                  >
-                                    <span>{label}</span>
-                                    {thinkingLevel === level ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          )
+                        })}
+                        {profilesQuery.isError ? <div className="px-3 py-2 text-xs text-red-500">Failed to load profiles</div> : null}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
 
+                {/* Project (moved here from the chat header) */}
+                {showProjectControl ? (
+                  <ProjectSessionChip
+                    variant="composer"
+                    sessionKey={projectSessionKey}
+                    projectId={projectId}
+                    projectName={projectName}
+                    className="min-w-0 px-2 @md:px-2.5"
+                    labelClassName="hidden @md:inline"
+                  />
+                ) : null}
+
+                {/* Token counter — triggers at ~25 tokens */}
+                {value.length >= 100 && (
+                  <span className="ml-1 hidden text-[10px] text-primary-400 tabular-nums select-none @lg:inline">
+                    ~{Math.ceil(value.length / 4)} tokens
+                  </span>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
+                <ContextBar compact sessionId={sessionKey} />
+                {!hideModelSelector ? (
                           <div
                             className="relative flex min-w-0 items-center"
                             ref={modelSelectorRef}
@@ -3112,20 +3210,50 @@ function ChatComposerComponent({
                               type="button"
                               onClick={() => {
                                 setIsModelMenuOpen((prev) => !prev)
+                                setIsControlsMenuOpen(false)
                                 setIsProfileMenuOpen(false)
                                 setIsThinkingMenuOpen(false)
                               }}
                               disabled={isModelSwitcherDisabled}
-                              className="inline-flex h-8 max-w-[9rem] items-center rounded-full bg-primary-100/70 px-2 md:max-w-none md:px-3 text-xs font-medium text-primary-600 hover:bg-primary-200/80 dark:hover:bg-primary-800/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                              title={modelButtonLabel}
+                              className={cn(
+                                'inline-flex h-8 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100 dark:hover:bg-primary-800/60 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50',
+                                isModelMenuOpen && 'bg-primary-100 dark:bg-primary-800/60',
+                              )}
+                              title={`${modelButtonLabel} · Thinking: ${thinkingLabel(thinkingLevel)}`}
+                              aria-label={`Model ${modelButtonLabel}, thinking effort ${thinkingLabel(thinkingLevel)}`}
                             >
-                              <span className="max-w-[5.5rem] truncate sm:max-w-[8.5rem] md:max-w-[12rem]">{modelButtonLabel}</span>
+                              <span className="max-w-[6rem] truncate @md:max-w-[10rem] @xl:max-w-[14rem]">
+                                {formatModelName(modelButtonLabel)}
+                              </span>
+                              <span
+                                className={cn(
+                                  'flex shrink-0 items-center gap-1 text-primary-400',
+                                  thinkingLevel === 'off' && 'opacity-60',
+                                )}
+                              >
+                                <BrainGlyph size={12} />
+                                <span className="hidden @md:inline">{thinkingLabel(thinkingLevel)}</span>
+                              </span>
+                              <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="shrink-0 opacity-40" />
                             </button>
                             {isModelMenuOpen && (
                               <>
                                 <div className="fixed inset-0 z-[199]" onClick={() => { setIsModelMenuOpen(false); setModelSearchQuery(''); }} />
-                                <div className="absolute bottom-full left-0 mb-2 z-[200] w-[min(28rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-left overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
-                                  <div className="border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
+                                <div className="absolute bottom-full right-0 mb-2 z-[200] w-[min(26rem,calc(100vw-2rem))] min-w-[18rem] origin-bottom-right overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl dark:border-neutral-700 dark:bg-neutral-900 animate-in fade-in slide-in-from-bottom-2 duration-150 flex flex-col">
+                                  <div className="space-y-2 border-b border-neutral-200 bg-white/95 p-2 backdrop-blur dark:border-neutral-700 dark:bg-neutral-900/95">
+                                    <div>
+                                      <div className="mb-1 flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                                        <BrainGlyph size={11} />
+                                        Thinking effort
+                                      </div>
+                                      <EffortSegmented
+                                        value={thinkingLevel}
+                                        onChange={(level) => {
+                                          if (onThinkingLevelChange) onThinkingLevelChange(level)
+                                          else setInternalThinkingLevel(level)
+                                        }}
+                                      />
+                                    </div>
                                     <div className="relative flex items-center">
                                       <svg className="absolute left-2.5 h-3.5 w-3.5 text-neutral-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <circle cx="11" cy="11" r="8" />
@@ -3135,7 +3263,7 @@ function ChatComposerComponent({
                                         type="text"
                                         value={modelSearchQuery}
                                         onChange={(e) => setModelSearchQuery(e.target.value)}
-                                        placeholder="Filter models in realtime..."
+                                        placeholder="Search models…"
                                         className="w-full rounded-lg bg-neutral-100 py-1.5 pl-8 pr-7 text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:bg-neutral-800 dark:text-neutral-100"
                                         autoFocus
                                       />
@@ -3154,6 +3282,7 @@ function ChatComposerComponent({
                                       ) : null}
                                     </div>
                                   </div>
+
                                   <div className="max-h-[20rem] overflow-y-auto overflow-x-hidden p-1">
                                     {(() => {
                                       const allModels = modelsQuery.data?.models ?? []
@@ -3314,14 +3443,7 @@ function ChatComposerComponent({
                               </>
                             )}
                           </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="ml-1 flex shrink-0 items-center gap-0.5 md:gap-1">
-                <ContextBar compact sessionId={sessionKey} />
+                        ) : null}
                 {voiceInput.isSupported || voiceRecorder.isSupported ? (
                   <PromptInputAction
                     tooltip={

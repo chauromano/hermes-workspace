@@ -729,16 +729,18 @@ export const SidebarSessions = memo(function SidebarSessions({
                             </span>
                           </div>
 
-                          {/* Hover Action Buttons: Edit Project & New Session */}
-                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/proj:opacity-100 transition-opacity">
+                          {/* Hover Action Buttons: Edit Project & New Session
+                              (always visible on touch, where hover doesn't exist) */}
+                          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/proj:opacity-100 transition-opacity pointer-coarse:opacity-70">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 handleEditProject(project)
                               }}
-                              className="flex size-6 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
+                              className="flex size-6 pointer-coarse:size-8 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 active:bg-primary-200 dark:active:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
                               title={`Edit ${project.name}`}
+                              aria-label={`Edit ${project.name}`}
                             >
                               <HugeiconsIcon
                                 icon={MoreVerticalIcon}
@@ -751,8 +753,9 @@ export const SidebarSessions = memo(function SidebarSessions({
                                 e.stopPropagation()
                                 handleNewProjectSession(project)
                               }}
-                              className="flex size-6 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
+                              className="flex size-6 pointer-coarse:size-8 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 active:bg-primary-200 dark:active:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
                               title={`New session in ${project.name}`}
+                              aria-label={`New session in ${project.name}`}
                             >
                               <HugeiconsIcon
                                 icon={PlusSignIcon}

@@ -2934,6 +2934,9 @@ export function ChatScreen({
               focusKey={`${isNewChat ? 'new' : activeFriendlyId}:${activeCanonicalKey ?? ''}`}
               thinkingLevel={thinkingLevel}
               onThinkingLevelChange={handleThinkingLevelChange}
+              projectSessionKey={isNewChat ? 'new' : activeFriendlyId}
+              projectId={activeSession?.projectId}
+              projectName={activeSession?.projectName}
             />
           ) : null}
         </main>

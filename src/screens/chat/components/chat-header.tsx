@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { openHamburgerMenu } from '@/components/mobile-hamburger-menu'
-import { ProjectSessionChip } from '@/components/projects/project-session-chip'
 
 function toTitleCase(value: string): string {
   return value
@@ -304,12 +303,7 @@ function ChatHeaderComponent({
           </button>
 
           <div className="flex-1" />
-          <ProjectSessionChip
-            sessionKey={activeFriendlyId}
-            projectId={activeProjectId}
-            projectName={activeProjectName}
-            compact
-          />
+          {/* Project selection moved into the chat composer toolbar. */}
 
         </div>
       </div>
@@ -394,12 +388,6 @@ function ChatHeaderComponent({
                   ✏️
                 </button>
               )}
-              <ProjectSessionChip
-                sessionKey={activeFriendlyId}
-                projectId={activeProjectId}
-                projectName={activeProjectName}
-                className="ml-1 shrink-0"
-              />
               {sessionPopoverOpen && (
                 <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-80 overflow-hidden rounded-xl border border-[var(--theme-border)] shadow-2xl">
                   <div
