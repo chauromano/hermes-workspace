@@ -3,6 +3,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   PinIcon,
+  MessageMultiple01Icon,
   PlusSignIcon,
   Folder01Icon,
   ArrowDown01Icon,
@@ -350,12 +351,19 @@ export const SidebarSessions = memo(function SidebarSessions({
             {/* ── 1. PINNED SESSIONS ── */}
             {pinnedSessions.length > 0 ? (
               <div className="flex flex-col gap-1 pb-1">
-                <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-500 select-none">
-                  <HugeiconsIcon icon={PinIcon} size={12} strokeWidth={2} />
-                  <span>Pinned</span>
-                  <span className="text-primary-400 font-normal">
-                    ({pinnedSessions.length})
-                  </span>
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-neutral-900 dark:text-neutral-100 select-none">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <HugeiconsIcon
+                      icon={PinIcon}
+                      size={20}
+                      strokeWidth={1.8}
+                      className="size-5 shrink-0 text-accent-500"
+                    />
+                    <span className="truncate">Pinned</span>
+                    <span className="text-xs text-primary-400 dark:text-neutral-400 font-normal shrink-0">
+                      ({pinnedSessions.length})
+                    </span>
+                  </div>
                 </div>
                 {pinnedSessions.map((session) => (
                   <SessionItem
@@ -375,10 +383,16 @@ export const SidebarSessions = memo(function SidebarSessions({
 
             {/* ── 2. CHAT SECTION (No Associated Project) ── */}
             <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
-                <div className="flex items-center gap-1.5">
-                  <span>Chat</span>
-                  <span className="text-primary-400 font-normal">
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-neutral-900 dark:text-neutral-100 select-none">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <HugeiconsIcon
+                    icon={MessageMultiple01Icon}
+                    size={20}
+                    strokeWidth={1.6}
+                    className="size-5 shrink-0 text-primary-500 dark:text-neutral-400"
+                  />
+                  <span className="truncate">Chat</span>
+                  <span className="text-xs text-primary-400 dark:text-neutral-400 font-normal shrink-0">
                     ({chatSessions.length})
                   </span>
                 </div>
@@ -511,12 +525,18 @@ export const SidebarSessions = memo(function SidebarSessions({
 
             {/* ── 3. SESSIONS / PROJECTS SECTION ── */}
             <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
-                <div className="flex items-center gap-1.5">
-                  <span>
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium text-neutral-900 dark:text-neutral-100 select-none">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <HugeiconsIcon
+                    icon={Folder01Icon}
+                    size={20}
+                    strokeWidth={1.6}
+                    className="size-5 shrink-0 text-primary-500 dark:text-neutral-400"
+                  />
+                  <span className="truncate">
                     {sessionsGroupBy === 'projects' ? 'Projects' : 'Sessions'}
                   </span>
-                  <span className="text-primary-400 font-normal">
+                  <span className="text-xs text-primary-400 dark:text-neutral-400 font-normal shrink-0">
                     ({projectSessions.length})
                   </span>
                 </div>
@@ -682,7 +702,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                         <div
                           onClick={() => toggleProjectCollapse(project.id)}
                           className={cn(
-                            'group/proj flex items-center justify-between px-3 py-2 rounded-lg transition-colors select-none cursor-pointer',
+                            'group/proj flex items-center justify-between px-2.5 py-1.5 ml-1 rounded-md transition-colors select-none cursor-pointer',
                             'hover:bg-primary-200/60 dark:hover:bg-primary-800/50 text-neutral-900 dark:text-neutral-100',
                           )}
                         >
@@ -693,14 +713,14 @@ export const SidebarSessions = memo(function SidebarSessions({
                                   ? ArrowRight01Icon
                                   : ArrowDown01Icon
                               }
-                              size={11}
+                              size={12}
                               className="shrink-0 text-primary-400 group-hover/proj:text-primary-600 transition-transform"
                             />
-                            <HugeiconsIcon icon={Folder01Icon} size={18} className="shrink-0 text-accent-500" />
-                            <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                            <HugeiconsIcon icon={Folder01Icon} size={15} className="shrink-0 text-accent-500" />
+                            <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
                               {project.name}
                             </span>
-                            <span className="text-xs text-primary-400 dark:text-neutral-400 font-normal shrink-0">
+                            <span className="text-[11px] text-primary-400 dark:text-neutral-400 font-normal shrink-0">
                               ({projSessions.length})
                             </span>
                           </div>
@@ -796,7 +816,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                           <div
                             onClick={() => toggleStatusCollapse(status)}
                             className={cn(
-                              'flex items-center justify-between px-3 py-2 rounded-lg transition-colors select-none cursor-pointer',
+                              'flex items-center justify-between px-2.5 py-1.5 ml-1 rounded-md transition-colors select-none cursor-pointer',
                               'hover:bg-primary-200/60 dark:hover:bg-primary-800/50 text-neutral-900 dark:text-neutral-100',
                             )}
                           >
@@ -807,7 +827,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                     ? ArrowRight01Icon
                                     : ArrowDown01Icon
                                 }
-                                size={11}
+                                size={12}
                                 className="shrink-0 text-primary-400 transition-transform"
                               />
                               <span
@@ -816,10 +836,10 @@ export const SidebarSessions = memo(function SidebarSessions({
                                   dotColor,
                                 )}
                               />
-                              <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                              <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
                                 {status}
                               </span>
-                              <span className="text-[10px] text-primary-400 font-normal shrink-0">
+                              <span className="text-[11px] text-primary-400 dark:text-neutral-400 font-normal shrink-0">
                                 ({statusSessions.length})
                               </span>
                             </div>

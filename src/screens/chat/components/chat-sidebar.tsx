@@ -1068,6 +1068,12 @@ function ChatSidebarComponent({
     },
   ]
 
+  const toolsItems: Array<NavItemDef> = useMemo(() => {
+    return [...workspaceItems, ...knowledgeItems].sort((a, b) =>
+      a.label.localeCompare(b.label),
+    )
+  }, [workspaceItems, knowledgeItems])
+
   const systemItems: Array<NavItemDef> = []
 
   return (
@@ -1206,7 +1212,7 @@ function ChatSidebarComponent({
             />
             <CollapsibleSection
               expanded={true}
-              items={[...workspaceItems, ...knowledgeItems]}
+              items={toolsItems}
               isCollapsed={true}
               transition={transition}
               onSelectSession={onSelectSession}
@@ -1273,7 +1279,7 @@ function ChatSidebarComponent({
               />
               <CollapsibleSection
                 expanded={toolsExpanded}
-                items={[...workspaceItems, ...knowledgeItems]}
+                items={toolsItems}
                 isCollapsed={isVisuallyCollapsed}
                 transition={transition}
                 onSelectSession={onSelectSession}
