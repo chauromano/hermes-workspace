@@ -53,6 +53,7 @@ export type ResponsesChatRequest = {
   model?: string
   provider?: string
   sessionId?: string
+  workspace?: string
   signal?: AbortSignal
 }
 
@@ -113,6 +114,9 @@ export async function* streamResponses(
   if (req.sessionId && BEARER_TOKEN) {
     headers['X-Hermes-Session-Id'] = req.sessionId
   }
+  if (req.workspace) {
+    headers['X-Hermes-Workspace'] = req.workspace
+  }
 
   const body: Record<string, unknown> = {
     input: req.input,
@@ -124,6 +128,7 @@ export async function* streamResponses(
   if (req.model) body.model = req.model
   if (req.provider) body.provider = req.provider
   if (req.sessionId) body.session_id = req.sessionId
+  if (req.workspace) body.workspace = req.workspace
 
   const res = await fetch(`${CLAUDE_API}/v1/responses`, {
     method: 'POST',

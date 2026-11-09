@@ -90,6 +90,7 @@ export type OpenAIChatOptions = {
   temperature?: number
   signal?: AbortSignal
   sessionId?: string
+  workspace?: string
   /** Override the base URL (e.g. for local providers). Bypasses gateway. */
   baseUrl?: string
 }
@@ -295,6 +296,9 @@ export async function openaiChat(
     // Back-compat for older/Claude-compatible adapters that still look for
     // the pre-Hermes header name.  Hermes Agent ignores this alias.
     headers['X-Claude-Session-Id'] = options.sessionId
+  }
+  if (options.workspace) {
+    headers['X-Hermes-Workspace'] = options.workspace
   }
 
   const endpoint = options.baseUrl

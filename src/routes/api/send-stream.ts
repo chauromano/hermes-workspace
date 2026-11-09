@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { buildResolvedSessionHeaders } from '../../lib/send-stream-session-headers'
-import { buildWorkspaceScopedTextMessage } from '../../lib/workspace-message-scope'
+import { buildWorkspaceScopedTextMessage, type WorkspaceScope } from '../../lib/workspace-message-scope'
 import { resolveSessionKey } from '../../server/session-utils'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { requireJsonContentType } from '../../server/rate-limit'
@@ -38,7 +38,7 @@ import {
   openAntigravityStream,
 } from '../../server/antigravity-bridge'
 import { getActiveProfileName, readProfile } from '../../server/profiles-browser'
-import { getActiveProjectId, getProject, setSessionProfile, listProjects } from '../../server/projects-backend'
+import { getActiveProjectId, getProject, setSessionProfile, listProjects, updateSessionMetadata } from '../../server/projects-backend'
 import {
   collectSyntheticLiveToolEvents,
   createSyntheticLiveToolTracker,
@@ -419,17 +419,55 @@ export const Route = createFileRoute('/api/send-stream')({
           resolvedFriendlyId = sessionKey
         }
 
-        // Default standalone profile workspace if no project active
+        // Resolve active project / profile workspace scope
+        let workspaceScope: WorkspaceScope | null = null
         try {
-          if (!listProjects().active_id && effectiveProfileName !== 'default') {
-            const defSpace = `/workspace/hermes_default_spaces/${effectiveProfileName}`
-            const fs = await import('node:fs')
-            if (!fs.existsSync(defSpace)) {
-              fs.mkdirSync(defSpace, { recursive: true })
+          const activeProjId = getActiveProjectId()
+          if (activeProjId) {
+            const proj = getProject(activeProjId)
+            if (proj?.primary_path) {
+              workspaceScope = {
+                path: proj.primary_path,
+                folderName:
+                  proj.name ||
+                  proj.primary_path.split('/').filter(Boolean).at(-1) ||
+                  'project',
+                isValid: true,
+              }
             }
           }
         } catch {}
-        const workspaceScope = await loadWorkspaceCatalog().catch(() => null)
+
+        if (!workspaceScope) {
+          try {
+            if (effectiveProfileName && effectiveProfileName !== 'default') {
+              const defSpace = `/workspace/hermes_default_spaces/${effectiveProfileName}`
+              const fs = await import('node:fs')
+              if (!fs.existsSync(defSpace)) {
+                fs.mkdirSync(defSpace, { recursive: true })
+              }
+              workspaceScope = {
+                path: defSpace,
+                folderName: effectiveProfileName,
+                isValid: true,
+              }
+            }
+          } catch {}
+        }
+
+        if (!workspaceScope) {
+          workspaceScope = await loadWorkspaceCatalog().catch(() => null)
+        }
+
+        if (sessionKey && sessionKey !== 'new' && workspaceScope?.path) {
+          try {
+            updateSessionMetadata(sessionKey, {
+              cwd: workspaceScope.path,
+              profileName: effectiveProfileName,
+            })
+          } catch {}
+        }
+
         const scopedMessage = buildWorkspaceScopedTextMessage(
           getChatMessage(message, attachments),
           workspaceScope,
@@ -995,6 +1033,7 @@ export const Route = createFileRoute('/api/send-stream')({
                           typeof body.model === 'string' ? body.model : undefined,
                         provider: requestProvider || undefined,
                         sessionId: portableSessionKey,
+                        workspace: workspaceScope?.path,
                         signal: abortController.signal,
                       })
                       for await (const ev of responsesStream) {
@@ -1139,6 +1178,7 @@ export const Route = createFileRoute('/api/send-stream')({
                     signal: abortController.signal,
                     stream: true,
                     sessionId: portableSessionKey,
+                    workspace: workspaceScope?.path,
                     baseUrl: localBaseUrl,
                   })
 

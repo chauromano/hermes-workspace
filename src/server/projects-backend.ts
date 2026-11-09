@@ -944,7 +944,7 @@ export function setSessionProject(
 
   if (sessionId) {
     try {
-      updateSessionState(sessionId, { cwd: targetPath || '' })
+      updateSessionMetadata(sessionId, { cwd: targetPath || '' })
     } catch {}
   }
 
@@ -1124,7 +1124,7 @@ export function getSessionMetaMap(
 export function setSessionProfile(sessionId: string, profileName: string): void {
   if (!sessionId || !profileName) return
   try {
-    updateSessionState(sessionId, { profileName })
+    updateSessionMetadata(sessionId, { profileName })
   } catch {}
 }
 
@@ -1146,6 +1146,8 @@ function ensureSessionMetadataTable(dbPath: string): void {
     )
   } catch {}
 }
+
+export const updateSessionState = updateSessionMetadata
 
 export function updateSessionMetadata(
   sessionId: string,
