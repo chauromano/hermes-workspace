@@ -605,23 +605,33 @@ function isCurrentModel(
   const eprov = (entryProvider || '').trim().toLowerCase()
   if (!cm || !eid) return false
 
-  // Exact match (bare ID)
-  if (cm === eid) return true
+  // Canonical resolved key for this entry
+  // e.g. if eprov is "vertex" and eid is "google/gemini-3.8-flash", entryResolved is "vertex/google/gemini-3.8-flash"
+  const entryResolved = eprov
+    ? (eid.startsWith(`${eprov}/`) ? eid : `${eprov}/${eid}`)
+    : eid
 
-  // Current model is "something/<entryId>"
-  if (cm.endsWith(`/${eid}`)) return true
+  // 1. Exact match with canonical resolved key (highest priority)
+  if (cm === entryResolved) return true
 
-  // entryId is "something/<currentModel>"
-  if (eid.endsWith(`/${cm}`)) return true
-
-  // Resolved entry key matches current model exactly
-  const resolved = eprov ? `${eprov}/${eid}` : eid
-  if (resolved === cm) return true
-
-  // Also match stripped model IDs (last segment)
-  const cmBase = cm.includes('/') ? cm.slice(cm.lastIndexOf('/') + 1) : cm
-  const eidBase = eid.includes('/') ? eid.slice(eid.lastIndexOf('/') + 1) : eid
-  if (cmBase === eidBase) return true
+  // 2. If currentModel specifies a provider prefix (e.g. "vertex/..." or "google/...")
+  if (cm.includes('/')) {
+    const cmProvider = cm.slice(0, cm.indexOf('/'))
+    // If cm specifies a provider, and the entry's provider does NOT match that provider,
+    // they MUST NOT match!
+    if (eprov && cmProvider !== eprov) {
+      return false
+    }
+    // If providers match (or entry has no provider):
+    const remainder = cm.slice(cmProvider.length + 1)
+    if (remainder === eid) return true
+    if (cm === eid) return true
+  } else {
+    // 3. currentModel is bare (no provider prefix at all, e.g. "gemini-3.8-flash")
+    if (cm === eid) return true
+    const eidBase = eid.includes('/') ? eid.slice(eid.lastIndexOf('/') + 1) : eid
+    if (eidBase === cm) return true
+  }
 
   return false
 }
@@ -2792,7 +2802,18 @@ function ChatComposerComponent({
                             group.push(entry)
                             unpinnedGroups.set(entry.provider, group)
                           }
-                          const activeModelId = persistedSessionModel || currentModel
+                          const activeModelId =
+                            persistedSessionModel || currentModel || configuredModel
+                          const activeEntry =
+                            parsed.find((m) => isCurrentModel(activeModelId, m.id, m.provider)) ||
+                            (activeModelId
+                              ? {
+                                  id: activeModelId,
+                                  name: formatModelName(activeModelId),
+                                  provider: activeModelId.includes('/') ? activeModelId.split('/')[0] : '',
+                                  isLocal: false,
+                                }
+                              : null)
                           const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
                             if (query || mobileProviderFilter !== 'all') return false
                             if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
@@ -2938,6 +2959,45 @@ function ChatComposerComponent({
                                 </div>
                               ) : (
                                 <>
+                                  {/* Current Selection pinned at top */}
+                                  {activeEntry && !query && mobileProviderFilter === 'all' ? (
+                                    <div
+                                      onClick={() => {
+                                        setIsModelMenuOpen(false)
+                                        setModelSearchQuery('')
+                                        setMobileProviderFilter('all')
+                                      }}
+                                      className="mb-3 rounded-xl border border-accent-200/90 bg-accent-50/80 p-2.5 dark:border-accent-800/60 dark:bg-accent-950/40 cursor-pointer transition-all active:scale-[0.99] shadow-2xs select-none"
+                                    >
+                                      <div className="mb-1.5 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-wider text-accent-700 dark:text-accent-300">
+                                        <span className="flex items-center gap-1.5">
+                                          <span className="size-1.5 rounded-full bg-accent-500 animate-pulse" />
+                                          Current Selection
+                                        </span>
+                                        {activeEntry.provider && (
+                                          <span className="rounded bg-accent-100/90 px-1.5 py-0.5 text-[10px] font-semibold text-accent-800 dark:bg-accent-900/70 dark:text-accent-200 uppercase">
+                                            {activeEntry.provider}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-neutral-900 px-3 py-2 shadow-xs border border-accent-100/80 dark:border-neutral-800">
+                                        <div className="flex flex-col min-w-0 flex-1">
+                                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate text-sm">
+                                            {formatModelName(activeEntry.name || activeEntry.id)}
+                                          </span>
+                                          <span className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                                            {activeEntry.id}
+                                          </span>
+                                        </div>
+                                        <span className="size-6 rounded-full bg-accent-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                          <svg className="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                            <polyline points="20 6 9 17 4 12" />
+                                          </svg>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : null}
+
                                   {pinnedEntries.length > 0 && (
                                     <div className="mb-3 border-b border-neutral-100 dark:border-neutral-800 pb-2">
                                       <div className="flex items-center gap-1.5 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
@@ -3342,6 +3402,16 @@ function ChatComposerComponent({
                                       }
                                       const activeModelId =
                                         persistedSessionModel || currentModel || configuredModel
+                                      const activeEntry =
+                                        parsed.find((m) => isCurrentModel(activeModelId, m.id, m.provider)) ||
+                                        (activeModelId
+                                          ? {
+                                              id: activeModelId,
+                                              name: formatModelName(activeModelId),
+                                              provider: activeModelId.includes('/') ? activeModelId.split('/')[0] : '',
+                                              isLocal: false,
+                                            }
+                                          : null)
                                       const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
                                         if (query) return false
                                         if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
@@ -3408,6 +3478,43 @@ function ChatComposerComponent({
                                       }
                                       return (
                                         <>
+                                          {/* Current Selection pinned at top */}
+                                          {activeEntry && !query ? (
+                                            <div
+                                              onClick={() => {
+                                                setIsModelMenuOpen(false)
+                                                setModelSearchQuery('')
+                                              }}
+                                              className="mb-2 rounded-xl border border-accent-200/90 bg-accent-50/80 p-2 dark:border-accent-800/60 dark:bg-accent-950/40 cursor-pointer transition-all hover:border-accent-400 dark:hover:border-accent-700 select-none shadow-2xs"
+                                            >
+                                              <div className="mb-1 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-wider text-accent-700 dark:text-accent-300">
+                                                <span className="flex items-center gap-1.5">
+                                                  <span className="size-1.5 rounded-full bg-accent-500 animate-pulse" />
+                                                  Current Selection
+                                                </span>
+                                                {activeEntry.provider && (
+                                                  <span className="rounded bg-accent-100/90 px-1.5 py-0.2 text-[10px] font-semibold text-accent-800 dark:bg-accent-900/70 dark:text-accent-200 uppercase">
+                                                    {activeEntry.provider}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-neutral-900 px-2.5 py-1.5 shadow-xs border border-accent-100/80 dark:border-neutral-800">
+                                                <div className="flex flex-col min-w-0 flex-1">
+                                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate text-xs">
+                                                    {formatModelName(activeEntry.name || activeEntry.id)}
+                                                  </span>
+                                                  <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                                                    {activeEntry.id}
+                                                  </span>
+                                                </div>
+                                                <span className="size-5 rounded-full bg-accent-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                                  <svg className="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                                    <polyline points="20 6 9 17 4 12" />
+                                                  </svg>
+                                                </span>
+                                              </div>
+                                            </div>
+                                          ) : null}
                                           {pinnedEntries.length > 0 ? (
                                             <div className="mb-1 border-b border-neutral-200 pb-1 dark:border-neutral-700">
                                               <div className="mb-1 flex items-center gap-1 px-3 text-[11px] font-medium uppercase tracking-wider text-neutral-500">
