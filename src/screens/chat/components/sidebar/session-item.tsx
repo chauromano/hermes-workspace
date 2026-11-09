@@ -150,11 +150,11 @@ function SessionItemComponent({
         onSelect?.()
       }}
       className={cn(
-        'group flex items-center gap-2.5 w-full text-left px-2 py-2 rounded-xl transition-all duration-150',
+        'group flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-lg transition-all duration-150',
         'select-none relative',
         active
-          ? 'bg-accent-500/10 text-primary-950 dark:text-primary-50 font-medium'
-          : 'text-primary-900 hover:bg-primary-200/60 dark:hover:bg-primary-800/50',
+          ? 'bg-accent-500/10 text-accent-500 font-semibold'
+          : 'text-primary-900 dark:text-neutral-100 hover:bg-primary-200/60 dark:hover:bg-primary-800/50',
       )}
     >
       {/* Left Icon (chat bubble, no bulky box) */}
@@ -169,9 +169,9 @@ function SessionItemComponent({
         )}
       >
         {isPinned ? (
-          <HugeiconsIcon icon={PinIcon} size={15} strokeWidth={1.8} />
+          <HugeiconsIcon icon={PinIcon} size={18} strokeWidth={1.8} />
         ) : (
-          <HugeiconsIcon icon={Chat01Icon} size={15} strokeWidth={1.6} />
+          <HugeiconsIcon icon={Chat01Icon} size={18} strokeWidth={1.6} />
         )}
       </span>
 
@@ -179,10 +179,10 @@ function SessionItemComponent({
       <div className="flex-1 min-w-0 py-0.5">
         <div
           className={cn(
-            'truncate text-xs font-medium leading-snug',
+            'truncate text-sm font-medium leading-snug',
             active
               ? 'text-accent-500 dark:text-accent-400 font-semibold'
-              : 'text-primary-900',
+              : 'text-primary-900 dark:text-neutral-100',
             isGenerating ? 'animate-pulse text-primary-500' : '',
           )}
         >
@@ -191,7 +191,7 @@ function SessionItemComponent({
         {subtitle ? (
           <div
             className={cn(
-              'mt-0.5 text-[10px] text-primary-500 dark:text-neutral-400 truncate leading-tight',
+              'mt-0.5 text-xs text-primary-500 dark:text-neutral-400 truncate leading-tight',
               isError ? 'text-red-500' : undefined,
             )}
           >

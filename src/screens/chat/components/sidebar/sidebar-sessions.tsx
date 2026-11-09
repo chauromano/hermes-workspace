@@ -14,12 +14,6 @@ import { memo, useMemo, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
-import {
-  ScrollAreaRoot,
-  ScrollAreaScrollbar,
-  ScrollAreaThumb,
-  ScrollAreaViewport,
-} from '@/components/ui/scroll-area'
 import { Button } from '@/components/ui/button'
 import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { useProjects, useSetActiveProject, type Project } from '@/hooks/use-projects'
@@ -352,10 +346,7 @@ export const SidebarSessions = memo(function SidebarSessions({
   }, [projectSessions])
 
   return (
-    <div className="flex h-full flex-col flex-1 min-h-0 w-full">
-      <ScrollAreaRoot className="flex-1 min-h-0">
-        <ScrollAreaViewport className="min-h-0">
-          <div className="flex flex-col gap-2 px-1 py-1">
+    <div className="flex flex-col gap-2 w-full">
             {/* ── 1. PINNED SESSIONS ── */}
             {pinnedSessions.length > 0 ? (
               <div className="flex flex-col gap-1 pb-1">
@@ -397,7 +388,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                   <MenuRoot>
                     <MenuTrigger
                       className={cn(
-                        'flex size-5 items-center justify-center rounded transition-colors cursor-pointer',
+                        'flex size-6 items-center justify-center rounded-md transition-colors cursor-pointer',
                         'text-primary-400 hover:text-primary-700 dark:hover:text-primary-200 hover:bg-primary-200/60 dark:hover:bg-primary-800/60',
                         chatDateFilter !== 'none' &&
                           'text-accent-500 font-bold bg-accent-500/10',
@@ -535,7 +526,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                   <MenuRoot>
                     <MenuTrigger
                       className={cn(
-                        'flex size-5 items-center justify-center rounded transition-colors cursor-pointer',
+                        'flex size-6 items-center justify-center rounded-md transition-colors cursor-pointer',
                         'text-primary-400 hover:text-primary-700 dark:hover:text-primary-200 hover:bg-primary-200/60 dark:hover:bg-primary-800/60',
                         (sessionsDateFilter !== 'none' ||
                           sessionsGroupBy !== 'projects') &&
@@ -691,8 +682,8 @@ export const SidebarSessions = memo(function SidebarSessions({
                         <div
                           onClick={() => toggleProjectCollapse(project.id)}
                           className={cn(
-                            'group/proj flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors select-none cursor-pointer',
-                            'hover:bg-primary-100/70 dark:hover:bg-primary-800/40 text-primary-800 dark:text-primary-200',
+                            'group/proj flex items-center justify-between px-3 py-2 rounded-lg transition-colors select-none cursor-pointer',
+                            'hover:bg-primary-200/60 dark:hover:bg-primary-800/50 text-neutral-900 dark:text-neutral-100',
                           )}
                         >
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -705,15 +696,11 @@ export const SidebarSessions = memo(function SidebarSessions({
                               size={11}
                               className="shrink-0 text-primary-400 group-hover/proj:text-primary-600 transition-transform"
                             />
-                            <HugeiconsIcon
-                              icon={Folder01Icon}
-                              size={13}
-                              className="shrink-0 text-accent-500"
-                            />
-                            <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                            <HugeiconsIcon icon={Folder01Icon} size={18} className="shrink-0 text-accent-500" />
+                            <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                               {project.name}
                             </span>
-                            <span className="text-[10px] text-primary-400 font-normal shrink-0">
+                            <span className="text-xs text-primary-400 dark:text-neutral-400 font-normal shrink-0">
                               ({projSessions.length})
                             </span>
                           </div>
@@ -726,7 +713,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                 e.stopPropagation()
                                 handleEditProject(project)
                               }}
-                              className="flex size-5 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
+                              className="flex size-6 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
                               title={`Edit ${project.name}`}
                             >
                               <HugeiconsIcon
@@ -740,7 +727,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                 e.stopPropagation()
                                 handleNewProjectSession(project)
                               }}
-                              className="flex size-5 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
+                              className="flex size-6 items-center justify-center rounded hover:bg-primary-200 dark:hover:bg-primary-700 text-primary-400 hover:text-primary-800 dark:hover:text-primary-200"
                               title={`New session in ${project.name}`}
                             >
                               <HugeiconsIcon
@@ -754,7 +741,7 @@ export const SidebarSessions = memo(function SidebarSessions({
 
                         {/* Child Sessions when Project Expanded */}
                         {!isCollapsed && (
-                          <div className="pl-3 flex flex-col gap-0.5 border-l border-primary-200/50 dark:border-primary-800/40 ml-2.5 my-0.5">
+                          <div className="pl-3 flex flex-col gap-1 border-l border-primary-200/50 dark:border-primary-800/40 ml-3.5 my-1">
                             {projSessions.length > 0 ? (
                               projSessions.map((session) => (
                                 <SessionItem
@@ -809,8 +796,8 @@ export const SidebarSessions = memo(function SidebarSessions({
                           <div
                             onClick={() => toggleStatusCollapse(status)}
                             className={cn(
-                              'flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors select-none cursor-pointer',
-                              'hover:bg-primary-100/70 dark:hover:bg-primary-800/40 text-primary-800 dark:text-primary-200',
+                              'flex items-center justify-between px-3 py-2 rounded-lg transition-colors select-none cursor-pointer',
+                              'hover:bg-primary-200/60 dark:hover:bg-primary-800/50 text-neutral-900 dark:text-neutral-100',
                             )}
                           >
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -829,7 +816,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                   dotColor,
                                 )}
                               />
-                              <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                              <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                                 {status}
                               </span>
                               <span className="text-[10px] text-primary-400 font-normal shrink-0">
@@ -896,12 +883,6 @@ export const SidebarSessions = memo(function SidebarSessions({
                 Updating…
               </div>
             ) : null}
-          </div>
-        </ScrollAreaViewport>
-        <ScrollAreaScrollbar orientation="vertical">
-          <ScrollAreaThumb />
-        </ScrollAreaScrollbar>
-      </ScrollAreaRoot>
 
       {/* Project Modal for Creating / Editing Projects */}
       <ProjectModal

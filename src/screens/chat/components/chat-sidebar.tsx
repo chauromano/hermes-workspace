@@ -772,11 +772,14 @@ function ChatSidebarComponent({
     'claude-sidebar-main-expanded',
     true,
   )
-  const [activeTab, setActiveTab] = useState<'sessions' | 'tools'>('sessions')
-
-  const handleTabChange = (tab: 'sessions' | 'tools') => {
-    setActiveTab(tab)
-  }
+  const [sessionsExpanded, toggleSessions] = usePersistedBool(
+    'hermes-sidebar-sessions-expanded',
+    true,
+  )
+  const [toolsExpanded, toggleTools] = usePersistedBool(
+    'hermes-sidebar-tools-expanded',
+    false,
+  )
 
   const [chatExpanded, toggleChat] = usePersistedBool(
     'hermes-sidebar-chat-expanded',
@@ -1189,142 +1192,94 @@ function ChatSidebarComponent({
         </motion.div>
       </div>
 
-      {/* ── Command Submenu (Moved out of Tools and directly under Search) ── */}
-      <div className="shrink-0 space-y-0.5 px-2 pb-1">
-        <SectionLabel
-          label="Command"
-          isCollapsed={isVisuallyCollapsed}
-          transition={transition}
-          collapsible={!isVisuallyCollapsed}
-          expanded={mainExpanded}
-          onToggle={toggleMain}
-          navigateTo="/chat"
-        />
-        <CollapsibleSection
-          expanded={isVisuallyCollapsed || mainExpanded}
-          items={mainItems}
-          isCollapsed={isVisuallyCollapsed}
-          transition={transition}
-          onSelectSession={onSelectSession}
-        />
-      </div>
-
-      {/* ── Segmented Switch: Sessions vs Tools ────────────────────── */}
-      {!isVisuallyCollapsed && (
-        <div className="px-2 pb-2">
-          <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 dark:bg-primary-900/40 p-1 text-xs font-medium border border-primary-200/60 dark:border-primary-800/40">
-            <button
-              type="button"
-              onClick={() => handleTabChange('sessions')}
-              className={cn(
-                'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
-                activeTab === 'sessions'
-                  ? 'bg-surface text-ink font-semibold shadow-xs'
-                  : 'text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-200',
-              )}
-            >
-              <HugeiconsIcon
-                icon={MessageMultiple01Icon}
-                size={14}
-                strokeWidth={activeTab === 'sessions' ? 2 : 1.6}
-              />
-              <span>
-                Sessions{sessions.length > 0 ? ` (${sessions.length})` : ''}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleTabChange('tools')}
-              className={cn(
-                'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
-                activeTab === 'tools'
-                  ? 'bg-surface text-ink font-semibold shadow-xs'
-                  : 'text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-200',
-              )}
-            >
-              <HugeiconsIcon
-                icon={DashboardSquare01Icon}
-                size={14}
-                strokeWidth={activeTab === 'tools' ? 2 : 1.6}
-              />
-              <span>Tools</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Scrollable body: nav + sessions ─────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin flex flex-col">
+      {/* ── Scrollable body: Command + Sessions + Tools ────────────── */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin flex flex-col px-2 pb-4 space-y-1">
         {isVisuallyCollapsed ? (
           /* Mini icon rail when collapsed */
-          <div className="shrink-0 space-y-0.5 px-2">
+          <div className="shrink-0 space-y-0.5">
             <CollapsibleSection
               expanded={true}
-              items={workspaceItems}
+              items={mainItems}
               isCollapsed={true}
               transition={transition}
               onSelectSession={onSelectSession}
             />
             <CollapsibleSection
               expanded={true}
-              items={knowledgeItems}
+              items={[...workspaceItems, ...knowledgeItems]}
               isCollapsed={true}
               transition={transition}
               onSelectSession={onSelectSession}
-            />
-          </div>
-        ) : activeTab === 'sessions' ? (
-          /* Sessions list */
-          <div className="flex-1 min-h-0 flex flex-col px-2">
-            <SidebarSessions
-              sessions={sessions}
-              activeFriendlyId={activeFriendlyId}
-              onSelect={onSelectSession}
-              onRename={handleOpenRename}
-              onDelete={handleOpenDelete}
-              loading={sessionsLoading}
-              fetching={sessionsFetching}
-              error={sessionsError}
-              onRetry={onRetrySessions}
             />
           </div>
         ) : (
-          /* Tools Tab: Workspace & Knowledge sections (Command moved above) */
-          <div className="shrink-0 space-y-0.5 px-2 pb-4">
-            <SectionLabel
-              label="Workspace"
-              isCollapsed={false}
-              transition={transition}
-              collapsible
-              expanded={workspaceExpanded}
-              onToggle={toggleWorkspace}
-              navigateTo="/projects"
-            />
-            <CollapsibleSection
-              expanded={workspaceExpanded}
-              items={workspaceItems}
-              isCollapsed={false}
-              transition={transition}
-              onSelectSession={onSelectSession}
-            />
+          <>
+            {/* ── 1. Command Parent Grouping ── */}
+            <div className="shrink-0 space-y-0.5">
+              <SectionLabel
+                label="Command"
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                collapsible={!isVisuallyCollapsed}
+                expanded={mainExpanded}
+                onToggle={toggleMain}
+                navigateTo="/chat"
+              />
+              <CollapsibleSection
+                expanded={mainExpanded}
+                items={mainItems}
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                onSelectSession={onSelectSession}
+              />
+            </div>
 
-            <SectionLabel
-              label="Knowledge"
-              isCollapsed={false}
-              transition={transition}
-              collapsible
-              expanded={knowledgeExpanded}
-              onToggle={toggleKnowledge}
-              navigateTo="/memory"
-            />
-            <CollapsibleSection
-              expanded={knowledgeExpanded}
-              items={knowledgeItems}
-              isCollapsed={false}
-              transition={transition}
-              onSelectSession={onSelectSession}
-            />
-          </div>
+            {/* ── 2. Sessions Parent Grouping ── */}
+            <div className="shrink-0 space-y-0.5">
+              <SectionLabel
+                label="Sessions"
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                collapsible={!isVisuallyCollapsed}
+                expanded={sessionsExpanded}
+                onToggle={toggleSessions}
+              />
+              {sessionsExpanded && (
+                <div className="pt-0.5 pb-1">
+                  <SidebarSessions
+                    sessions={sessions}
+                    activeFriendlyId={activeFriendlyId}
+                    onSelect={onSelectSession}
+                    onRename={handleOpenRename}
+                    onDelete={handleOpenDelete}
+                    loading={sessionsLoading}
+                    fetching={sessionsFetching}
+                    error={sessionsError}
+                    onRetry={onRetrySessions}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* ── 3. Tools Parent Grouping (Collapsed by default, below Sessions) ── */}
+            <div className="shrink-0 space-y-0.5">
+              <SectionLabel
+                label="Tools"
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                collapsible={!isVisuallyCollapsed}
+                expanded={toolsExpanded}
+                onToggle={toggleTools}
+              />
+              <CollapsibleSection
+                expanded={toolsExpanded}
+                items={[...workspaceItems, ...knowledgeItems]}
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                onSelectSession={onSelectSession}
+              />
+            </div>
+          </>
         )}
       </div>
       {/* end scrollable body */}
