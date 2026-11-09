@@ -11,6 +11,7 @@ import { OperationsAgentCard } from './components/operations-agent-card'
 import { OperationsAgentDetail } from './components/operations-agent-detail'
 import { OperationsNewAgentModal } from './components/operations-new-agent-modal'
 import { OperationsSettingsModal } from './components/operations-settings-modal'
+import { UnifiedProfileSettingsModal } from '@/components/profile-settings/unified-profile-settings-modal'
 import { useOperations } from './hooks/use-operations'
 import type { CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
@@ -94,10 +95,10 @@ export function OperationsScreen() {
             </div>
             <div>
               <h1 className="text-base font-semibold text-primary-900">
-                Assistants
+                Agents
               </h1>
               <p className="mt-1 text-sm text-primary-600">
-                Configure persistent agents and their defaults
+                Talk directly to your persistent Hermes agents, run scheduled jobs, and configure their profiles
               </p>
             </div>
           </div>
@@ -107,7 +108,7 @@ export function OperationsScreen() {
               onClick={() => setNewAgentOpen(true)}
             >
               <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.8} />
-              New Assistant
+              New Agent
             </Button>
             <Button
               variant="secondary"
@@ -126,7 +127,7 @@ export function OperationsScreen() {
 
         {isLoading ? (
           <section className="rounded-3xl border border-[var(--theme-border)] bg-[var(--theme-card)] px-6 py-12 text-center text-sm text-[var(--theme-muted)] shadow-[0_24px_80px_var(--theme-shadow)]">
-            Loading assistants…
+            Loading agents…
           </section>
         ) : error ? (
           <section className="rounded-3xl border border-[var(--theme-danger-border)] bg-[var(--theme-danger-soft)] px-6 py-12 text-center text-sm text-[var(--theme-text)] shadow-[0_24px_80px_var(--theme-shadow)]">
@@ -136,7 +137,7 @@ export function OperationsScreen() {
           <>
             <div className="flex items-center justify-between rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-3 text-sm">
               <span className="text-primary-600">
-                {agents.length} configured assistant
+                {agents.length} configured agent
                 {agents.length === 1 ? '' : 's'}
               </span>
               <span className="text-primary-500">
@@ -173,7 +174,7 @@ export function OperationsScreen() {
                   className="text-[var(--theme-muted)]"
                 />
                 <span className="mt-3 text-sm text-[var(--theme-muted)]">
-                  Add Assistant
+                  Add Agent
                 </span>
               </motion.button>
             </section>
@@ -196,19 +197,21 @@ export function OperationsScreen() {
         onSave={saveSettings}
       />
 
-      <OperationsAgentDetail
-        open={Boolean(settingsAgent)}
-        agent={settingsAgent}
+      <UnifiedProfileSettingsModal
+        open={Boolean(settingsAgentId)}
+        profileName={settingsAgentId}
         onClose={() => setSettingsAgentId(null)}
-        onSave={saveAgent}
-        onDelete={async (agentId) => {
-          await deleteAgent(agentId)
-          setSettingsAgentId((current) =>
-            current === agentId ? null : current,
-          )
+        onSaved={async () => {
+          await configQuery.refetch()
         }}
-        isSaving={isSavingAgent}
-        isDeleting={isDeletingAgent}
+        onDeleted={async () => {
+          setSettingsAgentId(null)
+          await configQuery.refetch()
+        }}
+        onRenamed={async () => {
+          setSettingsAgentId(null)
+          await configQuery.refetch()
+        }}
       />
     </main>
   )

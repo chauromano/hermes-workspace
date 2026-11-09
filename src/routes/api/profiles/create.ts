@@ -19,6 +19,11 @@ export const Route = createFileRoute('/api/profiles/create')({
             cloneFrom?: string
             model?: string
             provider?: string
+            description?: string
+            soul?: string
+            avatar?: string
+            emoji?: string
+            color?: string
           }
           return json({
             ok: true,
@@ -26,6 +31,11 @@ export const Route = createFileRoute('/api/profiles/create')({
               cloneFrom: body.cloneFrom,
               model: body.model,
               provider: body.provider,
+              description: body.description,
+              soul: body.soul,
+              avatar: body.avatar,
+              emoji: body.emoji,
+              color: body.color,
             }),
           })
         } catch (error) {

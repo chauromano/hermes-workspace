@@ -60,7 +60,7 @@ export const MOBILE_COMMAND_ITEMS: Array<MobileNavItemDef> = [
   },
   {
     id: 'operations',
-    label: 'Assistants',
+    label: 'Agents',
     icon: UserMultipleIcon,
     to: '/operations',
     match: (p: string) => p.startsWith('/operations'),

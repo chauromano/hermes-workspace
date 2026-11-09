@@ -208,10 +208,10 @@ export function OperationsNewAgentModal({
             </div>
             <div>
               <h2 className="text-xl font-semibold text-[var(--theme-text)]">
-                New Agent
+                New Agent Profile
               </h2>
               <p className="mt-1 text-sm text-[var(--theme-muted-2)]">
-                Add a persistent Operations agent to the roster.
+                Add a persistent Hermes agent profile to the roster.
               </p>
             </div>
           </div>
@@ -291,7 +291,7 @@ export function OperationsNewAgentModal({
 
         <label className="mt-4 block space-y-2">
           <span className="text-sm font-medium text-[var(--theme-text)]">
-            System Prompt
+            Soul (SOUL.md)
           </span>
           <textarea
             value={systemPrompt}

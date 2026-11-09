@@ -17,7 +17,11 @@ type ClaudeProfileSummary = {
   model?: string
   provider?: string
   description?: string
+  soul?: string
   systemPrompt?: string
+  avatar?: string
+  emoji?: string
+  color?: string
   skillCount: number
   sessionCount: number
   hasEnv: boolean
@@ -31,11 +35,16 @@ export type GatewayConfigAgent = {
   workspace?: string
   agentDir?: string
   description?: string
+  soul?: string
   systemPrompt?: string
+  avatar?: string
+  emoji?: string
+  color?: string
 }
 
 export type OperationsAgentMeta = {
   emoji: string
+  avatar?: string
   description: string
   systemPrompt: string
   color: string
@@ -245,17 +254,38 @@ async function fetchClaudeProfiles(): Promise<ClaudeProfileSummary[]> {
 // Operations UI expects. Each profile becomes one agent.
 async function fetchOperationsConfig(): Promise<ConfigPayload> {
   const profiles = await fetchClaudeProfiles()
-  const list = profiles.map((profile) => ({
-    id: profile.name,
-    name: profile.name === 'default' || profile.name === 'general' ? 'general' : profile.name,
-    model: profile.model || '',
-    workspace: profile.path,
-    agentDir: profile.path,
-    description: profile.description || '',
-    systemPrompt: profile.systemPrompt || '',
-  }))
+  const list = profiles.map((profile) => {
+    // Generate clean description fallback from soul if description is empty
+    let desc = profile.description || ''
+    if (!desc && profile.soul) {
+      const firstLine = profile.soul
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l && !l.startsWith('#') && !l.startsWith('<'))
+      if (firstLine) {
+        desc = firstLine.length > 100 ? firstLine.slice(0, 97) + '...' : firstLine
+      }
+    }
+
+    return {
+      id: profile.name,
+      name:
+        profile.name === 'default' || profile.name === 'general'
+          ? 'general'
+          : profile.name,
+      model: profile.model || '',
+      workspace: profile.path,
+      agentDir: profile.path,
+      description: desc,
+      soul: profile.soul || profile.systemPrompt || '',
+      systemPrompt: profile.soul || profile.systemPrompt || '',
+      avatar: profile.avatar || '',
+      emoji: profile.emoji || '',
+      color: profile.color || '',
+    }
+  })
   // Default-profile model becomes the operations defaultModel suggestion
-  const defaultModel = profiles.find((p) => p.name === 'default')?.model || ''
+  const defaultModel = profiles.find((p) => p.name === 'default' || p.name === 'general')?.model || ''
   return {
     ok: true,
     parsed: {
@@ -317,17 +347,26 @@ async function deleteClaudeProfile(name: string) {
 
 function loadAgentMeta(
   agentId: string,
-  fallback?: Partial<Pick<OperationsAgentMeta, 'description' | 'systemPrompt'>>,
+  fallback?: Partial<
+    Pick<
+      OperationsAgentMeta,
+      'description' | 'systemPrompt' | 'avatar' | 'emoji' | 'color'
+    >
+  >,
 ): OperationsAgentMeta {
   const fallbackDescription = readString(fallback?.description)
   const fallbackSystemPrompt = readString(fallback?.systemPrompt)
+  const fallbackAvatar = readString(fallback?.avatar)
+  const fallbackEmoji = readString(fallback?.emoji) || createFallbackEmoji(agentId)
+  const fallbackColor = readString(fallback?.color) || createFallbackColor(agentId)
 
   if (typeof window === 'undefined') {
     return {
-      emoji: createFallbackEmoji(agentId),
+      emoji: fallbackEmoji,
+      avatar: fallbackAvatar,
       description: fallbackDescription,
       systemPrompt: fallbackSystemPrompt,
-      color: createFallbackColor(agentId),
+      color: fallbackColor,
       createdAt: new Date().toISOString(),
     }
   }
@@ -336,28 +375,31 @@ function loadAgentMeta(
     const raw = window.localStorage.getItem(`${META_STORAGE_PREFIX}${agentId}`)
     if (!raw) {
       return {
-        emoji: createFallbackEmoji(agentId),
+        emoji: fallbackEmoji,
+        avatar: fallbackAvatar,
         description: fallbackDescription,
         systemPrompt: fallbackSystemPrompt,
-        color: createFallbackColor(agentId),
+        color: fallbackColor,
         createdAt: new Date().toISOString(),
       }
     }
 
     const parsed = JSON.parse(raw) as Partial<OperationsAgentMeta>
     return {
-      emoji: readString(parsed.emoji) || createFallbackEmoji(agentId),
-      description: readString(parsed.description) || fallbackDescription,
-      systemPrompt: readString(parsed.systemPrompt) || fallbackSystemPrompt,
-      color: readString(parsed.color) || createFallbackColor(agentId),
+      emoji: fallbackEmoji || readString(parsed.emoji) || createFallbackEmoji(agentId),
+      avatar: fallbackAvatar || readString(parsed.avatar),
+      description: fallbackDescription || readString(parsed.description),
+      systemPrompt: fallbackSystemPrompt || readString(parsed.systemPrompt),
+      color: fallbackColor || readString(parsed.color) || createFallbackColor(agentId),
       createdAt: readString(parsed.createdAt) || new Date().toISOString(),
     }
   } catch {
     return {
-      emoji: createFallbackEmoji(agentId),
+      emoji: fallbackEmoji,
+      avatar: fallbackAvatar,
       description: fallbackDescription,
       systemPrompt: fallbackSystemPrompt,
-      color: createFallbackColor(agentId),
+      color: fallbackColor,
       createdAt: new Date().toISOString(),
     }
   }
@@ -566,6 +608,9 @@ export function useOperations() {
       const meta = loadAgentMeta(agent.id, {
         description: agent.description,
         systemPrompt: agent.systemPrompt,
+        avatar: agent.avatar,
+        emoji: agent.emoji,
+        color: agent.color,
       })
       const agentSessions = getAgentSessions(agent.id, sessions)
       const latestSession = agentSessions[0] ?? null

@@ -320,19 +320,36 @@ export function OperationsAgentCard({
             strokeWidth={2.5}
             className={status.ring}
           />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <PixelAvatar
-              size={40}
-              color={agent.meta.color}
-              accentColor="#ffffff"
-              status={
-                agent.status === 'error'
-                  ? 'failed'
-                  : agent.status === 'active'
-                    ? 'running'
-                    : 'idle'
-              }
-            />
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full p-1">
+            {agent.meta.avatar && agent.meta.avatar !== 'pixel' ? (
+              <img
+                src={agent.meta.avatar}
+                alt={displayName}
+                className="size-full rounded-full object-cover"
+                onError={(e) => {
+                  ;(e.target as HTMLImageElement).src = '/claude-avatar.webp'
+                }}
+              />
+            ) : agent.meta.avatar === 'pixel' ? (
+              <PixelAvatar
+                size={40}
+                color={agent.meta.color}
+                accentColor="#ffffff"
+                status={
+                  agent.status === 'error'
+                    ? 'failed'
+                    : agent.status === 'active'
+                      ? 'running'
+                      : 'idle'
+                }
+              />
+            ) : (
+              <img
+                src="/claude-avatar.webp"
+                alt={displayName}
+                className="size-full rounded-full object-cover"
+              />
+            )}
           </div>
         </div>
 

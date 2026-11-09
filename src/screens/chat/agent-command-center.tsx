@@ -1299,7 +1299,7 @@ export function AgentCommandCenter({
               { to: '/conductor', label: 'Missions', icon: Rocket01Icon },
               {
                 to: '/operations',
-                label: 'Assistants',
+                label: 'Agents',
                 icon: UserMultipleIcon,
               },
               { to: '/tasks', label: 'Kanban', icon: CheckListIcon },

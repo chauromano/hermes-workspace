@@ -11,7 +11,11 @@ export type ProfileSummary = {
   model?: string
   provider?: string
   description?: string
+  soul?: string
   systemPrompt?: string
+  avatar?: string
+  emoji?: string
+  color?: string
   skillCount: number
   sessionCount: number
   hasEnv: boolean
@@ -23,8 +27,15 @@ export type ProfileDetail = {
   path: string
   active: boolean
   config: Record<string, unknown>
+  profileMeta?: Record<string, unknown>
   description: string
+  soul: string
   systemPrompt: string
+  memory: string
+  userContext: string
+  avatar?: string
+  emoji?: string
+  color?: string
   envPath?: string
   hasEnv: boolean
   sessionsDir?: string
@@ -157,14 +168,76 @@ function latestMtime(paths: Array<string>): string | undefined {
   return latest > 0 ? new Date(latest).toISOString() : undefined
 }
 
-function extractDescription(config: Record<string, unknown>): string {
+function readProfileMetaYaml(profilePath: string): Record<string, unknown> {
+  const profileYamlPath = path.join(profilePath, 'profile.yaml')
+  return readYamlConfig(profileYamlPath)
+}
+
+function extractDescription(
+  config: Record<string, unknown>,
+  profileMeta?: Record<string, unknown>,
+): string {
+  if (profileMeta && typeof profileMeta.description === 'string' && profileMeta.description.trim()) {
+    return profileMeta.description.trim()
+  }
+
   const direct = config.description
-  if (typeof direct === 'string') return direct.trim()
+  if (typeof direct === 'string' && direct.trim()) return direct.trim()
 
   const metadata = config.metadata
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     const nested = (metadata as Record<string, unknown>).description
-    if (typeof nested === 'string') return nested.trim()
+    if (typeof nested === 'string' && nested.trim()) return nested.trim()
+  }
+
+  return ''
+}
+
+function extractAvatarMeta(
+  profileMeta: Record<string, unknown>,
+  config: Record<string, unknown>,
+): { avatar?: string; emoji?: string; color?: string } {
+  const avatar =
+    typeof profileMeta.avatar === 'string' && profileMeta.avatar.trim()
+      ? profileMeta.avatar.trim()
+      : typeof config.avatar === 'string' && config.avatar.trim()
+        ? config.avatar.trim()
+        : undefined
+
+  const emoji =
+    typeof profileMeta.emoji === 'string' && profileMeta.emoji.trim()
+      ? profileMeta.emoji.trim()
+      : typeof config.emoji === 'string' && config.emoji.trim()
+        ? config.emoji.trim()
+        : undefined
+
+  const color =
+    typeof profileMeta.color === 'string' && profileMeta.color.trim()
+      ? profileMeta.color.trim()
+      : typeof config.color === 'string' && config.color.trim()
+        ? config.color.trim()
+        : undefined
+
+  return { avatar, emoji, color }
+}
+
+function extractSoul(
+  config: Record<string, unknown>,
+  profilePath: string,
+): string {
+  const soulPath = path.join(profilePath, 'SOUL.md')
+  if (fs.existsSync(soulPath)) {
+    try {
+      const text = safeReadText(soulPath).trim()
+      if (text) return text
+    } catch {
+      // ignore
+    }
+  }
+
+  const configured = config.system_prompt
+  if (typeof configured === 'string' && configured.trim()) {
+    return configured.trim()
   }
 
   return ''
@@ -174,19 +247,32 @@ function extractSystemPrompt(
   config: Record<string, unknown>,
   profilePath: string,
 ): string {
-  const configured = config.system_prompt
-  if (typeof configured === 'string' && configured.trim()) {
-    return configured.trim()
+  return extractSoul(config, profilePath)
+}
+
+function readMemoryFile(
+  profilePath: string,
+  filename: 'MEMORY.md' | 'USER.md',
+): string {
+  const subPath = path.join(profilePath, 'memories', filename)
+  if (fs.existsSync(subPath)) {
+    try {
+      return safeReadText(subPath).trim()
+    } catch {
+      // ignore
+    }
   }
 
-  const soulPath = path.join(profilePath, 'SOUL.md')
-  if (!fs.existsSync(soulPath)) return ''
-
-  try {
-    return safeReadText(soulPath).trim()
-  } catch {
-    return ''
+  const rootPath = path.join(profilePath, filename)
+  if (fs.existsSync(rootPath)) {
+    try {
+      return safeReadText(rootPath).trim()
+    } catch {
+      // ignore
+    }
   }
+
+  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +490,8 @@ export function listProfiles(): Array<ProfileSummary> {
       const skillsDir = path.join(profilePath, 'skills')
       const sessionsDir = path.join(profilePath, 'sessions')
       const config = readYamlConfig(configPath)
+      const profileMeta = readProfileMetaYaml(profilePath)
+      const { avatar, emoji, color } = extractAvatarMeta(profileMeta, config)
       const skillCount = countFilesRecursive(
         skillsDir,
         (full) => path.basename(full) === 'SKILL.md',
@@ -428,6 +516,7 @@ export function listProfiles(): Array<ProfileSummary> {
       if (!providerName && typeof config.provider === 'string') {
         providerName = config.provider
       }
+      const soul = extractSoul(config, profilePath) || undefined
       results.push({
         name,
         path: profilePath,
@@ -435,8 +524,12 @@ export function listProfiles(): Array<ProfileSummary> {
         exists: true,
         model: modelName,
         provider: providerName,
-        description: extractDescription(config) || undefined,
-        systemPrompt: extractSystemPrompt(config, profilePath) || undefined,
+        description: extractDescription(config, profileMeta) || undefined,
+        soul,
+        systemPrompt: soul,
+        avatar,
+        emoji,
+        color,
         skillCount,
         sessionCount,
         hasEnv: fs.existsSync(envPath),
@@ -453,6 +546,8 @@ export function listProfiles(): Array<ProfileSummary> {
 
   const root = getClaudeRoot()
   const config = readYamlConfig(path.join(root, 'config.yaml'))
+  const rootMeta = readProfileMetaYaml(root)
+  const rootAvatarMeta = extractAvatarMeta(rootMeta, config)
   // Resolve model/provider for default profile too
   let defaultModel: string | undefined
   let defaultProvider: string | undefined
@@ -470,6 +565,7 @@ export function listProfiles(): Array<ProfileSummary> {
   if (!defaultProvider && typeof config.provider === 'string') {
     defaultProvider = config.provider
   }
+  const rootSoul = extractSoul(config, root) || undefined
   results.unshift({
     name: 'general',
     path: root,
@@ -477,8 +573,12 @@ export function listProfiles(): Array<ProfileSummary> {
     exists: true,
     model: defaultModel,
     provider: defaultProvider,
-    description: extractDescription(config) || undefined,
-    systemPrompt: extractSystemPrompt(config, root) || undefined,
+    description: extractDescription(config, rootMeta) || undefined,
+    soul: rootSoul,
+    systemPrompt: rootSoul,
+    avatar: rootAvatarMeta.avatar,
+    emoji: rootAvatarMeta.emoji,
+    color: rootAvatarMeta.color,
     skillCount: countFilesRecursive(
       path.join(root, 'skills'),
       (full) => path.basename(full) === 'SKILL.md',
@@ -512,13 +612,26 @@ export function readProfile(name: string): ProfileDetail {
   const sessionsDir = path.join(profilePath, 'sessions')
   const skillsDir = path.join(profilePath, 'skills')
   const config = readYamlConfig(configPath)
+  const profileMeta = readProfileMetaYaml(profilePath)
+  const { avatar, emoji, color } = extractAvatarMeta(profileMeta, config)
+  const soul = extractSoul(config, profilePath)
+  const memory = readMemoryFile(profilePath, 'MEMORY.md')
+  const userContext = readMemoryFile(profilePath, 'USER.md')
+
   return {
     name: normalized,
     path: profilePath,
     active: normalized === active,
     config,
-    description: extractDescription(config),
-    systemPrompt: extractSystemPrompt(config, profilePath),
+    profileMeta,
+    description: extractDescription(config, profileMeta),
+    soul,
+    systemPrompt: soul,
+    memory,
+    userContext,
+    avatar,
+    emoji,
+    color,
     envPath: fs.existsSync(envPath) ? envPath : undefined,
     hasEnv: fs.existsSync(envPath),
     sessionsDir: fs.existsSync(sessionsDir) ? sessionsDir : undefined,
@@ -551,7 +664,16 @@ export function setActiveProfile(name: string): void {
 
 export function createProfile(
   name: string,
-  options?: { cloneFrom?: string; model?: string; provider?: string },
+  options?: {
+    cloneFrom?: string
+    model?: string
+    provider?: string
+    description?: string
+    soul?: string
+    avatar?: string
+    emoji?: string
+    color?: string
+  },
 ): ProfileDetail {
   const normalized = validateProfileName(name)
   const profilePath = path.join(getProfilesRoot(), normalized)
@@ -559,13 +681,17 @@ export function createProfile(
   fs.mkdirSync(profilePath, { recursive: true })
 
   const configPath = path.join(profilePath, 'config.yaml')
+  const envPath = path.join(profilePath, '.env')
+  const soulPath = path.join(profilePath, 'SOUL.md')
+  const profileYamlPath = path.join(profilePath, 'profile.yaml')
+  const memoriesDir = path.join(profilePath, 'memories')
 
   // Clone config from source profile if specified
   if (options?.cloneFrom) {
     const sourceName = validateProfileIdentifier(options.cloneFrom)
     // The 'default' profile lives at ~/.hermes, not ~/.hermes/profiles/default
     const sourceRoot =
-      sourceName === 'default'
+      sourceName === 'default' || sourceName === 'general'
         ? getClaudeRoot()
         : path.join(getProfilesRoot(), sourceName)
     const sourceConfigPath = path.join(sourceRoot, 'config.yaml')
@@ -578,25 +704,92 @@ export function createProfile(
         'utf-8',
       )
     }
+
+    const sourceEnvPath = path.join(sourceRoot, '.env')
+    if (fs.existsSync(sourceEnvPath)) {
+      fs.copyFileSync(sourceEnvPath, envPath)
+    }
+
+    const sourceSoulPath = path.join(sourceRoot, 'SOUL.md')
+    if (fs.existsSync(sourceSoulPath)) {
+      fs.copyFileSync(sourceSoulPath, soulPath)
+    }
+
+    const sourceProfileYaml = path.join(sourceRoot, 'profile.yaml')
+    if (fs.existsSync(sourceProfileYaml)) {
+      fs.copyFileSync(sourceProfileYaml, profileYamlPath)
+    }
+
+    const sourceMemoriesDir = path.join(sourceRoot, 'memories')
+    if (fs.existsSync(sourceMemoriesDir)) {
+      fs.mkdirSync(memoriesDir, { recursive: true })
+      for (const memFile of ['MEMORY.md', 'USER.md']) {
+        const srcF = path.join(sourceMemoriesDir, memFile)
+        if (fs.existsSync(srcF)) {
+          fs.copyFileSync(srcF, path.join(memoriesDir, memFile))
+        }
+      }
+    }
   } else {
     fs.writeFileSync(
       configPath,
       YAML.stringify({ model: '', provider: '' }),
       'utf-8',
     )
+    fs.writeFileSync(
+      envPath,
+      '# Per-profile secrets for this Hermes profile.\n# API keys and tokens set here override the shell environment.\n# Behavioral settings belong in config.yaml, not here.\n',
+      'utf-8',
+    )
+    fs.writeFileSync(
+      soulPath,
+      options?.soul || '# Role & Identity\n',
+      'utf-8',
+    )
+    fs.mkdirSync(memoriesDir, { recursive: true })
+  }
+
+  // Explicit soul override
+  if (options?.soul !== undefined) {
+    fs.writeFileSync(soulPath, options.soul, 'utf-8')
   }
 
   // Override model/provider if specified
   if (options?.model || options?.provider) {
     const config = readYamlConfig(configPath)
-    if (options.model) config.model = options.model
-    if (options.provider) config.provider = options.provider
+    const currentModelObj =
+      config.model && typeof config.model === 'object' && !Array.isArray(config.model)
+        ? (config.model as Record<string, unknown>)
+        : {}
+    const newModelStr = options.model ? options.model.trim() : typeof currentModelObj.default === 'string' ? currentModelObj.default : ''
+    const newProviderStr = options.provider ? options.provider.trim() : (newModelStr.includes('/') ? newModelStr.split('/')[0] : (typeof currentModelObj.provider === 'string' ? currentModelObj.provider : ''))
+
+    config.model = {
+      ...currentModelObj,
+      default: newModelStr,
+      provider: newProviderStr,
+    }
     fs.writeFileSync(configPath, YAML.stringify(config), 'utf-8')
+  }
+
+  // Write profile.yaml metadata if provided
+  if (options?.description !== undefined || options?.avatar !== undefined || options?.emoji !== undefined || options?.color !== undefined) {
+    const currentProfileMeta = readProfileMetaYaml(profilePath)
+    if (options.description !== undefined) currentProfileMeta.description = options.description.trim()
+    if (options.avatar !== undefined) currentProfileMeta.avatar = options.avatar.trim()
+    if (options.emoji !== undefined) currentProfileMeta.emoji = options.emoji.trim()
+    if (options.color !== undefined) currentProfileMeta.color = options.color.trim()
+    fs.writeFileSync(profileYamlPath, YAML.stringify(currentProfileMeta), 'utf-8')
   }
 
   // Create subdirectories
   fs.mkdirSync(path.join(profilePath, 'skills'), { recursive: true })
   fs.mkdirSync(path.join(profilePath, 'sessions'), { recursive: true })
+  fs.mkdirSync(path.join(profilePath, 'memories'), { recursive: true })
+  fs.mkdirSync(path.join(profilePath, 'workspace'), { recursive: true })
+  fs.mkdirSync(path.join(profilePath, 'cron'), { recursive: true })
+  fs.mkdirSync(path.join(profilePath, 'logs'), { recursive: true })
+  fs.mkdirSync(path.join(profilePath, 'plans'), { recursive: true })
 
   return readProfile(normalized)
 }
@@ -618,13 +811,88 @@ export function updateProfileConfig(
   patch: Record<string, unknown>,
 ): ProfileDetail {
   const normalized = name.trim() || 'default'
+  const isDefault = normalized === 'default' || normalized === 'general'
   const profilePath =
-    normalized === 'default'
+    isDefault
       ? getClaudeRoot()
       : path.join(getProfilesRoot(), validateProfileName(normalized))
   if (!fs.existsSync(profilePath)) throw new Error('Profile not found')
   const configPath = path.join(profilePath, 'config.yaml')
   const current = readYamlConfig(configPath)
+  const updates = { ...patch }
+
+  // 1. Handle soul / system_prompt -> write directly to SOUL.md & clear config.system_prompt
+  if ('soul' in updates || 'system_prompt' in updates) {
+    const soulVal = updates.soul !== undefined ? updates.soul : updates.system_prompt
+    const soulText = typeof soulVal === 'string' ? soulVal : ''
+    fs.writeFileSync(path.join(profilePath, 'SOUL.md'), soulText, 'utf-8')
+    delete updates.soul
+    delete updates.system_prompt
+    delete current.system_prompt
+  }
+
+  // 2. Handle memory -> write to memories/MEMORY.md
+  if ('memory' in updates) {
+    const memText = typeof updates.memory === 'string' ? updates.memory : ''
+    const memDir = path.join(profilePath, 'memories')
+    fs.mkdirSync(memDir, { recursive: true })
+    fs.writeFileSync(path.join(memDir, 'MEMORY.md'), memText, 'utf-8')
+    delete updates.memory
+  }
+
+  // 3. Handle userContext -> write to memories/USER.md
+  if ('userContext' in updates) {
+    const userText = typeof updates.userContext === 'string' ? updates.userContext : ''
+    const memDir = path.join(profilePath, 'memories')
+    fs.mkdirSync(memDir, { recursive: true })
+    fs.writeFileSync(path.join(memDir, 'USER.md'), userText, 'utf-8')
+    delete updates.userContext
+  }
+
+  // 4. Handle profile.yaml fields (description, avatar, emoji, color)
+  const metaKeys = ['description', 'avatar', 'emoji', 'color']
+  const hasMetaUpdates = metaKeys.some((k) => k in updates)
+  if (hasMetaUpdates) {
+    const profileYamlPath = path.join(profilePath, 'profile.yaml')
+    const currentMeta = readProfileMetaYaml(profilePath)
+    for (const key of metaKeys) {
+      if (key in updates) {
+        const val = updates[key]
+        if (val === null || val === '') {
+          delete currentMeta[key]
+        } else {
+          currentMeta[key] = typeof val === 'string' ? val.trim() : val
+        }
+        delete updates[key]
+      }
+    }
+    fs.writeFileSync(profileYamlPath, YAML.stringify(currentMeta), 'utf-8')
+  }
+
+  // 5. Handle model & provider in updates without breaking nested model object
+  if ('model' in updates || 'provider' in updates) {
+    const currentModelObj =
+      current.model && typeof current.model === 'object' && !Array.isArray(current.model)
+        ? (current.model as Record<string, unknown>)
+        : {}
+    let modelVal = typeof updates.model === 'string' ? updates.model.trim() : (typeof currentModelObj.default === 'string' ? currentModelObj.default : '')
+    let providerVal = typeof updates.provider === 'string' ? updates.provider.trim() : ''
+
+    if (!providerVal && modelVal.includes('/')) {
+      providerVal = modelVal.split('/')[0]
+    }
+    if (!providerVal && typeof currentModelObj.provider === 'string') {
+      providerVal = currentModelObj.provider
+    }
+
+    current.model = {
+      ...currentModelObj,
+      default: modelVal,
+      ...(providerVal ? { provider: providerVal } : {}),
+    }
+    delete updates.model
+    delete updates.provider
+  }
 
   // Deep merge helper (same logic as claude-config.ts)
   function deepMerge(
@@ -650,7 +918,6 @@ export function updateProfileConfig(
   }
 
   // Handle null values as explicit removals
-  const updates = { ...patch }
   for (const [key, value] of Object.entries(updates)) {
     if (value === null) {
       delete current[key]

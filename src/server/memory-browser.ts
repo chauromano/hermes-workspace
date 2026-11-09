@@ -16,10 +16,18 @@ export type MemorySearchMatch = {
 }
 
 function isBrowserMemoryPath(relativePath: string): boolean {
-  return (
+  if (
     relativePath === 'MEMORY.md' ||
+    relativePath === 'USER.md' ||
+    relativePath === 'SOUL.md' ||
     relativePath.startsWith('memory/') ||
     relativePath.startsWith('memories/')
+  ) {
+    return true
+  }
+  // Also match per-profile SOUL.md, MEMORY.md, USER.md, and memories/
+  return /^profiles\/[^/]+\/(SOUL\.md|MEMORY\.md|USER\.md|memories\/.+\.md)$/i.test(
+    relativePath,
   )
 }
 

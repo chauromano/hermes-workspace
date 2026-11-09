@@ -17,6 +17,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { DialogContent, DialogRoot, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { PixelAvatar } from '@/components/agent-swarm/pixel-avatar'
+import { UnifiedProfileSettingsModal } from '@/components/profile-settings/unified-profile-settings-modal'
 import { toast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +30,9 @@ type ProfileSummary = {
   model?: string
   provider?: string
   description?: string
+  avatar?: string
+  emoji?: string
+  color?: string
   skillCount: number
   sessionCount: number
   hasEnv: boolean
@@ -183,8 +188,14 @@ export function ProfilesScreen() {
   }, [createOpen, wizardStep, allModels.length, fetchAllModels])
 
   useEffect(() => {
-    setDescriptionDraft(detailQuery.data?.profile?.description ?? '')
-  }, [detailQuery.data?.profile?.description, detailsName])
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const configureParam = params.get('configure')
+      if (configureParam) {
+        setDetailsName(configureParam)
+      }
+    }
+  }, [])
 
   const nameValid =
     /^[A-Za-z0-9_-]+$/.test(newProfileName.trim()) &&
@@ -351,21 +362,30 @@ export function ProfilesScreen() {
                         : 'bg-gradient-to-br from-primary-200 to-primary-300 dark:from-neutral-700 dark:to-neutral-600',
                     )}
                   >
-                    <img
-                      src="/claude-avatar.webp"
-                      alt={profile.name}
-                      className={cn(
-                        'size-20 rounded-full border-2 object-cover',
-                        profile.active
-                          ? 'border-white dark:border-neutral-950'
-                          : 'border-primary-50 dark:border-neutral-950',
-                      )}
-                      style={{
-                        filter: profile.active
-                          ? 'none'
-                          : 'grayscale(0.5) brightness(0.9)',
-                      }}
-                    />
+                    {profile.avatar === 'pixel' ? (
+                      <div className="flex size-20 items-center justify-center rounded-full bg-white dark:bg-neutral-900 border-2 border-primary-50 dark:border-neutral-950">
+                        <PixelAvatar size={48} color={profile.color || '#6366f1'} />
+                      </div>
+                    ) : (
+                      <img
+                        src={profile.avatar || '/claude-avatar.webp'}
+                        alt={profile.name}
+                        className={cn(
+                          'size-20 rounded-full border-2 object-cover',
+                          profile.active
+                            ? 'border-white dark:border-neutral-950'
+                            : 'border-primary-50 dark:border-neutral-950',
+                        )}
+                        style={{
+                          filter: profile.active
+                            ? 'none'
+                            : 'grayscale(0.5) brightness(0.9)',
+                        }}
+                        onError={(e) => {
+                          ;(e.target as HTMLImageElement).src = '/claude-avatar.webp'
+                        }}
+                      />
+                    )}
                   </div>
                   {profile.active && (
                     <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full border-2 border-white bg-emerald-500 px-2 py-0.5 dark:border-neutral-950">
@@ -856,140 +876,22 @@ export function ProfilesScreen() {
         </DialogContent>
       </DialogRoot>
 
-      <DialogRoot
+      <UnifiedProfileSettingsModal
         open={Boolean(detailsName)}
-        onOpenChange={(open) => !open && setDetailsName(null)}
-      >
-        <DialogContent className="w-[min(640px,94vw)] max-w-none p-0 max-h-[85vh] flex flex-col">
-          {/* Header */}
-          <div className="shrink-0 border-b border-primary-200 px-6 pb-4 pt-5 dark:border-neutral-800">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <img
-                  src="/claude-avatar.webp"
-                  alt={detailsName || ''}
-                  className="size-12 rounded-full border-2 border-primary-200 object-cover dark:border-neutral-700"
-                />
-                <div className="min-w-0">
-                  <DialogTitle className="text-base font-semibold">
-                    {detailsName}
-                  </DialogTitle>
-                  <p className="mt-0.5 text-xs text-primary-500 dark:text-neutral-400">
-                    Profile details &amp; configuration
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void detailQuery.refetch()}
-                disabled={detailQuery.isFetching}
-              >
-                {detailQuery.isFetching ? 'Refreshing…' : 'Refresh'}
-              </Button>
-            </div>
-          </div>
-
-          {/* Body — scrollable */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            {detailQuery.data?.profile ? (
-              <div className="space-y-4 text-sm">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <DetailField
-                    label="Name"
-                    value={detailQuery.data.profile.name}
-                  />
-                  <DetailField
-                    label="Active"
-                    value={detailQuery.data.profile.active ? 'Yes' : 'No'}
-                    accent={detailQuery.data.profile.active}
-                  />
-                </div>
-                <DetailField
-                  label="Path"
-                  value={detailQuery.data.profile.path}
-                  mono
-                />
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <DetailField
-                    label="Env file"
-                    value={detailQuery.data.profile.envPath || 'Not set'}
-                    mono
-                    muted={!detailQuery.data.profile.envPath}
-                  />
-                  <DetailField
-                    label="Sessions"
-                    value={detailQuery.data.profile.sessionsDir || 'Not set'}
-                    mono
-                    muted={!detailQuery.data.profile.sessionsDir}
-                  />
-                  <DetailField
-                    label="Skills"
-                    value={detailQuery.data.profile.skillsDir || 'Not set'}
-                    mono
-                    muted={!detailQuery.data.profile.skillsDir}
-                  />
-                </div>
-                <div className="rounded-xl border border-primary-200 bg-primary-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400">
-                      Description
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => void handleSaveDescription()}
-                      disabled={savingDescription}
-                    >
-                      {savingDescription ? 'Saving…' : 'Save'}
-                    </Button>
-                  </div>
-                  <textarea
-                    value={descriptionDraft}
-                    onChange={(event) => setDescriptionDraft(event.target.value)}
-                    placeholder="What this profile is for, how it should behave, or what makes it different"
-                    className="min-h-[96px] w-full rounded-lg border border-primary-200 bg-primary-100/70 p-3 text-sm text-primary-900 outline-none transition-colors focus:border-accent-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-                  />
-                  <p className="mt-2 text-xs text-primary-400 dark:text-neutral-500">
-                    Saved into the profile config, so manual file edits show up here after refresh.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-primary-200 bg-primary-50/80 p-4 dark:border-neutral-800 dark:bg-neutral-900/60">
-                  <div className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400">
-                    <HugeiconsIcon
-                      icon={Key01Icon}
-                      size={14}
-                      strokeWidth={1.8}
-                    />{' '}
-                    Config
-                  </div>
-                  <pre className="max-h-48 overflow-auto rounded-lg border border-primary-200 bg-primary-100/70 p-3 text-xs leading-relaxed text-primary-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-                    {JSON.stringify(detailQuery.data.profile.config, null, 2)}
-                  </pre>
-                </div>
-              </div>
-            ) : detailQuery.isLoading ? (
-              <div className="flex min-h-[120px] items-center justify-center text-sm text-primary-500 dark:text-neutral-400">
-                Loading profile\u2026
-              </div>
-            ) : (
-              <div className="flex min-h-[120px] items-center justify-center text-sm text-red-500">
-                Failed to load profile.
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="shrink-0 flex justify-end border-t border-primary-200 px-6 py-3 dark:border-neutral-800">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDetailsName(null)}
-            >
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </DialogRoot>
+        profileName={detailsName}
+        onClose={() => setDetailsName(null)}
+        onSaved={async () => {
+          await refreshProfiles()
+        }}
+        onDeleted={async () => {
+          setDetailsName(null)
+          await refreshProfiles()
+        }}
+        onRenamed={async () => {
+          setDetailsName(null)
+          await refreshProfiles()
+        }}
+      />
     </div>
   )
 }
