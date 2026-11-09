@@ -188,6 +188,7 @@ type SwarmRosterWorker = {
   capabilities?: Array<string>
   defaultCwd?: string
   preferredTaskTypes?: Array<string>
+  greenlightRequiredFor?: Array<string>
   maxConcurrentTasks?: number
   acceptsBroadcast?: boolean
   reviewRequired?: boolean
@@ -693,6 +694,8 @@ type ControlPlaneStageProps = {
   onClearFocusedRuntimeWorker: () => void
   onStartAgentSession: (workerId: string) => void
   onScrollTmuxSession: (workerId: string, direction: 'up' | 'down', session?: string | null) => void
+  onSavedRoster?: () => void
+  projectId?: string | null
 }
 
 function ControlPlaneStage({
@@ -730,6 +733,8 @@ function ControlPlaneStage({
   onClearFocusedRuntimeWorker,
   onStartAgentSession,
   onScrollTmuxSession,
+  onSavedRoster,
+  projectId,
 }: ControlPlaneStageProps) {
   const stageRef = useRef<HTMLDivElement | null>(null)
   const anchorRef = useRef<HTMLDivElement | null>(null)
@@ -858,6 +863,8 @@ function ControlPlaneStage({
                       onToggleRoom={() => onToggleRoom(member.id)}
                       onOpenTui={() => onOpenTui(member.id)}
                       onOpenTasks={() => onOpenTasks(member.id)}
+                      onSavedRoster={onSavedRoster}
+                      projectId={projectId}
                     />
                   )
                 })
@@ -1170,6 +1177,9 @@ export function Swarm2Screen() {
         mission: roster?.mission,
         skills: roster?.skills ?? [],
         capabilities: roster?.capabilities ?? [],
+        preferredTaskTypes: roster?.preferredTaskTypes ?? [],
+        greenlightRequiredFor: roster?.greenlightRequiredFor ?? [],
+        reviewRequired: Boolean(roster?.reviewRequired),
         model: roster?.model || member.model,
       }
     })
@@ -1190,6 +1200,9 @@ export function Swarm2Screen() {
         mission: worker.mission,
         skills: worker.skills ?? [],
         capabilities: worker.capabilities ?? [],
+        preferredTaskTypes: worker.preferredTaskTypes ?? [],
+        greenlightRequiredFor: worker.greenlightRequiredFor ?? [],
+        reviewRequired: Boolean(worker.reviewRequired),
         lastSessionTitle: worker.mission || null,
         lastSessionAt: null,
         sessionCount: 0,
@@ -1445,7 +1458,7 @@ export function Swarm2Screen() {
   }
 
   function openAddSwarm() {
-    const existingIds = new Set((rosterQuery.data ?? []).map((worker) => worker.id))
+    const existingIds = new Set((rosterQuery.data?.roster?.workers ?? []).map((worker) => worker.id))
     let next = 13
     while (existingIds.has(`swarm${next}`)) next += 1
     setNewWorkerId(`swarm${next}`)
@@ -1715,6 +1728,7 @@ export function Swarm2Screen() {
             onClearFocusedRuntimeWorker={() => setFocusedRuntimeWorkerId(null)}
             onStartAgentSession={(workerId) => { void startAgentSession(workerId) }}
             onScrollTmuxSession={(workerId, direction, session) => { void scrollTmuxSession(workerId, direction, session) }}
+            onSavedRoster={() => { void rosterQuery.refetch() }}
           />
         </div>
 

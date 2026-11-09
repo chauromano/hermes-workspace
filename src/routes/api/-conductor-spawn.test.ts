@@ -115,6 +115,83 @@ describe('native Conductor fallback', () => {
     expect(assignments[1].task).toContain('Lane: Summarizer / Note Synthesizer.')
   })
 
+  it('routes to best matching squad workers and appends reviewer when worker is review-gated', () => {
+    const squad = [
+      {
+        id: 'dev',
+        name: 'Dev',
+        role: 'Full-Stack Developer',
+        specialty: 'React and API code',
+        model: 'Worker',
+        mission: 'Write code',
+        skills: [],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: ['code', 'build'],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: true,
+      },
+      {
+        id: 'researcher',
+        name: 'Researcher',
+        role: 'Research Agent',
+        specialty: 'Web and academic search',
+        model: 'Worker',
+        mission: 'Research stuff',
+        skills: [],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: ['research'],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: false,
+      },
+      {
+        id: 'reviewer',
+        name: 'Reviewer',
+        role: 'Code Reviewer',
+        specialty: 'Security and regression review',
+        model: 'Worker',
+        mission: 'Review diffs',
+        skills: [],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: ['review', 'security'],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: false,
+      },
+    ]
+
+    const assignments = buildNativeConductorAssignments('Implement a new React UI component and fix button styles', {
+      maxParallel: 2,
+      supervised: false,
+      rosterWorkers: squad,
+    })
+
+    // 'dev' has highest score for code/ui. Since dev has reviewRequired: true and maxParallel=2,
+    // reviewer should be auto-included as the 2nd lane.
+    expect(assignments.map((a) => a.workerId)).toEqual(['dev', 'reviewer'])
+    expect(assignments[0].reviewRequired).toBe(true)
+    expect(assignments[1].reviewRequired).toBe(false)
+  })
+
   it('normalizes native swarm missions into the Conductor mission status contract', () => {
     const mission: SwarmMission = {
       id: 'conductor-test',

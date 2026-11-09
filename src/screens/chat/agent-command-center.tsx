@@ -9,8 +9,10 @@ import {
   CheckListIcon,
   Clock01Icon,
   EyeIcon,
+  Folder01Icon,
   PinIcon,
   PlusSignIcon,
+  Rocket01Icon,
   Search01Icon,
   UserGroupIcon,
   UserMultipleIcon,
@@ -23,6 +25,7 @@ import type {
 import type { ClaudeTask } from '@/lib/tasks-api'
 import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { useOperations } from '@/screens/agents/hooks/use-operations'
+import { useProjects } from '@/hooks/use-projects'
 import { useHarnessVisibility } from '@/screens/chat/harness-visibility'
 import { fetchTasks } from '@/lib/tasks-api'
 import { fetchSessions } from '@/lib/gateway-api'
@@ -248,12 +251,15 @@ export function AgentCommandCenter({
 }: AgentCommandCenterProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { activeProject } = useProjects()
   const [showHiddenHarnesses, setShowHiddenHarnesses] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
   const [sessionSearch, setSessionSearch] = useState('')
+  const [projectOnlySessions, setProjectOnlySessions] = useState(false)
   const { hiddenIds, hiddenSet, toggleHarness, showAllHarnesses } =
     useHarnessVisibility()
   const operations = useOperations()
+
   const runtimesQuery = useQuery({
     queryKey: ['external-harnesses'],
     queryFn: fetchExternalRuntimes,
@@ -276,6 +282,39 @@ export function AgentCommandCenter({
     refetchInterval: 15_000,
   })
 
+  const rosterQuery = useQuery({
+    queryKey: ['swarm2', 'roster', activeProject?.id],
+    queryFn: async () => {
+      const url = activeProject?.id
+        ? `/api/swarm-roster?projectId=${encodeURIComponent(activeProject.id)}`
+        : '/api/swarm-roster'
+      const res = await fetch(url)
+      if (!res.ok) return null
+      return res.json()
+    },
+    refetchInterval: 30_000,
+  })
+
+  const missionsQuery = useQuery({
+    queryKey: ['command-center-missions'],
+    queryFn: async () => {
+      const res = await fetch('/api/swarm-missions?limit=10')
+      if (!res.ok) return []
+      return res.json()
+    },
+    refetchInterval: 15_000,
+  })
+
+  const swarmRuntimeQuery = useQuery({
+    queryKey: ['command-center-swarm-runtime'],
+    queryFn: async () => {
+      const res = await fetch('/api/swarm-runtime')
+      if (!res.ok) return { entries: [] }
+      return res.json()
+    },
+    refetchInterval: 10_000,
+  })
+
   const runtimes = runtimesQuery.data?.runtimes ?? []
   const visibleRuntimes = runtimes.filter(
     (runtime) => !hiddenSet.has(runtime.id),
@@ -292,6 +331,39 @@ export function AgentCommandCenter({
         (conversation) => conversation.runtimeId === selectedRuntimeId,
       )
     : conversations
+
+  const swarmWorkers: Array<any> = rosterQuery.data?.roster?.workers ?? []
+  const swarmScope: string = rosterQuery.data?.scope ?? 'global'
+  const swarmMissions: Array<any> = Array.isArray(missionsQuery.data) ? missionsQuery.data : []
+  const swarmEntries: Array<any> = Array.isArray(swarmRuntimeQuery.data?.entries)
+    ? swarmRuntimeQuery.data.entries
+    : []
+
+  const activeMissions = swarmMissions.filter(
+    (m) => m.state === 'executing' || m.state === 'running',
+  )
+  const waitingMissions = swarmMissions.filter(
+    (m) =>
+      m.state === 'blocked' ||
+      m.state === 'needs_input' ||
+      m.assignments?.some(
+        (a: any) =>
+          a.state === 'blocked' ||
+          a.checkpoint?.checkpointStatus === 'needs_input' ||
+          a.checkpoint?.checkpointStatus === 'blocked',
+      ),
+  )
+
+  const activeSwarmWorkers = swarmEntries.filter(
+    (e) => e.state === 'executing' || e.state === 'thinking' || e.state === 'writing',
+  )
+  const waitingSwarmWorkers = swarmEntries.filter(
+    (e) =>
+      e.state === 'waiting' ||
+      e.state === 'blocked' ||
+      e.checkpointStatus === 'needs_input' ||
+      e.checkpointStatus === 'blocked',
+  )
 
   const blockedTasks = tasks.filter(
     (task) => task.column === 'blocked' || task.column === 'review',
@@ -356,11 +428,17 @@ export function AgentCommandCenter({
   const workingCount =
     activeTasks.length +
     processingConversations.length +
-    activeNativeAgents.length
+    activeNativeAgents.length +
+    activeMissions.length +
+    activeSwarmWorkers.length
+
   const waitingCount =
     blockedTasks.length +
     pendingConversations.length +
-    agentsNeedingSetup.length
+    agentsNeedingSetup.length +
+    waitingMissions.length +
+    waitingSwarmWorkers.length
+
   const nativeSessions = sessionsQuery.data?.sessions ?? []
   const { pinnedSessionKeys, togglePinnedSession } = usePinnedSessions()
   const pinnedKeySet = useMemo(
@@ -403,10 +481,20 @@ export function AgentCommandCenter({
     return [...pinned, ...unpinned]
   }, [nativeSessions, isSessionPinned])
 
+  const sessionsMatchingProject = useMemo(() => {
+    if (!projectOnlySessions || !activeProject) return sortedNativeSessions
+    return sortedNativeSessions.filter(
+      (s) =>
+        s.projectName === activeProject.name ||
+        s.projectId === activeProject.id ||
+        (s as any).project_id === activeProject.id,
+    )
+  }, [sortedNativeSessions, projectOnlySessions, activeProject])
+
   const filteredNativeSessions = useMemo(() => {
     const q = sessionSearch.trim().toLowerCase()
-    if (!q) return sortedNativeSessions
-    return sortedNativeSessions.filter((s) => {
+    if (!q) return sessionsMatchingProject
+    return sessionsMatchingProject.filter((s) => {
       const title = (
         s.title ||
         s.derivedTitle ||
@@ -417,7 +505,7 @@ export function AgentCommandCenter({
       const model = typeof s.model === 'string' ? s.model.toLowerCase() : ''
       return title.includes(q) || key.includes(q) || model.includes(q)
     })
-  }, [sortedNativeSessions, sessionSearch])
+  }, [sessionsMatchingProject, sessionSearch])
 
   const { pinnedSessions, unpinnedSessions } = useMemo(() => {
     const pinned: Array<GatewaySession> = []
@@ -458,9 +546,25 @@ export function AgentCommandCenter({
       <div className="mx-auto w-full max-w-[1180px] min-w-0 px-3 pb-24 pt-4 sm:px-4 sm:pt-6 md:px-7 md:pt-9">
         <header className="flex flex-col gap-4 border-b border-primary-200 pb-5 sm:pb-6 md:flex-row md:items-end md:justify-between min-w-0">
           <div className="min-w-0 flex-1">
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-primary-500">
-              <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
-              Live workspace
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-primary-500">
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-700">
+                <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
+                Live workspace
+              </span>
+              <Link
+                to="/projects"
+                className="flex items-center gap-1.5 rounded-full border border-primary-200 bg-surface px-2 py-0.5 text-primary-700 hover:border-accent-400 hover:text-accent-700 transition-colors"
+                title="Switch or view projects"
+              >
+                <HugeiconsIcon icon={Folder01Icon} size={12} />
+                <span>{activeProject ? activeProject.name : 'All Projects'}</span>
+              </Link>
+              <span className="flex items-center gap-1 rounded-full border border-primary-200 bg-surface px-2 py-0.5 text-primary-600">
+                <HugeiconsIcon icon={UserGroupIcon} size={12} />
+                <span>
+                  {swarmScope === 'project' ? 'Project Swarm' : 'Global Swarm'} · {swarmWorkers.length} agents
+                </span>
+              </span>
             </div>
             <h1 className="truncate text-xl sm:text-2xl font-semibold tracking-tight text-primary-950">
               {selectedRuntime
@@ -474,6 +578,14 @@ export function AgentCommandCenter({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => navigate({ to: '/conductor' })}
+              className="border-accent-300 text-accent-700 hover:bg-accent-50"
+            >
+              <HugeiconsIcon icon={Rocket01Icon} size={16} />
+              Launch Mission
+            </Button>
             {selectedRuntime ? (
               <Button
                 onClick={() => newExternalSession.mutate(selectedRuntime.id)}
@@ -528,108 +640,202 @@ export function AgentCommandCenter({
 
         {!selectedRuntime && (
           <section className="mb-4 w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-primary-200 bg-primary-50/70 p-3 sm:p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2 px-1 pb-2 min-w-0">
+            <div className="flex items-center justify-between gap-2 px-1 pb-2.5 min-w-0">
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-primary-900">
-                  Agents
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-primary-900">
+                    Active Squad
+                  </h2>
+                  <span className="rounded-full bg-accent-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-700">
+                    {swarmScope === 'project' ? 'Project Roster' : 'Global Roster'}
+                  </span>
+                </div>
                 <p className="truncate text-xs text-primary-500">
-                  Pick a harness or open the full roster.
+                  {swarmWorkers.length > 0
+                    ? `${swarmWorkers.length} specialists active in ${swarmScope === 'project' ? activeProject?.name || 'project' : 'global scope'}`
+                    : 'Pick a harness or open the full roster.'}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <Link
+                  to="/swarm"
+                  className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
+                >
+                  Open Swarm Studio →
+                </Link>
+              </div>
+            </div>
+
+            {/* Squad Members Grid */}
+            {swarmWorkers.length > 0 && (
+              <div className="grid w-full min-w-0 max-w-full gap-2 sm:grid-cols-2 lg:grid-cols-3 mb-3">
+                {swarmWorkers.slice(0, 6).map((worker: any) => {
+                  const entry = swarmEntries.find((e) => e.workerId === worker.id)
+                  const isBusy = entry && (entry.state === 'executing' || entry.state === 'thinking' || entry.state === 'writing')
+                  const isBlocked = entry && (entry.state === 'blocked' || entry.checkpointStatus === 'blocked')
+                  const isWaiting = entry && (entry.state === 'waiting' || entry.checkpointStatus === 'needs_input')
+
+                  const safetyMode = (worker.greenlightRequiredFor && worker.greenlightRequiredFor.length > 0)
+                    ? 'approval'
+                    : worker.reviewRequired
+                      ? 'review'
+                      : 'autonomous'
+
+                  return (
+                    <Link
+                      key={worker.id}
+                      to="/swarm"
+                      className="group flex flex-col justify-between rounded-xl border border-primary-200 bg-surface p-2.5 transition-all hover:border-accent-300 hover:bg-primary-50 hover:shadow-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={cn(
+                                'size-2 shrink-0 rounded-full',
+                                isBusy
+                                  ? 'animate-pulse bg-emerald-500'
+                                  : isBlocked
+                                    ? 'bg-rose-500'
+                                    : isWaiting
+                                      ? 'bg-amber-400'
+                                      : 'bg-primary-300',
+                              )}
+                            />
+                            <span className="truncate text-xs font-semibold text-primary-950">
+                              {worker.name || worker.id}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 truncate text-[11px] text-primary-500">
+                            {worker.role || 'Worker'}
+                            {worker.specialty ? ` · ${worker.specialty}` : ''}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider border',
+                            safetyMode === 'autonomous'
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                              : safetyMode === 'review'
+                                ? 'border-amber-500/30 bg-amber-500/10 text-amber-700'
+                                : 'border-rose-500/30 bg-rose-500/10 text-rose-700',
+                          )}
+                        >
+                          {safetyMode === 'autonomous' ? '🟢 Auto' : safetyMode === 'review' ? '🟡 Review' : '🔴 Approval'}
+                        </span>
+                      </div>
+                      {worker.preferredTaskTypes && worker.preferredTaskTypes.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
+                          {worker.preferredTaskTypes.slice(0, 3).map((tag: string) => (
+                            <span
+                              key={tag}
+                              className="rounded-md bg-primary-100/70 px-1.5 py-0.2 text-[9px] text-primary-600"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Harnesses row */}
+            <div className="border-t border-primary-200/80 pt-2.5">
+              <div className="flex items-center justify-between gap-2 px-1 pb-2">
+                <span className="text-[11px] font-medium text-primary-500">Connected Harnesses & CLI</span>
                 {hiddenIds.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setShowHiddenHarnesses((value) => !value)}
-                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-primary-500 hover:bg-primary-100 hover:text-primary-800"
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-xs text-primary-500 hover:bg-primary-100 hover:text-primary-800"
                   >
-                    <HugeiconsIcon icon={ViewOffIcon} size={14} />
+                    <HugeiconsIcon icon={ViewOffIcon} size={13} />
                     {hiddenIds.length} hidden
                   </button>
                 )}
-                <Link
-                  to="/operations"
-                  className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
-                >
-                  Manage assistants
-                </Link>
               </div>
-            </div>
-            <div className="grid w-full min-w-0 max-w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {!nativeHermesHidden && (
-                <div className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100">
-                  <Link
-                    to="/chat/$sessionKey"
-                    params={{ sessionKey: sortedNativeSessions[0]?.friendlyId || 'new' }}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 px-3 py-3 overflow-hidden"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600">
-                      <HugeiconsIcon icon={Chat01Icon} size={18} />
-                    </span>
-                    <span className="min-w-0 flex-1 overflow-hidden">
-                      <span className="block truncate text-sm font-medium">Hermes</span>
-                      <span className="block truncate text-xs text-primary-500">
-                        Native workspace · {nativeSessions.length} sessions
-                      </span>
-                    </span>
-                    <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => toggleHarness('hermes-native')}
-                    className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
-                    aria-label="Hide native Hermes"
-                    title="Hide harness"
-                  >
-                    <HugeiconsIcon icon={EyeIcon} size={16} />
-                  </button>
-                </div>
-              )}
-              {visibleRuntimes.map((runtime) => {
-                const sessionCount = conversations.filter(
-                  (conversation) => conversation.runtimeId === runtime.id,
-                ).length
-                return (
-                  <div
-                    key={runtime.id}
-                    className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100"
-                  >
+              <div className="grid w-full min-w-0 max-w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {!nativeHermesHidden && (
+                  <div className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100">
                     <Link
-                      to="/chat/harness/$runtimeId"
-                      params={{ runtimeId: runtime.id }}
-                      className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3 px-3 py-3 overflow-hidden"
+                      to="/chat/$sessionKey"
+                      params={{ sessionKey: sortedNativeSessions[0]?.friendlyId || 'new' }}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 overflow-hidden"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
-                        <HugeiconsIcon icon={UserMultipleIcon} size={18} />
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-500/10 text-accent-600">
+                        <HugeiconsIcon icon={Chat01Icon} size={15} />
                       </span>
                       <span className="min-w-0 flex-1 overflow-hidden">
-                        <span className="block truncate text-sm font-medium">
-                          {runtimeLabel(runtime)}
-                        </span>
-                        <span className="block truncate text-xs text-primary-500">
-                          {runtime.backend} · {sessionCount} sessions
+                        <span className="block truncate text-xs font-medium">Hermes</span>
+                        <span className="block truncate text-[10px] text-primary-500">
+                          Native · {nativeSessions.length} sessions
                         </span>
                       </span>
-                      <span
-                        className={cn(
-                          'size-2 shrink-0 rounded-full',
-                          runtimeStatusClass(runtime.status),
-                        )}
-                      />
+                      <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                     </Link>
                     <button
                       type="button"
-                      onClick={() => toggleHarness(runtime.id)}
-                      className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
-                      aria-label={`Hide ${runtimeLabel(runtime)}`}
+                      onClick={() => toggleHarness('hermes-native')}
+                      className="mr-2 flex size-6 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
+                      aria-label="Hide native Hermes"
                       title="Hide harness"
                     >
-                      <HugeiconsIcon icon={EyeIcon} size={16} />
+                      <HugeiconsIcon icon={EyeIcon} size={14} />
                     </button>
                   </div>
-                )
-              })}
+                )}
+                {visibleRuntimes.map((runtime) => {
+                  const sessionCount = conversations.filter(
+                    (conversation) => conversation.runtimeId === runtime.id,
+                  ).length
+                  return (
+                    <div
+                      key={runtime.id}
+                      className="group flex w-full min-w-0 max-w-full items-center rounded-xl border border-primary-200 bg-surface transition-colors hover:bg-primary-100"
+                    >
+                      <Link
+                        to="/chat/harness/$runtimeId"
+                        params={{ runtimeId: runtime.id }}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 overflow-hidden"
+                      >
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
+                          <HugeiconsIcon icon={UserMultipleIcon} size={15} />
+                        </span>
+                        <span className="min-w-0 flex-1 overflow-hidden">
+                          <span className="block truncate text-xs font-medium">
+                            {runtimeLabel(runtime)}
+                          </span>
+                          <span className="block truncate text-[10px] text-primary-500">
+                            {runtime.model
+                              ? `${formatModelName(runtime.model)} · `
+                              : ''}
+                            {sessionCount}{' '}
+                            {sessionCount === 1 ? 'session' : 'sessions'}
+                          </span>
+                        </span>
+                        <span
+                          className={cn(
+                            'size-2 shrink-0 rounded-full',
+                            runtimeStatusClass(runtime.status),
+                          )}
+                        />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => toggleHarness(runtime.id)}
+                        className="mr-2 flex size-6 shrink-0 items-center justify-center rounded-lg text-primary-300 opacity-0 transition-opacity hover:bg-primary-200 hover:text-primary-700 group-hover:opacity-100 focus:opacity-100"
+                        aria-label={`Hide ${runtimeLabel(runtime)}`}
+                        title="Hide harness"
+                      >
+                        <HugeiconsIcon icon={EyeIcon} size={14} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
             {showHiddenHarnesses && hiddenIds.length > 0 && (
               <div className="mt-3 rounded-xl border border-dashed border-primary-200 bg-primary-100/40 p-2">
@@ -697,15 +903,45 @@ export function AgentCommandCenter({
               title="Recent sessions"
               subtitle="Past and active sessions across this workspace."
               action={
-                nativeSessions.length > 0 ? (
-                  <Link
-                    to="/chat/$sessionKey"
-                    params={{ sessionKey: 'new' }}
-                    className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
-                  >
-                    + New session
-                  </Link>
-                ) : undefined
+                <div className="flex items-center gap-2">
+                  {activeProject && (
+                    <div className="inline-flex rounded-lg border border-primary-200 bg-surface p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setProjectOnlySessions(false)}
+                        className={cn(
+                          'rounded-md px-2 py-0.5 font-medium transition-colors',
+                          !projectOnlySessions
+                            ? 'bg-accent-500 text-white shadow-xs'
+                            : 'text-primary-600 hover:text-primary-950',
+                        )}
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProjectOnlySessions(true)}
+                        className={cn(
+                          'rounded-md px-2 py-0.5 font-medium transition-colors',
+                          projectOnlySessions
+                            ? 'bg-accent-500 text-white shadow-xs'
+                            : 'text-primary-600 hover:text-primary-950',
+                        )}
+                      >
+                        {activeProject.name}
+                      </button>
+                    </div>
+                  )}
+                  {nativeSessions.length > 0 && (
+                    <Link
+                      to="/chat/$sessionKey"
+                      params={{ sessionKey: 'new' }}
+                      className="whitespace-nowrap text-xs font-medium text-accent-600 hover:text-accent-700"
+                    >
+                      + New
+                    </Link>
+                  )}
+                </div>
               }
             >
               {nativeSessions.length > 0 && (
@@ -829,10 +1065,44 @@ export function AgentCommandCenter({
 
           <SectionCard
             title="Working now"
-            subtitle="Active agents and tasks across the workspace."
+            subtitle="Active agents, missions, and tasks across the workspace."
           >
-            {activeTasks.length || processingConversations.length ? (
+            {activeTasks.length || processingConversations.length || activeMissions.length || activeSwarmWorkers.length ? (
               <div className="space-y-1">
+                {activeMissions.map((mission: any) => (
+                  <Link
+                    key={mission.id}
+                    to="/conductor"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
+                  >
+                    <HugeiconsIcon
+                      icon={Rocket01Icon}
+                      size={17}
+                      className="shrink-0 text-accent-600 animate-pulse"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary-900">
+                      Mission: {mission.title}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-accent-500/10 px-2 py-0.5 text-[10px] font-semibold text-accent-700 uppercase">
+                      Executing
+                    </span>
+                  </Link>
+                ))}
+                {activeSwarmWorkers.map((worker: any) => (
+                  <Link
+                    key={worker.workerId}
+                    to="/swarm"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
+                  >
+                    <span className="size-2 shrink-0 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-primary-800">
+                      <span className="font-medium text-primary-900">{worker.displayName || worker.workerId}</span>: {worker.currentTask || worker.phase || 'Working'}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-primary-400 capitalize">
+                      {worker.state}
+                    </span>
+                  </Link>
+                ))}
                 {processingConversations.slice(0, 4).map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
@@ -863,16 +1133,50 @@ export function AgentCommandCenter({
                 ))}
               </div>
             ) : (
-              <EmptyRow>Nothing is running right now.</EmptyRow>
+              <EmptyRow>All systems idle. Ready for dispatch.</EmptyRow>
             )}
           </SectionCard>
 
           <SectionCard
             title="Needs you"
-            subtitle="Reviews, approvals, blockers, and setup issues."
+            subtitle="Approvals, reviews, and blocked items requiring human greenlight."
           >
             {waitingCount ? (
               <div className="space-y-1">
+                {waitingMissions.map((mission: any) => (
+                  <Link
+                    key={mission.id}
+                    to="/conductor"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
+                  >
+                    <HugeiconsIcon
+                      icon={Rocket01Icon}
+                      size={17}
+                      className="shrink-0 text-amber-500"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-primary-900">
+                      Mission awaiting input: {mission.title}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 uppercase">
+                      Action needed
+                    </span>
+                  </Link>
+                ))}
+                {waitingSwarmWorkers.map((worker: any) => (
+                  <Link
+                    key={worker.workerId}
+                    to="/swarm"
+                    className="flex w-full min-w-0 max-w-full items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-primary-100 overflow-hidden"
+                  >
+                    <span className="size-2 shrink-0 rounded-full bg-amber-400" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-primary-800">
+                      <span className="font-medium text-primary-900">{worker.displayName || worker.workerId}</span>: {worker.blockedReason || 'Awaiting approval / greenlight'}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-semibold text-amber-600">
+                      {worker.checkpointStatus || worker.state}
+                    </span>
+                  </Link>
+                ))}
                 {pendingConversations.slice(0, 3).map((conversation) => (
                   <ConversationRow
                     key={conversation.id}
@@ -990,7 +1294,7 @@ export function AgentCommandCenter({
         </div>
 
         {!selectedRuntime && (
-          <nav className="mt-5 grid w-full min-w-0 max-w-full grid-cols-3 gap-2">
+          <nav className="mt-5 grid w-full min-w-0 max-w-full grid-cols-2 sm:grid-cols-5 gap-2">
             {[
               {
                 to: '/operations',
@@ -998,7 +1302,9 @@ export function AgentCommandCenter({
                 icon: UserMultipleIcon,
               },
               { to: '/tasks', label: 'Tasks', icon: CheckListIcon },
-              { to: '/swarm', label: 'Swarm', icon: UserGroupIcon },
+              { to: '/swarm', label: 'Swarm Studio', icon: UserGroupIcon },
+              { to: '/conductor', label: 'Missions', icon: Rocket01Icon },
+              { to: '/projects', label: 'Projects', icon: Folder01Icon },
             ].map((item) => (
               <Link
                 key={item.label}

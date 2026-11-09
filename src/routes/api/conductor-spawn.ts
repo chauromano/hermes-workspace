@@ -155,27 +155,86 @@ export function buildNativeConductorAssignments(
   )
 
   if (customWorkers.length > 0) {
-    const selectedWorkers = customWorkers.slice(0, maxParallel)
-    return selectedWorkers.map((worker) => ({
-      workerId: worker.id,
-      rationale:
-        worker.mission ||
-        `${worker.name || worker.id} (${worker.role || 'Worker'}) owns ${worker.specialty || 'assigned execution'}.`,
-      reviewRequired: Boolean(worker.reviewRequired),
-      direct: true,
-      task: [
-        `Conductor mission: ${goal}`,
-        '',
-        `Lane: ${worker.name || worker.id} / ${worker.role || 'Specialist'}.`,
-        worker.specialty ? `Specialty focus: ${worker.specialty}.` : '',
-        worker.mission || 'Execute your part of the mission safely, make concrete progress, and produce a checkpoint.',
-        options.supervised
-          ? 'Supervised mode: stop before destructive writes or commits and report the exact approval needed.'
-          : 'Do not ask for confirmation unless blocked; start immediately.',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    }))
+    const normalizedGoal = goal.toLowerCase()
+    const wantsOps = /production|ready|harden|audit|clean|fix|bug|test|build|release|deploy|operational|runtime|gateway|tmux|service|health|docker|nas/.test(normalizedGoal)
+    const wantsDocs = /doc|handoff|readme|spec|plan|summary|knowledge|note|vault|obsidian|curate|distill/.test(normalizedGoal)
+    const wantsResearch = /research|investigate|compare|explore|find|analyze|study/.test(normalizedGoal)
+    const wantsReview = /review|security|verify|qa|check|regression/.test(normalizedGoal)
+    const wantsCode = /code|implement|feature|ui|component|refactor|api|prototype|build|create/.test(normalizedGoal)
+
+    const scoredWorkers = customWorkers.map((worker, originalIndex) => {
+      let score = 0
+      const taskTypes = (worker.preferredTaskTypes ?? []).map((t) => t.toLowerCase())
+      const roleLower = (worker.role || '').toLowerCase()
+      const specialtyLower = (worker.specialty || '').toLowerCase()
+
+      const checkMatch = (flag: boolean, terms: string[]) => {
+        if (!flag) return
+        for (const term of terms) {
+          if (taskTypes.some((t) => t.includes(term))) score += 3
+          if (roleLower.includes(term) || specialtyLower.includes(term)) score += 2
+        }
+      }
+
+      checkMatch(wantsOps, ['ops', 'infra', 'deploy', 'runtime', 'docker', 'health'])
+      checkMatch(wantsDocs, ['docs', 'knowledge', 'curat', 'distill', 'summary', 'vault', 'note'])
+      checkMatch(wantsResearch, ['research', 'analysis', 'discovery'])
+      checkMatch(wantsReview, ['review', 'qa', 'security', 'audit'])
+      checkMatch(wantsCode, ['code', 'build', 'implement', 'fix', 'prototype'])
+
+      return { worker, score, originalIndex }
+    })
+
+    scoredWorkers.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score
+      return a.originalIndex - b.originalIndex
+    })
+
+    const selectedWorkers = scoredWorkers.slice(0, maxParallel).map((item) => item.worker)
+
+    // Automatic Review Gate Support: if reviewRequired is true on any selected worker and maxParallel >= 2,
+    // ensure a reviewer is in the lanes
+    const hasReviewGatedWorker = selectedWorkers.some((w) => w.reviewRequired)
+    const hasReviewer = selectedWorkers.some(
+      (w) => w.id === 'reviewer' || (w.preferredTaskTypes ?? []).some((t) => t.toLowerCase().includes('review')),
+    )
+    if (hasReviewGatedWorker && !hasReviewer && maxParallel >= 2) {
+      const candidateReviewer = customWorkers.find(
+        (w) => w.id === 'reviewer' || (w.preferredTaskTypes ?? []).some((t) => t.toLowerCase().includes('review')),
+      )
+      if (candidateReviewer) {
+        selectedWorkers[selectedWorkers.length - 1] = candidateReviewer
+      }
+    }
+
+    return selectedWorkers.map((worker) => {
+      const greenlightNote =
+        worker.greenlightRequiredFor && worker.greenlightRequiredFor.length > 0
+          ? `Greenlight gate: stop and request human approval before: ${worker.greenlightRequiredFor.join(', ')}.`
+          : ''
+
+      return {
+        workerId: worker.id,
+        rationale:
+          worker.mission ||
+          `${worker.name || worker.id} (${worker.role || 'Worker'}) owns ${worker.specialty || 'assigned execution'}.`,
+        reviewRequired: Boolean(worker.reviewRequired),
+        direct: true,
+        task: [
+          `Conductor mission: ${goal}`,
+          '',
+          `Lane: ${worker.name || worker.id} / ${worker.role || 'Specialist'}.`,
+          worker.specialty ? `Specialty focus: ${worker.specialty}.` : '',
+          worker.mission || 'Execute your part of the mission safely, make concrete progress, and produce a checkpoint.',
+          options.supervised
+            ? 'Supervised mode: stop before destructive writes or commits and report the exact approval needed.'
+            : 'Do not ask for confirmation unless blocked; start immediately.',
+          greenlightNote,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      }
+    })
   }
 
   const normalizedGoal = goal.toLowerCase()
@@ -342,12 +401,12 @@ function createNativeConductorMission(input: {
   maxParallel: number
   supervised: boolean
 }) {
-  const swarmStatus = getProjectSwarmStatus()
-  const customRoster = swarmStatus.hasProjectRoster ? readSwarmRoster().workers : undefined
+  const activeWorkers = readSwarmRoster().workers
+  const rosterWorkers = activeWorkers.length > 0 ? activeWorkers : undefined
   const assignments = buildNativeConductorAssignments(input.goal, {
     maxParallel: input.maxParallel,
     supervised: input.supervised,
-    rosterWorkers: customRoster,
+    rosterWorkers,
   })
   const missionTitle = `Conductor: ${clipText(input.goal, 120)}`
   void dispatchSwarmAssignments({

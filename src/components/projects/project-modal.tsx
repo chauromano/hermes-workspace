@@ -50,6 +50,21 @@ function autoSlug(text: string): string {
     .slice(0, 64)
 }
 
+type SafetyMode = 'autonomous' | 'review' | 'approval'
+const TASK_TAG_OPTIONS = ['code', 'research', 'docs', 'review', 'ops', 'design'] as const
+
+function inferSafetyMode(w: { greenlightRequiredFor?: string[]; reviewRequired?: boolean }): SafetyMode {
+  if ((w.greenlightRequiredFor?.length ?? 0) > 0) return 'approval'
+  if (w.reviewRequired) return 'review'
+  return 'autonomous'
+}
+
+function nextSafetyMode(current: SafetyMode): SafetyMode {
+  if (current === 'autonomous') return 'review'
+  if (current === 'review') return 'approval'
+  return 'autonomous'
+}
+
 export function ProjectModal({
   open,
   onOpenChange,
@@ -86,6 +101,8 @@ export function ProjectModal({
       skills?: string[]
       enabled: boolean
       isCustom?: boolean
+      safetyMode: SafetyMode
+      preferredTaskTypes: string[]
     }>
   >([])
   const [isAddingSpecialist, setIsAddingSpecialist] = useState(false)
@@ -93,6 +110,8 @@ export function ProjectModal({
   const [specialistRole, setSpecialistRole] = useState('')
   const [specialistSpecialty, setSpecialistSpecialty] = useState('')
   const [specialistModel, setSpecialistModel] = useState('')
+  const [specialistSafetyMode, setSpecialistSafetyMode] = useState<SafetyMode>('autonomous')
+  const [specialistTags, setSpecialistTags] = useState<string[]>([])
   const [specialistError, setSpecialistError] = useState<string | null>(null)
 
   const { projects: existingProjects } = useProjects({ includeArchived: true })
@@ -139,6 +158,8 @@ export function ProjectModal({
     setSpecialistRole('')
     setSpecialistSpecialty('')
     setSpecialistModel('')
+    setSpecialistSafetyMode('autonomous')
+    setSpecialistTags([])
     setSpecialistError(null)
   }, [project])
 
@@ -170,6 +191,8 @@ export function ProjectModal({
             skills: w.skills || [],
             enabled: true,
             isCustom: !globalWorkers.some((gw: any) => gw.id === w.id),
+            safetyMode: inferSafetyMode(w),
+            preferredTaskTypes: Array.isArray(w.preferredTaskTypes) ? w.preferredTaskTypes : [],
           })
         }
         // Add remaining global workers as unselected if in project mode
@@ -185,6 +208,8 @@ export function ProjectModal({
             skills: gw.skills || [],
             enabled: !data.hasProjectRoster,
             isCustom: false,
+            safetyMode: inferSafetyMode(gw),
+            preferredTaskTypes: Array.isArray(gw.preferredTaskTypes) ? gw.preferredTaskTypes : [],
           })
         }
         setProjectWorkers(combined)
@@ -324,7 +349,18 @@ export function ProjectModal({
       if (targetProjectId) {
         try {
           if (enableCustomSwarm) {
-            const enabledWorkers = projectWorkers.filter((w) => w.enabled)
+            const enabledWorkers = projectWorkers.filter((w) => w.enabled).map((w) => ({
+              id: w.id,
+              name: w.name,
+              role: w.role,
+              specialty: w.specialty,
+              model: w.model,
+              mission: w.mission,
+              skills: w.skills ?? [],
+              preferredTaskTypes: w.preferredTaskTypes ?? [],
+              reviewRequired: w.safetyMode !== 'autonomous',
+              greenlightRequiredFor: w.safetyMode === 'approval' ? ['destructive', 'merge', 'publish'] : [],
+            }))
             await fetch('/api/swarm-roster', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -586,7 +622,7 @@ export function ProjectModal({
                     />
                     <Button
                       type="button"
-                      size="xs"
+                      size="sm"
                       variant="default"
                       disabled={createFolder.isPending || !newFolderName.trim()}
                       onClick={() => handleCreateFolder()}
@@ -600,7 +636,7 @@ export function ProjectModal({
                     </Button>
                     <Button
                       type="button"
-                      size="xs"
+                      size="sm"
                       variant="ghost"
                       onClick={() => {
                         setIsCreatingFolder(false)
@@ -821,6 +857,57 @@ export function ProjectModal({
                       </div>
                     </div>
 
+                    {/* Safety Mode Selector */}
+                    <div className="flex items-center gap-1.5 text-[11px] pt-0.5">
+                      <span className="text-[var(--theme-muted)] text-[10px]">Safety:</span>
+                      {(['autonomous', 'review', 'approval'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setSpecialistSafetyMode(mode)}
+                          className={cn(
+                            'px-2 py-0.5 rounded text-[10px] font-medium transition-colors border',
+                            specialistSafetyMode === mode
+                              ? mode === 'autonomous'
+                                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
+                                : mode === 'review'
+                                  ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40'
+                                  : 'bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40'
+                              : 'bg-[var(--theme-bg)] text-[var(--theme-muted)] border-[var(--theme-border)] opacity-60 hover:opacity-100',
+                          )}
+                        >
+                          {mode === 'autonomous' ? '🟢 Auto' : mode === 'review' ? '🟡 Review' : '🔴 Approval'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Task Affinity Tags */}
+                    <div className="flex flex-wrap items-center gap-1 text-[10px] pt-0.5">
+                      <span className="text-[var(--theme-muted)]">Affinity:</span>
+                      {TASK_TAG_OPTIONS.map((tag) => {
+                        const isSelected = specialistTags.includes(tag)
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setSpecialistTags((prev) =>
+                                isSelected ? prev.filter((t) => t !== tag) : [...prev, tag],
+                              )
+                            }}
+                            className={cn(
+                              'px-1.5 py-0.5 rounded transition-colors',
+                              isSelected
+                                ? 'bg-accent-500/20 text-accent-700 dark:text-accent-300 font-medium'
+                                : 'bg-[var(--theme-bg)] text-[var(--theme-muted)] hover:text-[var(--theme-text)] border border-[var(--theme-border)]',
+                            )}
+                          >
+                            {tag}
+                          </button>
+                        )
+                      })}
+                    </div>
+
                     {specialistError && (
                       <div className="text-[10px] text-red-500 font-medium">
                         {specialistError}
@@ -830,7 +917,7 @@ export function ProjectModal({
                     <div className="flex items-center justify-end gap-1.5 pt-1">
                       <Button
                         type="button"
-                        size="xs"
+                        size="sm"
                         variant="default"
                         onClick={() => {
                           if (!specialistName.trim()) {
@@ -853,6 +940,8 @@ export function ProjectModal({
                               mission: `Specialist for ${specialistName.trim()}`,
                               enabled: true,
                               isCustom: true,
+                              safetyMode: specialistSafetyMode,
+                              preferredTaskTypes: specialistTags,
                             },
                           ])
                           setIsAddingSpecialist(false)
@@ -860,6 +949,8 @@ export function ProjectModal({
                           setSpecialistRole('')
                           setSpecialistSpecialty('')
                           setSpecialistModel('')
+                          setSpecialistSafetyMode('autonomous')
+                          setSpecialistTags([])
                           setSpecialistError(null)
                         }}
                         className="bg-accent-600 hover:bg-accent-700 text-white text-[11px] px-2.5 py-1 h-auto"
@@ -868,7 +959,7 @@ export function ProjectModal({
                       </Button>
                       <Button
                         type="button"
-                        size="xs"
+                        size="sm"
                         variant="ghost"
                         onClick={() => {
                           setIsAddingSpecialist(false)
@@ -929,19 +1020,54 @@ export function ProjectModal({
                           </div>
                         </div>
 
-                        {worker.isCustom && (
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          {worker.preferredTaskTypes && worker.preferredTaskTypes.length > 0 && (
+                            <div className="hidden sm:flex items-center gap-1">
+                              {worker.preferredTaskTypes.slice(0, 2).map((tag) => (
+                                <span key={tag} className="text-[9px] px-1 py-0.2 rounded bg-[var(--theme-bg)] text-[var(--theme-muted)] border border-[var(--theme-border)]">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                           <button
                             type="button"
+                            title={`Safety Mode: ${worker.safetyMode} (click to cycle: Auto -> Review -> Approval)`}
                             onClick={() => {
                               hapticTap()
-                              setProjectWorkers((prev) => prev.filter((w) => w.id !== worker.id))
+                              setProjectWorkers((prev) =>
+                                prev.map((w) =>
+                                  w.id === worker.id ? { ...w, safetyMode: nextSafetyMode(w.safetyMode) } : w,
+                                ),
+                              )
                             }}
-                            className="p-1 text-[var(--theme-muted)] hover:text-red-500 rounded transition-colors ml-1"
-                            title="Remove specialist"
+                            className={cn(
+                              'text-[10px] font-medium px-1.5 py-0.5 rounded border transition-colors',
+                              worker.safetyMode === 'autonomous'
+                                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                                : worker.safetyMode === 'review'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                                  : 'bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30',
+                            )}
                           >
-                            <HugeiconsIcon icon={Delete02Icon} size={13} />
+                            {worker.safetyMode === 'autonomous' ? '🟢 Auto' : worker.safetyMode === 'review' ? '🟡 Review' : '🔴 Approval'}
                           </button>
-                        )}
+
+                          {worker.isCustom && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                hapticTap()
+                                setProjectWorkers((prev) => prev.filter((w) => w.id !== worker.id))
+                              }}
+                              className="p-1 text-[var(--theme-muted)] hover:text-red-500 rounded transition-colors"
+                              title="Remove specialist"
+                            >
+                              <HugeiconsIcon icon={Delete02Icon} size={13} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}

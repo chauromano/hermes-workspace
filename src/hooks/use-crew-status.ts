@@ -15,6 +15,9 @@ export type CrewMember = {
   mission?: string
   skills?: Array<string>
   capabilities?: Array<string>
+  preferredTaskTypes?: Array<string>
+  greenlightRequiredFor?: Array<string>
+  reviewRequired?: boolean
   profileFound: boolean
   gatewayState: 'running' | 'stopped' | 'unknown' | string
   processAlive: boolean

@@ -209,6 +209,7 @@ const MODEL_OPTIONS = [
   'Worker',
 ]
 const AVATAR_OPTIONS = ['','🤖','🧠','🛠️','📊','🧪','📝','⚙️','🔬','🚀']
+const TASK_TAG_OPTIONS = ['code', 'research', 'docs', 'review', 'ops', 'design']
 
 export type OperationalWorkerCardProps = {
   member: CrewMember
@@ -226,6 +227,8 @@ export type OperationalWorkerCardProps = {
   onToggleRoom: () => void
   onOpenTui: () => void
   onOpenTasks: () => void
+  onSavedRoster?: () => void
+  projectId?: string | null
   cardRef?: (node: HTMLElement | null) => void
 }
 
@@ -244,6 +247,8 @@ export function OperationalWorkerCard({
   onToggleRoom,
   onOpenTui,
   onOpenTasks,
+  onSavedRoster,
+  projectId = null,
   cardRef,
 }: OperationalWorkerCardProps) {
   const chatAnchorRef = useRef<HTMLDivElement | null>(null)
@@ -253,11 +258,21 @@ export function OperationalWorkerCard({
   const [draftRole, setDraftRole] = useState('')
   const [draftModel, setDraftModel] = useState('')
   const [draftAvatar, setDraftAvatar] = useState('')
+  const [draftSpecialty, setDraftSpecialty] = useState('')
+  const [draftSafetyMode, setDraftSafetyMode] = useState<'autonomous' | 'review' | 'approval'>('autonomous')
+  const [draftTags, setDraftTags] = useState<string[]>([])
+  const [isSavingRoster, setIsSavingRoster] = useState(false)
   const [taskComposerOpen, setTaskComposerOpen] = useState(false)
   const state = deriveWorkerState(member, currentTask, checkpointStatus, runtimeState)
   const status = statusStyles(state)
   const role = settings.role || member.role || roleFromId(member.id)
   const displayName = settings.displayName || member.displayName || member.id
+
+  const safetyMode = useMemo<'autonomous' | 'review' | 'approval'>(() => {
+    if (member.greenlightRequiredFor && member.greenlightRequiredFor.length > 0) return 'approval'
+    if (member.reviewRequired) return 'review'
+    return 'autonomous'
+  }, [member.reviewRequired, member.greenlightRequiredFor])
 
   // Reuse the project endpoint so artifacts can fall back to git-changed files
   // and so the inline preview gets a verified URL.
@@ -345,7 +360,26 @@ export function OperationalWorkerCard({
     setDraftRole(settings.role || member.role || roleFromId(member.id))
     setDraftModel(settings.modelLabel || baseModelLabel)
     setDraftAvatar(settings.avatarGlyph || '')
-  }, [settingsOpen, settings, member.displayName, member.role, member.id, baseModelLabel])
+    setDraftSpecialty(member.specialty || '')
+    const mode = (member.greenlightRequiredFor && member.greenlightRequiredFor.length > 0)
+      ? 'approval'
+      : member.reviewRequired
+        ? 'review'
+        : 'autonomous'
+    setDraftSafetyMode(mode)
+    setDraftTags(member.preferredTaskTypes ?? [])
+  }, [
+    settingsOpen,
+    settings,
+    member.displayName,
+    member.role,
+    member.id,
+    baseModelLabel,
+    member.specialty,
+    member.reviewRequired,
+    member.greenlightRequiredFor,
+    member.preferredTaskTypes,
+  ])
 
   useEffect(() => {
     if (!selected) return
@@ -416,7 +450,20 @@ export function OperationalWorkerCard({
           </h3>
         </div>
 
-        <div className="order-3 ml-auto flex min-w-0 max-w-[9rem] items-center gap-1 md:absolute md:right-0 md:order-none md:ml-0">
+        <div className="order-3 ml-auto flex min-w-0 max-w-[13rem] items-center gap-1 md:absolute md:right-0 md:order-none md:ml-0">
+          <span
+            className={cn(
+              'rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.1em] border',
+              safetyMode === 'autonomous'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                : safetyMode === 'review'
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+            )}
+            title={`Safety Mode: ${safetyMode === 'autonomous' ? 'Autonomous' : safetyMode === 'review' ? 'Review Required' : 'Approval Required'}`}
+          >
+            {safetyMode === 'autonomous' ? '🟢 Auto' : safetyMode === 'review' ? '🟡 Review' : '🔴 Approval'}
+          </span>
           <span
             className="min-w-0 truncate rounded-full border border-[var(--theme-accent)]/30 bg-[var(--theme-accent-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--theme-muted)]"
             title={role}
@@ -435,7 +482,6 @@ export function OperationalWorkerCard({
           >
             <HugeiconsIcon icon={Settings01Icon} size={16} strokeWidth={1.8} />
           </button>
-
         </div>
       </div>
 
@@ -458,7 +504,18 @@ export function OperationalWorkerCard({
           </div>
         </div>
 
-
+        {member.preferredTaskTypes && member.preferredTaskTypes.length > 0 ? (
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-1">
+            {member.preferredTaskTypes.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-[var(--theme-border)] bg-[var(--theme-bg)] px-1.5 py-0.5 text-[9px] text-[var(--theme-muted)]"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {!member.profileFound ? (
@@ -648,34 +705,102 @@ export function OperationalWorkerCard({
                   ))}
                 </select>
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="mb-1 block text-[var(--theme-muted)]">Role</span>
+                  <select
+                    value={draftRole}
+                    onChange={(event) => setDraftRole(event.target.value)}
+                    className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-[var(--theme-text)] outline-none"
+                  >
+                    {Array.from(new Set([draftRole || member.role || roleFromId(member.id), ...ROLE_OPTIONS].filter(Boolean))).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[var(--theme-muted)]">Model label</span>
+                  <select
+                    value={draftModel}
+                    onChange={(event) => setDraftModel(event.target.value)}
+                    className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-[var(--theme-text)] outline-none"
+                  >
+                    {Array.from(new Set([draftModel || baseModelLabel, ...MODEL_OPTIONS].filter(Boolean))).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
               <label className="block">
-                <span className="mb-1 block text-[var(--theme-muted)]">Role</span>
-                <select
-                  value={draftRole}
-                  onChange={(event) => setDraftRole(event.target.value)}
+                <span className="mb-1 block text-[var(--theme-muted)]">Specialty</span>
+                <input
+                  value={draftSpecialty}
+                  onChange={(event) => setDraftSpecialty(event.target.value)}
                   className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-[var(--theme-text)] outline-none"
-                >
-                  {Array.from(new Set([draftRole || member.role || roleFromId(member.id), ...ROLE_OPTIONS].filter(Boolean))).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="e.g. Systems architecture, security audits"
+                />
               </label>
-              <label className="block">
-                <span className="mb-1 block text-[var(--theme-muted)]">Model label</span>
-                <select
-                  value={draftModel}
-                  onChange={(event) => setDraftModel(event.target.value)}
-                  className="w-full rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3 py-2 text-[var(--theme-text)] outline-none"
-                >
-                  {Array.from(new Set([draftModel || baseModelLabel, ...MODEL_OPTIONS].filter(Boolean))).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
+
+              <div>
+                <span className="mb-1 block text-[var(--theme-muted)]">Safety Mode</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      { id: 'autonomous', label: '🟢 Auto', desc: 'No review' },
+                      { id: 'review', label: '🟡 Review', desc: 'Review gate' },
+                      { id: 'approval', label: '🔴 Approval', desc: 'Greenlight gate' },
+                    ] as const
+                  ).map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setDraftSafetyMode(mode.id)}
+                      className={cn(
+                        'flex flex-col items-center justify-center rounded-xl border px-2 py-1.5 text-center transition-all',
+                        draftSafetyMode === mode.id
+                          ? 'border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] text-[var(--theme-text)] font-semibold'
+                          : 'border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-muted)] hover:border-[var(--theme-border2)]',
+                      )}
+                    >
+                      <span className="text-[11px]">{mode.label}</span>
+                      <span className="text-[9px] opacity-75">{mode.desc}</span>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
+
+              <div>
+                <span className="mb-1 block text-[var(--theme-muted)]">Task Affinity Tags</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {TASK_TAG_OPTIONS.map((tag) => {
+                    const active = draftTags.includes(tag)
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setDraftTags((prev) =>
+                            active ? prev.filter((t) => t !== tag) : [...prev, tag],
+                          )
+                        }}
+                        className={cn(
+                          'rounded-full px-2.5 py-0.5 text-[10px] font-medium border transition-colors',
+                          active
+                            ? 'border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] text-[var(--theme-text)]'
+                            : 'border-[var(--theme-border)] bg-[var(--theme-bg)] text-[var(--theme-muted)] hover:border-[var(--theme-border2)]',
+                        )}
+                      >
+                        #{tag}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               <button
@@ -704,8 +829,9 @@ export function OperationalWorkerCard({
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl bg-[var(--theme-accent)] px-3 py-2 text-[11px] font-semibold text-primary-950 hover:bg-[var(--theme-accent-strong)]"
-                  onClick={() => {
+                  disabled={isSavingRoster}
+                  className="rounded-xl bg-[var(--theme-accent)] px-3 py-2 text-[11px] font-semibold text-primary-950 hover:bg-[var(--theme-accent-strong)] disabled:opacity-50"
+                  onClick={async () => {
                     const next: WorkerCardSettings = {
                       displayName: draftName.trim() || undefined,
                       avatarGlyph: draftAvatar.trim() || undefined,
@@ -718,10 +844,36 @@ export function OperationalWorkerCard({
                     } catch {
                       /* noop */
                     }
-                    setSettingsOpen(false)
+                    setIsSavingRoster(true)
+                    try {
+                      const payload = {
+                        id: member.id,
+                        name: draftName.trim() || member.displayName || member.id,
+                        role: draftRole.trim() || member.role || 'Worker',
+                        specialty: draftSpecialty.trim(),
+                        model: draftModel.trim() || member.model || 'Worker',
+                        mission: member.mission || 'Awaiting orchestrator dispatch.',
+                        preferredTaskTypes: draftTags,
+                        reviewRequired: draftSafetyMode === 'review' || draftSafetyMode === 'approval',
+                        greenlightRequiredFor: draftSafetyMode === 'approval' ? ['*'] : [],
+                        skills: member.skills ?? [],
+                        ...(projectId ? { projectId } : {}),
+                      }
+                      await fetch('/api/swarm-roster', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                      })
+                      onSavedRoster?.()
+                    } catch (err) {
+                      console.error('Failed to update worker roster:', err)
+                    } finally {
+                      setIsSavingRoster(false)
+                      setSettingsOpen(false)
+                    }
                   }}
                 >
-                  Save
+                  {isSavingRoster ? 'Saving…' : 'Save'}
                 </button>
               </div>
             </div>
