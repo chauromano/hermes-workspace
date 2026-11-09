@@ -6,6 +6,29 @@ import server from './dist/server/server.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const CLIENT_DIR = join(__dirname, 'dist', 'client')
+const SERVER_ENTRY_PATH = join(__dirname, 'dist', 'server', 'server.js')
+
+let activeServer = server
+let activeServerMtimeMs = 0
+
+async function getServerHandler() {
+  try {
+    const st = await stat(SERVER_ENTRY_PATH)
+    if (activeServerMtimeMs === 0) {
+      activeServerMtimeMs = st.mtimeMs
+    } else if (st.mtimeMs > activeServerMtimeMs) {
+      activeServerMtimeMs = st.mtimeMs
+      const mod = await import('./dist/server/server.js?t=' + st.mtimeMs)
+      if (mod?.default) {
+        activeServer = mod.default
+        console.log('[workspace] hot-reloaded SSR bundle (mtime=' + Math.round(st.mtimeMs) + ')')
+      }
+    }
+  } catch {
+    // Keep existing activeServer if a rebuild is mid-write
+  }
+  return activeServer
+}
 
 // Content Security Policy — emitted as an HTTP response header on EVERY
 // response so the policy survives any edge body transformations (e.g.
@@ -233,7 +256,8 @@ async function requestHandler(req, res) {
   })
 
   try {
-    const response = await server.fetch(request)
+    const currentServer = await getServerHandler()
+    const response = await currentServer.fetch(request)
 
     // Merge ALWAYS_HEADERS on top of the SSR-emitted headers. These MUST
     // win — sending them here means the policy is observable even if the

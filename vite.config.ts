@@ -432,6 +432,9 @@ const config = defineConfig(({ mode, command }) => {
   }
 
   return {
+    build: {
+      reportCompressedSize: false,
+    },
     test: {
       exclude: [
         '**/node_modules/**',
