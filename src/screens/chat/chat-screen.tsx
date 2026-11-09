@@ -61,7 +61,6 @@ import { useAutoSessionTitle } from './hooks/use-auto-session-title'
 import { useRenameSession } from './hooks/use-rename-session'
 import { useProjects, useSetActiveProject } from '@/hooks/use-projects'
 import { useContextAlert } from './hooks/use-context-alert'
-import { ContextBar } from './components/context-bar'
 import {
   CHAT_OPEN_SETTINGS_EVENT,
   CHAT_PENDING_COMMAND_STORAGE_KEY,
@@ -2856,17 +2855,6 @@ export function ChatScreen({
           )}
 
           {hideUi ? null : (
-            <ContextBar
-              sessionId={
-                resolvedSessionKey ||
-                activeCanonicalKey ||
-                activeSession?.key ||
-                activeSessionKey
-              }
-            />
-          )}
-
-          {hideUi ? null : (
             <ChatMessageList
               messages={finalDisplayMessages}
               onRetryMessage={handleRetryMessage}
@@ -2876,6 +2864,7 @@ export function ChatScreen({
               emptyState={
                 <ChatEmptyState
                   compact={compact}
+                  model={currentModel}
                   onSuggestionClick={(prompt) => {
                     composerHandleRef.current?.setValue(prompt + ' ')
                   }}

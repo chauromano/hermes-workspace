@@ -600,9 +600,9 @@ function isCurrentModel(
   entryId: string,
   entryProvider: string,
 ): boolean {
-  const cm = currentModel.trim()
-  const eid = entryId.trim()
-  const eprov = entryProvider.trim()
+  const cm = (currentModel || '').trim().toLowerCase()
+  const eid = (entryId || '').trim().toLowerCase()
+  const eprov = (entryProvider || '').trim().toLowerCase()
   if (!cm || !eid) return false
 
   // Exact match (bare ID)
@@ -611,9 +611,17 @@ function isCurrentModel(
   // Current model is "something/<entryId>"
   if (cm.endsWith(`/${eid}`)) return true
 
+  // entryId is "something/<currentModel>"
+  if (eid.endsWith(`/${cm}`)) return true
+
   // Resolved entry key matches current model exactly
   const resolved = eprov ? `${eprov}/${eid}` : eid
   if (resolved === cm) return true
+
+  // Also match stripped model IDs (last segment)
+  const cmBase = cm.includes('/') ? cm.slice(cm.lastIndexOf('/') + 1) : cm
+  const eidBase = eid.includes('/') ? eid.slice(eid.lastIndexOf('/') + 1) : eid
+  if (cmBase === eidBase) return true
 
   return false
 }
@@ -2401,7 +2409,7 @@ function ChatComposerComponent({
               ) : null}
 
               {/* Context window donut meter */}
-              <ContextBar compact sessionId={sessionKey} />
+              <ContextBar compact sessionId={sessionKey} model={modelButtonLabel} />
 
               {/* Right side: stop / send / mic */}
               <div className="shrink-0">
@@ -3332,7 +3340,8 @@ function ChatComposerComponent({
                                         group.push(entry)
                                         unpinnedGroups.set(entry.provider, group)
                                       }
-                                      const activeModelId = persistedSessionModel || currentModel
+                                      const activeModelId =
+                                        persistedSessionModel || currentModel || configuredModel
                                       const isGroupCollapsed = (prov: string, groupList: typeof parsed) => {
                                         if (query) return false
                                         if (collapsedProviders[prov] !== undefined) return collapsedProviders[prov]
@@ -3346,7 +3355,7 @@ function ChatComposerComponent({
                                           entry.provider,
                                         )
                                         return (
-                                          <div key={entry.id} className="group relative flex items-center">
+                                          <div key={entry.id} className="group relative flex items-center mb-0.5">
                                             <button
                                               type="button"
                                               onClick={() => {
@@ -3354,15 +3363,28 @@ function ChatComposerComponent({
                                                 setIsModelMenuOpen(false)
                                                 setModelSearchQuery('')
                                               }}
-                                              className={`flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors rounded-lg ${
+                                              className={cn(
+                                                'flex flex-1 items-center justify-between gap-2 pl-3 pr-7 py-2 text-left text-sm transition-all rounded-lg cursor-pointer',
                                                 isActive
-                                                  ? 'border-l-2 border-accent-500 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium'
-                                                  : 'text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/50'
-                                              }`}
+                                                  ? 'bg-accent-50/90 dark:bg-accent-950/40 text-accent-700 dark:text-accent-300 font-semibold ring-1 ring-accent-500/40'
+                                                  : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800/60',
+                                              )}
                                             >
-                                              <span className="flex-1 truncate">{entry.name}</span>
-                                              {entry.isLocal ? <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700">local</span> : null}
-                                              {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-accent-500" /> : null}
+                                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                <span className="truncate">{entry.name}</span>
+                                                {entry.isLocal ? (
+                                                  <span className="text-[10px] text-neutral-400 px-1.5 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-700 shrink-0">
+                                                    local
+                                                  </span>
+                                                ) : null}
+                                              </div>
+                                              {isActive ? (
+                                                <span className="size-4 rounded-full bg-accent-500 text-white flex items-center justify-center shrink-0">
+                                                  <svg className="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                                    <polyline points="20 6 9 17 4 12" />
+                                                  </svg>
+                                                </span>
+                                              ) : null}
                                             </button>
                                             <button
                                               type="button"
@@ -3446,7 +3468,7 @@ function ChatComposerComponent({
                             )}
                           </div>
                         ) : null}
-                <ContextBar compact sessionId={sessionKey} />
+                <ContextBar compact sessionId={sessionKey} model={modelButtonLabel} />
                 {voiceInput.isSupported || voiceRecorder.isSupported ? (
                   <PromptInputAction
                     tooltip={

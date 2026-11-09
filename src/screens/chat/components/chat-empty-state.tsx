@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { BrainIcon, CodeIcon, PuzzleIcon } from '@hugeicons/core-free-icons'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
+import { formatModelName } from '@/lib/format-model-name'
 
 type ProfileSummary = {
   name: string
@@ -38,11 +39,13 @@ const SUGGESTIONS: Array<SuggestionChip> = [
 type ChatEmptyStateProps = {
   onSuggestionClick?: (prompt: string) => void
   compact?: boolean
+  model?: string
 }
 
 export function ChatEmptyState({
   onSuggestionClick,
   compact = false,
+  model,
 }: ChatEmptyStateProps) {
   const [activeProfile, setActiveProfile] = useState<ProfileSummary | null>(null)
 
@@ -100,7 +103,9 @@ export function ChatEmptyState({
         {activeProfile && (
           <span className="mt-2 text-xs" style={{ color: 'var(--theme-accent)' }}>
             {activeProfile.name}
-            {activeProfile.model ? ` · ${activeProfile.model}` : ''}
+            {model || activeProfile.model
+              ? ` · ${formatModelName(model || activeProfile.model)}`
+              : ''}
           </span>
         )}
 

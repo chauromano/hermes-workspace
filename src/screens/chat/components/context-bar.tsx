@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { formatModelName } from '@/lib/format-model-name'
 import {
   PreviewCard,
   PreviewCardPopup,
@@ -33,9 +34,11 @@ function formatTokens(n: number): string {
 function ContextBarComponent({
   compact = false,
   sessionId,
+  model,
 }: {
   compact?: boolean
   sessionId?: string
+  model?: string
 }) {
   const [ctx, setCtx] = useState<ContextData>(EMPTY)
   const [showLabel, setShowLabel] = useState(false)
@@ -85,9 +88,10 @@ function ContextBarComponent({
 
   const pct = ctx.contextPercent
   const clampedPct = Math.min(Math.max(pct, 0), 100)
+  const activeModel = model || ctx.model
 
   // Hide only before any model/context info has loaded.
-  if (ctx.maxTokens <= 0 && ctx.usedTokens <= 0 && !ctx.model) return null
+  if (ctx.maxTokens <= 0 && ctx.usedTokens <= 0 && !activeModel) return null
   const isCritical = clampedPct > 90
   const isDanger = clampedPct >= 75 && clampedPct <= 90
   const isWarning = clampedPct >= 50 && clampedPct < 75
@@ -207,12 +211,12 @@ function ContextBarComponent({
               <span className="tabular-nums">
                 {formatTokens(ctx.usedTokens)} / {formatTokens(ctx.maxTokens)} tokens
               </span>
-              {ctx.model && (
+              {activeModel && (
                 <span
-                  className="truncate max-w-[100px] font-mono text-[10px]"
-                  title={ctx.model}
+                  className="truncate max-w-[120px] font-medium text-neutral-700 dark:text-neutral-300"
+                  title={activeModel}
                 >
-                  {ctx.model}
+                  {formatModelName(activeModel)}
                 </span>
               )}
             </div>
@@ -315,9 +319,9 @@ function ContextBarComponent({
               {formatTokens(ctx.usedTokens)} / {formatTokens(ctx.maxTokens)}{' '}
               tokens
             </span>
-            {ctx.model && (
-              <span className="text-[10px] text-primary-400 truncate max-w-[100px]">
-                {ctx.model}
+            {activeModel && (
+              <span className="text-[10px] text-primary-400 truncate max-w-[120px] font-medium" title={activeModel}>
+                {formatModelName(activeModel)}
               </span>
             )}
           </div>

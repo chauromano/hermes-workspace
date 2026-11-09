@@ -193,7 +193,7 @@ export function ProjectSessionChip({
               <HugeiconsIcon icon={Folder01Icon} size={14} className="shrink-0 text-[var(--theme-muted)]" />
               <div className="min-w-0 text-left">
                 <span className="truncate block">None</span>
-                <span className="text-[10px] text-[var(--theme-muted)] font-mono block">No project (/workspace)</span>
+                <span className="text-[10px] text-[var(--theme-muted)] block">No project</span>
               </div>
             </div>
             {isPersonalSandbox && (

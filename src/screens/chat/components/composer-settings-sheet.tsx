@@ -250,7 +250,7 @@ export function ComposerSettingsSheet({
                           onClick={() => project.handleSelect(null)}
                           icon={<HugeiconsIcon icon={Folder01Icon} size={16} className="text-neutral-400" />}
                           title="None"
-                          subtitle="No project (/workspace)"
+                          subtitle="No project"
                         />
                         {project.projects.map((proj) => {
                           const selected = project.effectiveProjectId === proj.id
