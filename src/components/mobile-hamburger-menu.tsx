@@ -6,6 +6,8 @@ import {
   Castle02Icon,
   Chat01Icon,
   CheckListIcon,
+  DashboardSquare01Icon,
+  File01Icon,
   Folder01Icon,
   Clock01Icon,
   CommandLineIcon,
@@ -33,13 +35,21 @@ import {
 import { useSettingsStore } from '@/hooks/use-settings'
 import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 
-export const MOBILE_HAMBURGER_NAV_ITEMS = [
+export type MobileNavItemDef = {
+  id: string
+  label: string
+  icon: any
+  to: string
+  match: (p: string) => boolean
+}
+
+export const MOBILE_COMMAND_ITEMS: Array<MobileNavItemDef> = [
   {
-    id: 'chat',
-    label: 'Chat',
-    icon: Chat01Icon,
+    id: 'command',
+    label: 'Command Center',
+    icon: DashboardSquare01Icon,
     to: '/chat',
-    match: (p: string) => p.startsWith('/chat') || p === '/new' || p === '/',
+    match: (p: string) => p === '/chat' || p === '/' || p === '/new',
   },
   {
     id: 'operations',
@@ -56,13 +66,6 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     match: (p: string) => p.startsWith('/tasks'),
   },
   {
-    id: 'projects',
-    label: 'Projects',
-    icon: Folder01Icon,
-    to: '/projects',
-    match: (p: string) => p.startsWith('/projects'),
-  },
-  {
     id: 'swarm',
     label: 'Swarm',
     icon: UserGroupIcon,
@@ -70,11 +73,28 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     match: (p: string) => p === '/swarm' || p.startsWith('/swarm2'),
   },
   {
-    id: 'playground',
-    label: 'HermesWorld',
-    icon: Castle02Icon,
-    to: '/playground',
-    match: (p: string) => p.startsWith('/playground'),
+    id: 'echo-studio',
+    label: 'Echo Studio',
+    icon: Rocket01Icon,
+    to: '/echo-studio',
+    match: (p: string) => p.startsWith('/echo-studio'),
+  },
+]
+
+export const MOBILE_WORKSPACE_ITEMS: Array<MobileNavItemDef> = [
+  {
+    id: 'projects',
+    label: 'Projects',
+    icon: Folder01Icon,
+    to: '/projects',
+    match: (p: string) => p.startsWith('/projects'),
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    icon: File01Icon,
+    to: '/files',
+    match: (p: string) => p.startsWith('/files'),
   },
   {
     id: 'terminal',
@@ -91,12 +111,15 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
     match: (p: string) => p.startsWith('/jobs'),
   },
   {
-    id: 'echo-studio',
-    label: 'Echo Studio',
+    id: 'missions',
+    label: 'Missions',
     icon: Rocket01Icon,
-    to: '/echo-studio',
-    match: (p: string) => p.startsWith('/echo-studio'),
+    to: '/conductor',
+    match: (p: string) => p.startsWith('/conductor'),
   },
+]
+
+export const MOBILE_KNOWLEDGE_ITEMS: Array<MobileNavItemDef> = [
   {
     id: 'memory',
     label: 'Memory',
@@ -121,10 +144,16 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
   {
     id: 'profiles',
     label: 'Profiles',
-    icon: UserGroupIcon,
+    icon: UserMultipleIcon,
     to: '/profiles',
     match: (p: string) => p.startsWith('/profiles'),
   },
+]
+
+export const MOBILE_HAMBURGER_NAV_ITEMS: Array<MobileNavItemDef> = [
+  ...MOBILE_COMMAND_ITEMS,
+  ...MOBILE_WORKSPACE_ITEMS,
+  ...MOBILE_KNOWLEDGE_ITEMS,
 ]
 
 function normalizeLabel(value: string | undefined): string {
@@ -507,11 +536,11 @@ export function MobileHamburgerMenu({
               )}
             >
               <HugeiconsIcon
-                icon={UserMultipleIcon}
+                icon={DashboardSquare01Icon}
                 size={14}
                 strokeWidth={activeTab === 'apps' ? 2 : 1.6}
               />
-              <span>Workspace</span>
+              <span>Tools</span>
             </button>
           </div>
         </div>
@@ -642,43 +671,101 @@ export function MobileHamburgerMenu({
           </div>
         )}
 
-        {/* Content area: Workspace Apps Tab */}
+        {/* Content area: Tools Tab with 3 subsections */}
         {activeTab === 'apps' && (
-          <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 px-3 pt-1">
-            {visibleNavItems.map((item) => {
-              const isActive = item.match(pathname)
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleNav(item.to)}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-left w-full',
-                    'transition-all duration-150 active:scale-[0.98]',
-                  )}
-                  style={
-                    isActive
-                      ? {
-                          background:
-                            'var(--theme-accent-subtle, color-mix(in srgb, var(--theme-accent, #6366f1) 12%, transparent))',
-                          color:
-                            'var(--theme-accent, var(--color-accent, #6366f1))',
-                        }
-                      : {
-                          color:
-                            'var(--theme-muted, var(--color-ink-muted, #555))',
-                        }
-                  }
-                >
-                  <HugeiconsIcon
-                    icon={item.icon}
-                    size={19}
-                    strokeWidth={isActive ? 2 : 1.6}
-                  />
-                  <span className="text-sm font-medium">{item.label}</span>
-                </button>
-              )
-            })}
+          <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 px-3 pt-2 pb-4">
+            {/* Command Section */}
+            <div className="space-y-1">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+                Command
+              </div>
+              {MOBILE_COMMAND_ITEMS.filter((item) => item.id !== 'echo-studio' || echoStudioEnabled).map((item) => {
+                const isActive = item.match(pathname)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNav(item.to)}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
+                      'transition-all duration-150 active:scale-[0.98]',
+                      isActive
+                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
+                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                    )}
+                  >
+                    <HugeiconsIcon
+                      icon={item.icon}
+                      size={18}
+                      strokeWidth={isActive ? 2 : 1.6}
+                    />
+                    <span className="text-sm">{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Workspace Section */}
+            <div className="space-y-1">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+                Workspace
+              </div>
+              {MOBILE_WORKSPACE_ITEMS.map((item) => {
+                const isActive = item.match(pathname)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNav(item.to)}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
+                      'transition-all duration-150 active:scale-[0.98]',
+                      isActive
+                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
+                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                    )}
+                  >
+                    <HugeiconsIcon
+                      icon={item.icon}
+                      size={18}
+                      strokeWidth={isActive ? 2 : 1.6}
+                    />
+                    <span className="text-sm">{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Knowledge Section */}
+            <div className="space-y-1">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+                Knowledge
+              </div>
+              {MOBILE_KNOWLEDGE_ITEMS.map((item) => {
+                const isActive = item.match(pathname)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNav(item.to)}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
+                      'transition-all duration-150 active:scale-[0.98]',
+                      isActive
+                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
+                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                    )}
+                  >
+                    <HugeiconsIcon
+                      icon={item.icon}
+                      size={18}
+                      strokeWidth={isActive ? 2 : 1.6}
+                    />
+                    <span className="text-sm">{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </nav>
         )}
 
