@@ -247,7 +247,7 @@ async function fetchOperationsConfig(): Promise<ConfigPayload> {
   const profiles = await fetchClaudeProfiles()
   const list = profiles.map((profile) => ({
     id: profile.name,
-    name: profile.name === 'default' ? 'Workspace' : profile.name,
+    name: profile.name === 'default' || profile.name === 'general' ? 'general' : profile.name,
     model: profile.model || '',
     workspace: profile.path,
     agentDir: profile.path,

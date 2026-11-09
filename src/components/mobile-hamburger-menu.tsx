@@ -64,7 +64,7 @@ export const MOBILE_HAMBURGER_NAV_ITEMS = [
   },
   {
     id: 'swarm',
-    label: 'Teams',
+    label: 'Swarm',
     icon: UserGroupIcon,
     to: '/swarm',
     match: (p: string) => p === '/swarm' || p.startsWith('/swarm2'),

@@ -3,8 +3,24 @@ import { join } from 'node:path'
 import * as yaml from 'yaml'
 import { z } from 'zod'
 import { SWARM_CANONICAL_REPO } from './swarm-environment'
+import { getHermesRoot } from './claude-paths'
+import { getActiveProjectId, getProject } from './projects-backend'
 
-export const SWARM_ROSTER_PATH = join(SWARM_CANONICAL_REPO, 'swarm.yaml')
+export function getSwarmRosterPath(): string {
+  if (process.env.SWARM_ROSTER_PATH) return process.env.SWARM_ROSTER_PATH
+  const activeProjectId = getActiveProjectId()
+  const activeProject = activeProjectId ? getProject(activeProjectId) : null
+  if (activeProject?.primary_path && existsSync(activeProject.primary_path)) {
+    return join(activeProject.primary_path, 'swarm.yaml')
+  }
+  const hermesRoot = getHermesRoot()
+  if (existsSync(hermesRoot)) {
+    return join(hermesRoot, 'swarm.yaml')
+  }
+  return join(SWARM_CANONICAL_REPO, 'swarm.yaml')
+}
+
+export const SWARM_ROSTER_PATH = getSwarmRosterPath()
 
 const WORKER_ID_PATTERN = /^(swarm\d+|[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/i
 
@@ -114,9 +130,10 @@ export function fallbackRoster(ids: Array<string> = []): SwarmRoster {
 }
 
 export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
-  if (!existsSync(SWARM_ROSTER_PATH)) return fallbackRoster(ids)
+  const rosterPath = getSwarmRosterPath()
+  if (!existsSync(rosterPath)) return fallbackRoster(ids)
   try {
-    const raw = yaml.parse(readFileSync(SWARM_ROSTER_PATH, 'utf-8')) as unknown
+    const raw = yaml.parse(readFileSync(rosterPath, 'utf-8')) as unknown
     const parsed = SwarmRosterSchema.parse(raw)
     const byId = new Map(parsed.workers.map((worker) => [worker.id, worker]))
     for (const fallback of fallbackRoster(ids).workers) {
@@ -131,7 +148,8 @@ export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
 export function writeSwarmRoster(roster: SwarmRoster): void {
   const parsed = SwarmRosterSchema.parse(roster)
   const doc = yaml.stringify(parsed, { lineWidth: 0 })
-  writeFileSync(SWARM_ROSTER_PATH, doc)
+  const rosterPath = getSwarmRosterPath()
+  writeFileSync(rosterPath, doc)
 }
 
 export function upsertSwarmRosterWorker(input: SwarmRosterUpsert, ids: Array<string> = []): SwarmRoster {

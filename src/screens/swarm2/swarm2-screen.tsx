@@ -1588,7 +1588,7 @@ export function Swarm2Screen() {
                 className="inline-flex items-center gap-2 rounded-lg bg-[var(--theme-accent)] px-4 py-2 text-sm font-medium text-primary-950 shadow-sm hover:bg-[var(--theme-accent-strong)]"
               >
                 <HugeiconsIcon icon={MessageMultiple01Icon} size={13} />
-                Add Swarm
+                Add Agent
               </button>
             </div>
           </div>
@@ -1662,7 +1662,7 @@ export function Swarm2Screen() {
           <div className="w-full max-w-2xl rounded-3xl border border-[var(--theme-border2)] bg-[var(--theme-card)] p-6 shadow-[0_30px_100px_var(--theme-shadow)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-semibold text-[var(--theme-text)]">Add Swarm Agent</h2>
+                <h2 className="text-xl font-semibold text-[var(--theme-text)]">Add Agent</h2>
                 <p className="mt-1 text-sm text-[var(--theme-muted-2)]">Create a new swarm roster entry and configure its identity.</p>
               </div>
               <button
@@ -1747,7 +1747,7 @@ export function Swarm2Screen() {
             {addSwarmError ? <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{addSwarmError}</div> : null}
             <div className="mt-4 flex items-center justify-end gap-3">
               <button type="button" onClick={() => setAddSwarmOpen(false)} className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-2 text-sm text-[var(--theme-muted)] hover:text-[var(--theme-text)]">Cancel</button>
-              <button type="button" disabled={addSwarmSaving || !newWorkerId.trim() || !newWorkerName.trim()} onClick={() => void saveAddSwarm()} className="rounded-lg bg-[var(--theme-accent)] px-4 py-2 text-sm font-medium text-primary-950 disabled:opacity-50">{addSwarmSaving ? 'Saving…' : 'Save swarm agent'}</button>
+              <button type="button" disabled={addSwarmSaving || !newWorkerId.trim() || !newWorkerName.trim()} onClick={() => void saveAddSwarm()} className="rounded-lg bg-[var(--theme-accent)] px-4 py-2 text-sm font-medium text-primary-950 disabled:opacity-50">{addSwarmSaving ? 'Saving…' : 'Save agent'}</button>
             </div>
           </div>
         </div>

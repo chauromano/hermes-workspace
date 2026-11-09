@@ -967,7 +967,7 @@ function ChatSidebarComponent({
       kind: 'link',
       to: '/swarm',
       icon: UserGroupIcon,
-      label: 'Teams',
+      label: 'Swarm',
       active: isSwarmActive,
     },
     ...(echoStudioEnabled

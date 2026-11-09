@@ -60,6 +60,7 @@ function buildCrewDefinitions(): CrewDefinition[] {
   const dynamicProfiles = existsSync(profilesDir)
     ? readdirSync(profilesDir, { withFileTypes: true })
         .filter((entry) => {
+          if (entry.name === 'default' || entry.name === 'general') return false
           const profilePath = join(profilesDir, entry.name)
           if (entry.isDirectory()) return true
           if (!entry.isSymbolicLink()) return false
@@ -75,7 +76,7 @@ function buildCrewDefinitions(): CrewDefinition[] {
 
   const roster = rosterByWorkerId(dynamicProfiles)
   return [
-    { id: 'workspace', displayName: 'Workspace', humanLabel: 'Workspace — Primary profile', role: 'Primary profile', profilePath: null },
+    { id: 'general', displayName: 'General', humanLabel: 'General — Primary profile', role: 'Primary profile', profilePath: null },
     ...dynamicProfiles.map((profile) => buildCrewDefinitionFromRoster(profile, /^swarm\d+$/i.test(profile) ? roster.get(profile) : null)),
   ]
 }

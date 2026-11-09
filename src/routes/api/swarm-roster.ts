@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
-import { SWARM_ROSTER_PATH, readSwarmRoster, upsertSwarmRosterWorker } from '../../server/swarm-roster'
+import { getSwarmRosterPath, readSwarmRoster, upsertSwarmRosterWorker } from '../../server/swarm-roster'
 import { listSwarmWorkerIds } from '../../server/swarm-foundation'
 
 export const Route = createFileRoute('/api/swarm-roster')({
@@ -14,7 +14,7 @@ export const Route = createFileRoute('/api/swarm-roster')({
         const ids = listSwarmWorkerIds()
         return json({
           ok: true,
-          path: SWARM_ROSTER_PATH,
+          path: getSwarmRosterPath(),
           roster: readSwarmRoster(ids),
           fetchedAt: Date.now(),
         })
@@ -32,7 +32,7 @@ export const Route = createFileRoute('/api/swarm-roster')({
         try {
           const ids = listSwarmWorkerIds()
           const roster = upsertSwarmRosterWorker(body as never, ids)
-          return json({ ok: true, path: SWARM_ROSTER_PATH, roster, savedAt: Date.now() })
+          return json({ ok: true, path: getSwarmRosterPath(), roster, savedAt: Date.now() })
         } catch (error) {
           return json({
             ok: false,

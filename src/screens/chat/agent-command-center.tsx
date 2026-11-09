@@ -998,7 +998,7 @@ export function AgentCommandCenter({
                 icon: UserMultipleIcon,
               },
               { to: '/tasks', label: 'Tasks', icon: CheckListIcon },
-              { to: '/swarm', label: 'Teams', icon: UserGroupIcon },
+              { to: '/swarm', label: 'Swarm', icon: UserGroupIcon },
             ].map((item) => (
               <Link
                 key={item.label}

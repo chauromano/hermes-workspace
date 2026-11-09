@@ -78,8 +78,8 @@ function stickyActiveProfileEnabled(): boolean {
  */
 function validateProfileName(name: string): string {
   const trimmed = validateProfileIdentifier(name)
-  if (trimmed === 'default')
-    throw new Error('Default profile cannot be modified here')
+  if (trimmed === 'default' || trimmed === 'general')
+    throw new Error('General profile cannot be modified here')
   return trimmed
 }
 
@@ -300,9 +300,10 @@ export async function readProfileWithFallback(
   name: string,
 ): Promise<ProfileDetail> {
   // Try filesystem first (fast path for colocated deployments)
-  const normalized = name.trim() || 'default'
+  const normalized = name.trim() || 'general'
+  const isDefault = normalized === 'default' || normalized === 'general'
   const profilePath =
-    normalized === 'default'
+    isDefault
       ? getClaudeRoot()
       : path.join(getProfilesRoot(), validateProfileIdentifier(normalized))
 
@@ -363,12 +364,13 @@ export async function readProfileWithFallback(
 
 export function getActiveProfileName(): string {
   const activePath = getActiveProfilePath()
-  if (!fs.existsSync(activePath)) return 'default'
+  if (!fs.existsSync(activePath)) return 'general'
   try {
     const raw = safeReadText(activePath).trim()
-    return raw || 'default'
+    if (!raw || raw === 'default') return 'general'
+    return raw
   } catch {
-    return 'default'
+    return 'general'
   }
 }
 
@@ -387,7 +389,7 @@ export function listProfiles(): Array<ProfileSummary> {
 
     for (const entry of entries) {
       const name = entry.name
-      if (name === 'default') continue
+      if (name === 'default' || name === 'general') continue
       const profilePath = path.join(profilesRoot, name)
       if (!entry.isDirectory()) {
         if (!entry.isSymbolicLink()) continue
@@ -469,9 +471,9 @@ export function listProfiles(): Array<ProfileSummary> {
     defaultProvider = config.provider
   }
   results.unshift({
-    name: 'default',
+    name: 'general',
     path: root,
-    active: activeProfile === 'default',
+    active: activeProfile === 'default' || activeProfile === 'general',
     exists: true,
     model: defaultModel,
     provider: defaultProvider,
@@ -498,9 +500,10 @@ export function listProfiles(): Array<ProfileSummary> {
 
 export function readProfile(name: string): ProfileDetail {
   const active = getActiveProfileName()
-  const normalized = name.trim() || 'default'
+  const normalized = name.trim() || 'general'
+  const isDefault = normalized === 'default' || normalized === 'general'
   const profilePath =
-    normalized === 'default'
+    isDefault
       ? getClaudeRoot()
       : path.join(getProfilesRoot(), validateProfileName(normalized))
   if (!fs.existsSync(profilePath)) throw new Error('Profile not found')
@@ -526,8 +529,8 @@ export function readProfile(name: string): ProfileDetail {
 export function setActiveProfile(name: string): void {
   const trimmed = name.trim()
   if (!trimmed) throw new Error('Profile name is required')
-  // "default" means clear the active_profile file (revert to default)
-  if (trimmed === 'default') {
+  // "default" or "general" means clear the active_profile file (revert to default)
+  if (trimmed === 'default' || trimmed === 'general') {
     if (stickyActiveProfileEnabled()) {
       const activePath = getActiveProfilePath()
       if (fs.existsSync(activePath)) fs.unlinkSync(activePath)
