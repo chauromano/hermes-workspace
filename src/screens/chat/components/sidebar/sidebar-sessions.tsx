@@ -32,7 +32,7 @@ import {
 } from '@/components/ui/menu'
 import { cn } from '@/lib/utils'
 
-export type DateFilterOption = 'none' | '7d' | '30d'
+export type DateFilterOption = 'none' | '3d' | '7d' | '30d'
 export type SessionsGroupOption = 'projects' | 'status'
 export type StatusCategory = 'Active' | 'Idle' | 'Archived'
 
@@ -84,6 +84,7 @@ function matchesDateFilter(session: SessionMeta, filter: DateFilterOption): bool
         ? session.lastMessage.timestamp * 1000
         : Date.now()
   const diffMs = Date.now() - ts
+  if (filter === '3d') return diffMs <= 3 * 24 * 60 * 60 * 1000
   if (filter === '7d') return diffMs <= 7 * 24 * 60 * 60 * 1000
   if (filter === '30d') return diffMs <= 30 * 24 * 60 * 60 * 1000
   return true
@@ -427,6 +428,23 @@ export const SidebarSessions = memo(function SidebarSessions({
                         )}
                       </MenuItem>
                       <MenuItem
+                        onClick={() => handleSetChatFilter('3d')}
+                        className={cn(
+                          'flex items-center justify-between text-xs px-2.5 py-1.5 cursor-pointer rounded-md mx-1',
+                          chatDateFilter === '3d' &&
+                            'font-semibold text-accent-500 bg-accent-500/10',
+                        )}
+                      >
+                        <span>Last 3 days</span>
+                        {chatDateFilter === '3d' && (
+                          <HugeiconsIcon
+                            icon={CheckmarkCircle01Icon}
+                            size={12}
+                            className="text-accent-500"
+                          />
+                        )}
+                      </MenuItem>
+                      <MenuItem
                         onClick={() => handleSetChatFilter('7d')}
                         className={cn(
                           'flex items-center justify-between text-xs px-2.5 py-1.5 cursor-pointer rounded-md mx-1',
@@ -589,6 +607,23 @@ export const SidebarSessions = memo(function SidebarSessions({
                         )}
                       </MenuItem>
                       <MenuItem
+                        onClick={() => handleSetSessionsDateFilter('3d')}
+                        className={cn(
+                          'flex items-center justify-between text-xs px-2.5 py-1.5 cursor-pointer rounded-md mx-1',
+                          sessionsDateFilter === '3d' &&
+                            'font-semibold text-accent-500 bg-accent-500/10',
+                        )}
+                      >
+                        <span>Last 3 days</span>
+                        {sessionsDateFilter === '3d' && (
+                          <HugeiconsIcon
+                            icon={CheckmarkCircle01Icon}
+                            size={12}
+                            className="text-accent-500"
+                          />
+                        )}
+                      </MenuItem>
+                      <MenuItem
                         onClick={() => handleSetSessionsDateFilter('7d')}
                         className={cn(
                           'flex items-center justify-between text-xs px-2.5 py-1.5 cursor-pointer rounded-md mx-1',
@@ -675,7 +710,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                               size={13}
                               className="shrink-0 text-accent-500"
                             />
-                            <span className="truncate text-xs font-semibold text-primary-900 dark:text-primary-100">
+                            <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
                               {project.name}
                             </span>
                             <span className="text-[10px] text-primary-400 font-normal shrink-0">
@@ -794,7 +829,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                   dotColor,
                                 )}
                               />
-                              <span className="truncate text-xs font-semibold text-primary-900 dark:text-primary-100">
+                              <span className="truncate text-xs font-medium text-neutral-900 dark:text-neutral-100">
                                 {status}
                               </span>
                               <span className="text-[10px] text-primary-400 font-normal shrink-0">

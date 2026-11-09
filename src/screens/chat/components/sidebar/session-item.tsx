@@ -126,7 +126,8 @@ function SessionItemComponent({
         ? rawProfile
         : null
     if (validProfile) {
-      parts.push(validProfile)
+      const cleanProfile = validProfile.startsWith('@') ? validProfile : `@${validProfile}`
+      parts.push(cleanProfile)
     }
     return parts.join(' • ')
   }, [
@@ -156,21 +157,21 @@ function SessionItemComponent({
           : 'text-primary-900 hover:bg-primary-200/60 dark:hover:bg-primary-800/50',
       )}
     >
-      {/* Left Icon Badge */}
+      {/* Left Icon (chat bubble, no bulky box) */}
       <span
         className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors',
+          'flex size-5 shrink-0 items-center justify-center transition-colors',
           active
-            ? 'bg-accent-500/20 text-accent-500'
+            ? 'text-accent-500'
             : isPinned
-              ? 'bg-accent-500/15 text-accent-500'
-              : 'bg-primary-100 dark:bg-primary-800/60 text-primary-500 dark:text-primary-400 group-hover:text-primary-700 dark:group-hover:text-primary-200',
+              ? 'text-accent-500'
+              : 'text-primary-400 group-hover:text-primary-700 dark:text-neutral-400 dark:group-hover:text-neutral-200',
         )}
       >
         {isPinned ? (
-          <HugeiconsIcon icon={PinIcon} size={15} strokeWidth={2} />
+          <HugeiconsIcon icon={PinIcon} size={15} strokeWidth={1.8} />
         ) : (
-          <HugeiconsIcon icon={Chat01Icon} size={15} strokeWidth={1.7} />
+          <HugeiconsIcon icon={Chat01Icon} size={15} strokeWidth={1.6} />
         )}
       </span>
 

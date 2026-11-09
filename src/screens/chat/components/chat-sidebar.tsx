@@ -65,8 +65,6 @@ import {
 import { applyTheme, useSettingsStore } from '@/hooks/use-settings'
 import { fetchExternalRuntimes } from '@/lib/external-harness-api'
 import { useHarnessVisibility } from '@/screens/chat/harness-visibility'
-import { ProjectSwitcher } from '@/components/projects/project-switcher'
-
 type WorkspaceStats = Record<string, unknown>
 
 function ThemeToggleMini() {
@@ -1175,12 +1173,7 @@ function ChatSidebarComponent({
         </TooltipProvider>
       </motion.div>
 
-      {/* ── Active Project Switcher ─────────────────────────────────── */}
-      <div className="px-2 pb-1.5">
-        <ProjectSwitcher variant="sidebar" isCollapsed={isVisuallyCollapsed} />
-      </div>
-
-      {/* ── Search (ChatGPT-style, above sections) ─────────────────── */}
+            {/* ── Search (ChatGPT-style, above sections) ─────────────────── */}
       <div className="px-2 pb-1">
         <motion.div
           layout
