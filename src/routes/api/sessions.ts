@@ -21,7 +21,7 @@ import {
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
-import { findProjectForPath, getSessionCwdMap, getSessionMetaMap, extractPathFromDirective, listProjects, setSessionProject, setSessionProfile, readSessionsFromStateDb } from '../../server/projects-backend'
+import { findProjectForPath, getSessionCwdMap, getSessionMetaMap, extractPathFromDirective, listProjects, setSessionProject, setSessionProfile, readSessionsFromStateDb, setSessionArchived, deleteSessionFromStateDb } from '../../server/projects-backend'
 import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
@@ -165,17 +165,6 @@ export const Route = createFileRoute('/api/sessions')({
         }
         const csrfCheckPost = requireJsonContentType(request)
         if (csrfCheckPost) return csrfCheckPost
-        const capabilities = await ensureGatewayProbed()
-        if (!capabilities.sessions) {
-          const friendlyId = randomUUID()
-          return json({
-            ...createCapabilityUnavailablePayload('sessions'),
-            ok: true,
-            sessionKey: friendlyId,
-            friendlyId,
-            persisted: false,
-          })
-        }
         try {
           const body = (await request.json().catch(() => ({}))) as Record<
             string,
@@ -187,9 +176,27 @@ export const Route = createFileRoute('/api/sessions')({
             return json({ ok: true, ...result })
           }
 
+          if (body.action === 'archive' && typeof body.key === 'string') {
+            const archive = body.archive !== false
+            setSessionArchived(body.key, archive)
+            return json({ ok: true, key: body.key, archived: archive })
+          }
+
           if (Array.isArray(body.pinnedSessionKeys)) {
             const finalKeys = writePinnedSessions(body.pinnedSessionKeys as string[])
             return json({ ok: true, pinnedSessionKeys: finalKeys })
+          }
+
+          const capabilities = await ensureGatewayProbed()
+          if (!capabilities.sessions) {
+            const friendlyId = randomUUID()
+            return json({
+              ...createCapabilityUnavailablePayload('sessions'),
+              ok: true,
+              sessionKey: friendlyId,
+              friendlyId,
+              persisted: false,
+            })
           }
 
           const requestedLabel =
@@ -416,31 +423,21 @@ export const Route = createFileRoute('/api/sessions')({
         // gateway. Delete them locally without hitting the gateway.
         if (getLocalSession(sessionKey)) {
           deleteLocalSession(sessionKey)
-          return json({ ok: true, sessionKey, source: 'local' })
         }
+
+        // Delete from state.db (including profile state.db instances)
+        deleteSessionFromStateDb(sessionKey)
 
         const capabilities = await ensureGatewayProbed()
-        if (!capabilities.sessions) {
-          return json({
-            ...createCapabilityUnavailablePayload('sessions'),
-            ok: true,
-            sessionKey,
-            deleted: false,
-          })
+        if (capabilities.sessions) {
+          try {
+            await deleteSession(sessionKey)
+          } catch (err) {
+            console.error('Failed to delete session from gateway:', err)
+          }
         }
-        try {
-          await deleteSession(sessionKey)
 
-          return json({ ok: true, sessionKey })
-        } catch (err) {
-          return json(
-            {
-              ok: false,
-              error: err instanceof Error ? err.message : String(err),
-            },
-            { status: 500 },
-          )
-        }
+        return json({ ok: true, sessionKey })
       },
     },
   },

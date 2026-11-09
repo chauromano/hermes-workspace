@@ -1017,7 +1017,7 @@ export function readSessionsFromStateDb(
 ): Array<Record<string, unknown>> {
   if (!existsSync(stateDb)) return []
   try {
-    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
+    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name, archived FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
     const raw = runSqlite(stateDb, sql)
     if (!raw) return []
     const rows = JSON.parse(raw) as Array<Record<string, any>>
@@ -1053,6 +1053,7 @@ export function readSessionsFromStateDb(
             ? Math.floor(s.started_at * 1000)
             : Date.now(),
         isPinned: Boolean(s.pinned),
+        archived: Boolean(s.archived),
         cwd: s.cwd || null,
         profile_name: rawProf,
         profileName: rawProf,
@@ -1062,4 +1063,61 @@ export function readSessionsFromStateDb(
   } catch {
     return []
   }
+}
+
+export function setSessionArchived(
+  sessionId: string,
+  archive = true,
+  stateDb = getStateDbPath(),
+): boolean {
+  if (existsSync(stateDb)) {
+    const sql = `UPDATE sessions SET archived = ${archive ? 1 : 0} WHERE id = ${sqliteQuote(sessionId)};`
+    runSqliteExec(stateDb, sql)
+  }
+  const profilesDir = getProfilesDir()
+  if (existsSync(profilesDir)) {
+    try {
+      const entries = readdirSync(profilesDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const profDb = join(profilesDir, entry.name, 'state.db')
+        if (existsSync(profDb)) {
+          runSqliteExec(
+            profDb,
+            `UPDATE sessions SET archived = ${archive ? 1 : 0} WHERE id = ${sqliteQuote(sessionId)};`,
+          )
+        }
+      }
+    } catch {}
+  }
+  return true
+}
+
+export function deleteSessionFromStateDb(
+  sessionId: string,
+  stateDb = getStateDbPath(),
+): boolean {
+  if (existsSync(stateDb)) {
+    runSqliteExec(
+      stateDb,
+      `DELETE FROM messages WHERE session_id = ${sqliteQuote(sessionId)}; DELETE FROM sessions WHERE id = ${sqliteQuote(sessionId)};`,
+    )
+  }
+  const profilesDir = getProfilesDir()
+  if (existsSync(profilesDir)) {
+    try {
+      const entries = readdirSync(profilesDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const profDb = join(profilesDir, entry.name, 'state.db')
+        if (existsSync(profDb)) {
+          runSqliteExec(
+            profDb,
+            `DELETE FROM messages WHERE session_id = ${sqliteQuote(sessionId)}; DELETE FROM sessions WHERE id = ${sqliteQuote(sessionId)};`,
+          )
+        }
+      }
+    } catch {}
+  }
+  return true
 }

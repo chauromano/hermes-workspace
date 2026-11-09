@@ -37,6 +37,7 @@ type SidebarSessionsProps = {
   defaultOpen?: boolean
   onSelect?: () => void
   onRename: (session: SessionMeta) => void
+  onToggleArchive: (session: SessionMeta) => void
   onDelete: (session: SessionMeta) => void
   loading: boolean
   fetching: boolean
@@ -106,6 +107,7 @@ export const SidebarSessions = memo(function SidebarSessions({
   defaultOpen = true,
   onSelect,
   onRename,
+  onToggleArchive,
   onDelete,
   loading,
   fetching,
@@ -374,6 +376,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                     onSelect={onSelect}
                     onTogglePin={handleTogglePin}
                     onRename={onRename}
+                    onToggleArchive={onToggleArchive}
                     onDelete={onDelete}
                   />
                 ))}
@@ -509,6 +512,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                     onSelect={onSelect}
                     onTogglePin={handleTogglePin}
                     onRename={onRename}
+                    onToggleArchive={onToggleArchive}
                     onDelete={onDelete}
                   />
                 ))
@@ -774,6 +778,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                   onSelect={onSelect}
                                   onTogglePin={handleTogglePin}
                                   onRename={onRename}
+                                  onToggleArchive={onToggleArchive}
                                   onDelete={onDelete}
                                 />
                               ))
@@ -860,6 +865,7 @@ export const SidebarSessions = memo(function SidebarSessions({
                                     onSelect={onSelect}
                                     onTogglePin={handleTogglePin}
                                     onRename={onRename}
+                                    onToggleArchive={onToggleArchive}
                                     onDelete={onDelete}
                                   />
                                 ))
@@ -898,11 +904,6 @@ export const SidebarSessions = memo(function SidebarSessions({
                 </Button>
               </div>
             )}
-            {fetching && !loading && !error && sessions.length > 0 ? (
-              <div className="px-3 py-1 text-[11px] text-primary-400">
-                Updating…
-              </div>
-            ) : null}
 
       {/* Project Modal for Creating / Editing Projects */}
       <ProjectModal
@@ -922,6 +923,7 @@ function areSidebarSessionsEqual(
   if (prev.defaultOpen !== next.defaultOpen) return false
   if (prev.onSelect !== next.onSelect) return false
   if (prev.onRename !== next.onRename) return false
+  if (prev.onToggleArchive !== next.onToggleArchive) return false
   if (prev.onDelete !== next.onDelete) return false
   if (prev.loading !== next.loading) return false
   if (prev.fetching !== next.fetching) return false
@@ -944,6 +946,7 @@ function areSidebarSessionsEqual(
     if (prevSession.projectName !== nextSession.projectName) return false
     if (prevSession.profileName !== nextSession.profileName) return false
     if (prevSession.profile !== nextSession.profile) return false
+    if (prevSession.archived !== nextSession.archived) return false
   }
   return true
 }

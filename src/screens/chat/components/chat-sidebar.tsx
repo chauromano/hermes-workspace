@@ -29,6 +29,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { CHAT_OPEN_SETTINGS_EVENT } from '../chat-events'
 import { useChatSettings as useSidebarSettings } from '../hooks/use-chat-settings'
+import { useArchiveSession } from '../hooks/use-archive-session'
 import { useDeleteSession } from '../hooks/use-delete-session'
 import { useRenameSession } from '../hooks/use-rename-session'
 import { ProvidersDialog } from './providers-dialog'
@@ -691,6 +692,7 @@ function ChatSidebarComponent({
   const profileAvatarDataUrl = useChatSettingsStore(
     selectChatProfileAvatarDataUrl,
   )
+  const { toggleArchive } = useArchiveSession()
   const { deleteSession } = useDeleteSession()
   const { renameSession } = useRenameSession()
   const openSearchModal = useSearchModal((state) => state.openModal)
@@ -1257,6 +1259,7 @@ function ChatSidebarComponent({
                     activeFriendlyId={activeFriendlyId}
                     onSelect={onSelectSession}
                     onRename={handleOpenRename}
+                    onToggleArchive={toggleArchive}
                     onDelete={handleOpenDelete}
                     loading={sessionsLoading}
                     fetching={sessionsFetching}

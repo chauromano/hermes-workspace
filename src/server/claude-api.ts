@@ -358,6 +358,7 @@ export function toSessionSummary(
       completionTokens: session.output_tokens ?? 0,
       totalTokens: (session.input_tokens ?? 0) + (session.output_tokens ?? 0),
     },
+    archived: Boolean((session as any).archived),
   }
 }
 

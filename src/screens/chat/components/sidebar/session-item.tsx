@@ -3,6 +3,7 @@
 import { Link } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  Archive02Icon,
   Chat01Icon,
   Delete01Icon,
   MoreHorizontalIcon,
@@ -27,6 +28,7 @@ type SessionItemProps = {
   onSelect?: () => void
   onTogglePin: (session: SessionMeta) => void
   onRename: (session: SessionMeta) => void
+  onToggleArchive: (session: SessionMeta) => void
   onDelete: (session: SessionMeta) => void
 }
 
@@ -98,6 +100,7 @@ function SessionItemComponent({
   onSelect,
   onTogglePin,
   onRename,
+  onToggleArchive,
   onDelete,
 }: SessionItemProps) {
   const isGenerating = session.titleStatus === 'generating'
@@ -129,6 +132,9 @@ function SessionItemComponent({
       const cleanProfile = validProfile.startsWith('@') ? validProfile : `@${validProfile}`
       parts.push(cleanProfile)
     }
+    if (session.archived) {
+      parts.push('Archived')
+    }
     return parts.join(' • ')
   }, [
     isError,
@@ -136,6 +142,7 @@ function SessionItemComponent({
     session.profileName,
     session.profile,
     session.titleError,
+    session.archived,
     updatedAt,
   ])
 
@@ -287,6 +294,17 @@ function SessionItemComponent({
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
+                onToggleArchive(session)
+              }}
+              className="gap-2"
+            >
+              <HugeiconsIcon icon={Archive02Icon} size={16} strokeWidth={1.5} />{' '}
+              {session.archived ? 'Unarchive' : 'Archive'}
+            </MenuItem>
+            <MenuItem
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
                 onDelete(session)
               }}
               className="text-red-700 dark:text-red-400 gap-2 hover:bg-red-50 dark:hover:bg-red-900/30 data-highlighted:bg-red-50/80"
@@ -307,6 +325,7 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
   if (prev.onSelect !== next.onSelect) return false
   if (prev.onTogglePin !== next.onTogglePin) return false
   if (prev.onRename !== next.onRename) return false
+  if (prev.onToggleArchive !== next.onToggleArchive) return false
   if (prev.onDelete !== next.onDelete) return false
   if (prev.session === next.session) return true
   return (
@@ -320,6 +339,7 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
     prev.session.titleSource === next.session.titleSource &&
     prev.session.titleError === next.session.titleError &&
     prev.session.projectName === next.session.projectName &&
+    prev.session.archived === next.session.archived &&
     (prev.session.profileName ?? prev.session.profile) ===
       (next.session.profileName ?? next.session.profile)
   )
