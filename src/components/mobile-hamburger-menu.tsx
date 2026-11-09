@@ -52,13 +52,6 @@ export const MOBILE_COMMAND_ITEMS: Array<MobileNavItemDef> = [
     match: (p: string) => p === '/chat' || p === '/' || p === '/new',
   },
   {
-    id: 'missions',
-    label: 'Missions',
-    icon: Rocket01Icon,
-    to: '/conductor',
-    match: (p: string) => p.startsWith('/conductor'),
-  },
-  {
     id: 'operations',
     label: 'Agents',
     icon: UserMultipleIcon,
@@ -71,6 +64,13 @@ export const MOBILE_COMMAND_ITEMS: Array<MobileNavItemDef> = [
     icon: CheckListIcon,
     to: '/tasks',
     match: (p: string) => p.startsWith('/tasks'),
+  },
+  {
+    id: 'missions',
+    label: 'Missions',
+    icon: Rocket01Icon,
+    to: '/conductor',
+    match: (p: string) => p.startsWith('/conductor'),
   },
   {
     id: 'swarm',

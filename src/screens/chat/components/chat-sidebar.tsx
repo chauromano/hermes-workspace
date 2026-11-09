@@ -965,13 +965,6 @@ function ChatSidebarComponent({
     },
     {
       kind: 'link',
-      to: '/conductor',
-      icon: Rocket01Icon,
-      label: 'Missions',
-      active: isConductorActive,
-    },
-    {
-      kind: 'link',
       to: '/operations',
       icon: UserMultipleIcon,
       label: 'Agents',
@@ -983,6 +976,13 @@ function ChatSidebarComponent({
       icon: CheckListIcon,
       label: 'Kanban',
       active: isTasksActive,
+    },
+    {
+      kind: 'link',
+      to: '/conductor',
+      icon: Rocket01Icon,
+      label: 'Missions',
+      active: isConductorActive,
     },
     {
       kind: 'link',
@@ -1196,6 +1196,26 @@ function ChatSidebarComponent({
         </motion.div>
       </div>
 
+      {/* ── Command Submenu (Moved out of Tools and directly under Search) ── */}
+      <div className="shrink-0 space-y-0.5 px-2 pb-1">
+        <SectionLabel
+          label="Command"
+          isCollapsed={isVisuallyCollapsed}
+          transition={transition}
+          collapsible={!isVisuallyCollapsed}
+          expanded={mainExpanded}
+          onToggle={toggleMain}
+          navigateTo="/chat"
+        />
+        <CollapsibleSection
+          expanded={isVisuallyCollapsed || mainExpanded}
+          items={mainItems}
+          isCollapsed={isVisuallyCollapsed}
+          transition={transition}
+          onSelectSession={onSelectSession}
+        />
+      </div>
+
       {/* ── Segmented Switch: Sessions vs Tools ────────────────────── */}
       {!isVisuallyCollapsed && (
         <div className="px-2 pb-2">
@@ -1247,13 +1267,6 @@ function ChatSidebarComponent({
           <div className="shrink-0 space-y-0.5 px-2">
             <CollapsibleSection
               expanded={true}
-              items={mainItems}
-              isCollapsed={true}
-              transition={transition}
-              onSelectSession={onSelectSession}
-            />
-            <CollapsibleSection
-              expanded={true}
               items={workspaceItems}
               isCollapsed={true}
               transition={transition}
@@ -1283,25 +1296,8 @@ function ChatSidebarComponent({
             />
           </div>
         ) : (
-          /* Tools Tab: Command, Workspace, Knowledge sections */
+          /* Tools Tab: Workspace & Knowledge sections (Command moved above) */
           <div className="shrink-0 space-y-0.5 px-2 pb-4">
-            <SectionLabel
-              label="Command"
-              isCollapsed={false}
-              transition={transition}
-              collapsible
-              expanded={mainExpanded}
-              onToggle={toggleMain}
-              navigateTo="/chat"
-            />
-            <CollapsibleSection
-              expanded={mainExpanded}
-              items={mainItems}
-              isCollapsed={false}
-              transition={transition}
-              onSelectSession={onSelectSession}
-            />
-
             <SectionLabel
               label="Workspace"
               isCollapsed={false}
