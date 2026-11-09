@@ -4,6 +4,7 @@ import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   BrainIcon,
+  Cancel01Icon,
   CheckListIcon,
   Clock01Icon,
   ComputerTerminal01Icon,
@@ -368,6 +369,7 @@ function SectionLabel({
   expanded,
   onToggle,
   navigateTo,
+  onSelectSession,
 }: {
   label: string
   isCollapsed: boolean
@@ -376,6 +378,7 @@ function SectionLabel({
   expanded?: boolean
   onToggle?: () => void
   navigateTo?: string
+  onSelectSession?: () => void
 }) {
   if (isCollapsed) return null
 
@@ -395,6 +398,7 @@ function SectionLabel({
         {navigateTo ? (
           <Link
             to={navigateTo}
+            onClick={onSelectSession}
             className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 hover:text-primary-700 dark:hover:text-neutral-200 select-none transition-colors"
           >
             {label}
@@ -890,8 +894,8 @@ function ChatSidebarComponent({
   const asideProps = {
     className: cn(
       'border-r h-full overflow-hidden flex flex-col theme-sidebar theme-border',
-      isMobile && 'fixed inset-y-0 left-0 z-50 shadow-2xl',
-      isMobile && isCollapsed && 'pointer-events-none',
+      isMobile && 'fixed inset-y-0 left-0 z-50 shadow-2xl pt-[max(env(safe-area-inset-top,0px),0px)] pb-[max(env(safe-area-inset-bottom,0px),0px)]',
+      isMobile && isCollapsed && 'pointer-events-none border-r-0',
     ),
   }
 
@@ -1085,21 +1089,24 @@ function ChatSidebarComponent({
       }}
       initial={false}
       animate={{
-        width: isVisuallyCollapsed
-          ? isMobile
-            ? 0
-            : 48
-          : isMobile
-            ? '85vw'
+        width: isMobile
+          ? '85vw'
+          : isVisuallyCollapsed
+            ? 48
             : 300,
+        x: isMobile
+          ? isCollapsed
+            ? '-100%'
+            : '0%'
+          : '0%',
       }}
       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
       className={cn(
         asideProps.className,
-        isMobile && isCollapsed && 'pointer-events-none overflow-hidden',
+        isMobile && isCollapsed && 'pointer-events-none overflow-hidden border-r-0',
       )}
       data-tour="sidebar-container"
-      style={isMobile ? { maxWidth: 360 } : undefined}
+      style={isMobile ? { maxWidth: 360, width: '85vw' } : undefined}
       onMouseEnter={() => {
         if (sidebarHoverExpand && !isMobile && isCollapsed) {
           setIsHoverExpanded(true)
@@ -1167,6 +1174,12 @@ function ChatSidebarComponent({
                       size={18}
                       strokeWidth={1.75}
                     />
+                  ) : isMobile ? (
+                    <HugeiconsIcon
+                      icon={Cancel01Icon}
+                      size={18}
+                      strokeWidth={1.75}
+                    />
                   ) : (
                     <HugeiconsIcon
                       icon={ArrowLeft01Icon}
@@ -1222,27 +1235,7 @@ function ChatSidebarComponent({
           </div>
         ) : (
           <>
-            {/* ── 1. Command Parent Grouping ── */}
-            <div className="shrink-0 space-y-0.5">
-              <SectionLabel
-                label="Command"
-                isCollapsed={isVisuallyCollapsed}
-                transition={transition}
-                collapsible={!isVisuallyCollapsed}
-                expanded={mainExpanded}
-                onToggle={toggleMain}
-                navigateTo="/chat"
-              />
-              <CollapsibleSection
-                expanded={mainExpanded}
-                items={mainItems}
-                isCollapsed={isVisuallyCollapsed}
-                transition={transition}
-                onSelectSession={onSelectSession}
-              />
-            </div>
-
-            {/* ── 2. Sessions Parent Grouping ── */}
+            {/* ── 1. Sessions Parent Grouping ── */}
             <div className="shrink-0 space-y-0.5">
               <SectionLabel
                 label="Sessions"
@@ -1270,7 +1263,28 @@ function ChatSidebarComponent({
               )}
             </div>
 
-            {/* ── 3. Tools Parent Grouping (Collapsed by default, below Sessions) ── */}
+            {/* ── 2. Command Parent Grouping ── */}
+            <div className="shrink-0 space-y-0.5">
+              <SectionLabel
+                label="Command"
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                collapsible={!isVisuallyCollapsed}
+                expanded={mainExpanded}
+                onToggle={toggleMain}
+                navigateTo="/chat"
+                onSelectSession={onSelectSession}
+              />
+              <CollapsibleSection
+                expanded={mainExpanded}
+                items={mainItems}
+                isCollapsed={isVisuallyCollapsed}
+                transition={transition}
+                onSelectSession={onSelectSession}
+              />
+            </div>
+
+            {/* ── 3. Tools Parent Grouping (Collapsed by default, below Command) ── */}
             <div className="shrink-0 space-y-0.5">
               <SectionLabel
                 label="Tools"

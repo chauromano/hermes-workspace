@@ -198,6 +198,8 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
   const hideChatSidebar = isOnChatRoute && chatFocusMode
   const showDesktopSidebarBackdrop =
     !isChromeFreeSurface && !isMobile && !isOnChatRoute && !sidebarCollapsed
+  const showMobileSidebarBackdrop =
+    !isChromeFreeSurface && isMobile && !sidebarCollapsed
 
   const isNewChat = activeFriendlyId === 'new'
 
@@ -215,12 +217,15 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
 
   const startNewChat = useCallback(() => {
     setCreatingSession(true)
+    if (window.innerWidth < 768) {
+      setSidebarCollapsed(true)
+    }
     navigate({ to: '/chat/$sessionKey', params: { sessionKey: 'new' } }).then(
       () => {
         setCreatingSession(false)
       },
     )
-  }, [navigate])
+  }, [navigate, setSidebarCollapsed])
 
   const handleSelectSession = useCallback(() => {
     // On mobile, collapse sidebar after selecting
@@ -349,9 +354,9 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
           )}
         >
           {/* Activity ticker bar */}
-          {/* Persistent sidebar */}
-          {!isChromeFreeSurface && !isMobile && !hideChatSidebar && (
-            <div className="relative z-30">
+          {/* Persistent / Responsive sidebar */}
+          {!isChromeFreeSurface && !hideChatSidebar && (
+            <div className={cn(isMobile ? 'contents' : 'relative z-30')}>
               <ChatSidebar
                 sessions={sessions}
                 activeFriendlyId={activeFriendlyId}
@@ -458,6 +463,15 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
             aria-label="Collapse navigation sidebar"
             onClick={() => setSidebarCollapsed(true)}
             className={DESKTOP_SIDEBAR_BACKDROP_CLASS}
+          />
+        ) : null}
+
+        {showMobileSidebarBackdrop ? (
+          <button
+            type="button"
+            aria-label="Close navigation sidebar"
+            onClick={() => setSidebarCollapsed(true)}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity duration-200 md:hidden"
           />
         ) : null}
 
