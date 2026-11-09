@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as yaml from 'yaml'
 import { z } from 'zod'
@@ -6,18 +6,54 @@ import { SWARM_CANONICAL_REPO } from './swarm-environment'
 import { getHermesRoot } from './claude-paths'
 import { getActiveProjectId, getProject } from './projects-backend'
 
-export function getSwarmRosterPath(): string {
+export function getGlobalSwarmRosterPath(): string {
   if (process.env.SWARM_ROSTER_PATH) return process.env.SWARM_ROSTER_PATH
-  const activeProjectId = getActiveProjectId()
-  const activeProject = activeProjectId ? getProject(activeProjectId) : null
-  if (activeProject?.primary_path && existsSync(activeProject.primary_path)) {
-    return join(activeProject.primary_path, 'swarm.yaml')
-  }
   const hermesRoot = getHermesRoot()
-  if (existsSync(hermesRoot)) {
+  if (existsSync(hermesRoot) && existsSync(join(hermesRoot, 'swarm.yaml'))) {
     return join(hermesRoot, 'swarm.yaml')
   }
-  return join(SWARM_CANONICAL_REPO, 'swarm.yaml')
+  if (existsSync(join(SWARM_CANONICAL_REPO, 'swarm.yaml'))) {
+    return join(SWARM_CANONICAL_REPO, 'swarm.yaml')
+  }
+  return existsSync(hermesRoot)
+    ? join(hermesRoot, 'swarm.yaml')
+    : join(SWARM_CANONICAL_REPO, 'swarm.yaml')
+}
+
+export type ProjectSwarmStatus = {
+  scope: 'project' | 'global'
+  projectId: string | null
+  projectName: string | null
+  projectPrimaryPath: string | null
+  projectRosterPath: string | null
+  hasProjectRoster: boolean
+  effectiveRosterPath: string
+  globalRosterPath: string
+}
+
+export function getProjectSwarmStatus(targetProjectId?: string | null): ProjectSwarmStatus {
+  const globalRosterPath = getGlobalSwarmRosterPath()
+  const resolvedId = targetProjectId !== undefined ? targetProjectId : getActiveProjectId()
+  const project = resolvedId ? getProject(resolvedId) : null
+  const primaryPath = project?.primary_path && existsSync(project.primary_path) ? project.primary_path : null
+  const projectRosterPath = primaryPath ? join(primaryPath, 'swarm.yaml') : null
+  const hasProjectRoster = Boolean(projectRosterPath && existsSync(projectRosterPath))
+
+  return {
+    scope: hasProjectRoster ? 'project' : 'global',
+    projectId: project?.id ?? null,
+    projectName: project?.name ?? null,
+    projectPrimaryPath: primaryPath,
+    projectRosterPath,
+    hasProjectRoster,
+    effectiveRosterPath: hasProjectRoster && projectRosterPath ? projectRosterPath : globalRosterPath,
+    globalRosterPath,
+  }
+}
+
+export function getSwarmRosterPath(targetProjectId?: string | null): string {
+  if (process.env.SWARM_ROSTER_PATH) return process.env.SWARM_ROSTER_PATH
+  return getProjectSwarmStatus(targetProjectId).effectiveRosterPath
 }
 
 export const SWARM_ROSTER_PATH = getSwarmRosterPath()
@@ -130,7 +166,11 @@ export function fallbackRoster(ids: Array<string> = []): SwarmRoster {
 }
 
 export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
-  const rosterPath = getSwarmRosterPath()
+  return readSwarmRosterForProject(undefined, ids)
+}
+
+export function readGlobalSwarmRoster(ids: Array<string> = []): SwarmRoster {
+  const rosterPath = getGlobalSwarmRosterPath()
   if (!existsSync(rosterPath)) return fallbackRoster(ids)
   try {
     const raw = yaml.parse(readFileSync(rosterPath, 'utf-8')) as unknown
@@ -145,16 +185,101 @@ export function readSwarmRoster(ids: Array<string> = []): SwarmRoster {
   }
 }
 
-export function writeSwarmRoster(roster: SwarmRoster): void {
+export function readSwarmRosterForProject(targetProjectId?: string | null, ids: Array<string> = []): SwarmRoster {
+  const rosterPath = getSwarmRosterPath(targetProjectId)
+  if (!existsSync(rosterPath)) {
+    const globalPath = getGlobalSwarmRosterPath()
+    if (existsSync(globalPath)) {
+      return readGlobalSwarmRoster(ids)
+    }
+    return fallbackRoster(ids)
+  }
+  try {
+    const raw = yaml.parse(readFileSync(rosterPath, 'utf-8')) as unknown
+    const parsed = SwarmRosterSchema.parse(raw)
+    const byId = new Map(parsed.workers.map((worker) => [worker.id, worker]))
+    for (const fallback of fallbackRoster(ids).workers) {
+      if (!byId.has(fallback.id)) byId.set(fallback.id, fallback)
+    }
+    return { version: parsed.version, workers: [...byId.values()] }
+  } catch {
+    return fallbackRoster(ids)
+  }
+}
+
+export function enableProjectSwarmRoster(
+  options?: { projectId?: string | null; workers?: Array<SwarmRosterUpsert> },
+  ids: Array<string> = [],
+): { status: ProjectSwarmStatus; roster: SwarmRoster } {
+  const status = getProjectSwarmStatus(options?.projectId)
+  if (!status.projectRosterPath) {
+    throw new Error('Project primary path does not exist')
+  }
+
+  if (options?.workers && Array.isArray(options.workers)) {
+    const validatedWorkers = options.workers.map((w) => SwarmRosterUpsertSchema.parse(w))
+    const roster: SwarmRoster = {
+      version: 1,
+      workers: validatedWorkers,
+    }
+    const doc = yaml.stringify(roster, { lineWidth: 0 })
+    writeFileSync(status.projectRosterPath, doc)
+  } else if (!existsSync(status.projectRosterPath)) {
+    const baseRoster = readGlobalSwarmRoster(ids)
+    const doc = yaml.stringify(baseRoster, { lineWidth: 0 })
+    writeFileSync(status.projectRosterPath, doc)
+  }
+
+  const updatedStatus = getProjectSwarmStatus(options?.projectId)
+  const roster = readSwarmRosterForProject(options?.projectId, ids)
+  return { status: updatedStatus, roster }
+}
+
+export function disableProjectSwarmRoster(
+  targetProjectId?: string | null,
+  ids: Array<string> = [],
+): { status: ProjectSwarmStatus; roster: SwarmRoster } {
+  const status = getProjectSwarmStatus(targetProjectId)
+  if (status.projectRosterPath && existsSync(status.projectRosterPath)) {
+    try {
+      unlinkSync(status.projectRosterPath)
+    } catch (err) {
+      throw new Error(`Failed to remove project swarm.yaml: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  const updatedStatus = getProjectSwarmStatus(targetProjectId)
+  const roster = readGlobalSwarmRoster(ids)
+  return { status: updatedStatus, roster }
+}
+
+export function removeSwarmRosterWorker(
+  workerId: string,
+  targetProjectId?: string | null,
+  ids: Array<string> = [],
+): SwarmRoster {
+  const targetId = workerId.trim()
+  const current = readSwarmRosterForProject(targetProjectId, ids)
+  const nextWorkers = current.workers.filter((w) => w.id !== targetId)
+  const nextRoster: SwarmRoster = {
+    version: current.version || 1,
+    workers: nextWorkers,
+  }
+  const targetPath = getSwarmRosterPath(targetProjectId)
+  const doc = yaml.stringify(nextRoster, { lineWidth: 0 })
+  writeFileSync(targetPath, doc)
+  return nextRoster
+}
+
+export function writeSwarmRoster(roster: SwarmRoster, targetProjectId?: string | null): void {
   const parsed = SwarmRosterSchema.parse(roster)
   const doc = yaml.stringify(parsed, { lineWidth: 0 })
-  const rosterPath = getSwarmRosterPath()
+  const rosterPath = getSwarmRosterPath(targetProjectId)
   writeFileSync(rosterPath, doc)
 }
 
-export function upsertSwarmRosterWorker(input: SwarmRosterUpsert, ids: Array<string> = []): SwarmRoster {
+export function upsertSwarmRosterWorker(input: SwarmRosterUpsert, ids: Array<string> = [], targetProjectId?: string | null): SwarmRoster {
   const nextWorker = SwarmRosterUpsertSchema.parse(input)
-  const current = readSwarmRoster(ids)
+  const current = readSwarmRosterForProject(targetProjectId, ids)
   const byId = new Map(current.workers.map((worker) => [worker.id, worker]))
   byId.set(nextWorker.id, nextWorker)
   const next: SwarmRoster = {
@@ -165,7 +290,7 @@ export function upsertSwarmRosterWorker(input: SwarmRosterUpsert, ids: Array<str
       return na - nb
     }),
   }
-  writeSwarmRoster(next)
+  writeSwarmRoster(next, targetProjectId)
   return next
 }
 

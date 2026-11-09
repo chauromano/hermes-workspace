@@ -9,6 +9,7 @@ import { dashboardFetch, ensureGatewayProbed } from '../../server/gateway-capabi
 import { sanitizeConductorMissionGoal } from '../../server/conductor-mission-sanitize'
 import { getSwarmMission, recordMissionCheckpoint  } from '../../server/swarm-missions'
 import { getSwarmProfilePath } from '../../server/swarm-foundation'
+import { getProjectSwarmStatus, readSwarmRoster, type SwarmRosterWorker } from '../../server/swarm-roster'
 import { readWorkerMessages } from '../../server/swarm-chat-reader'
 import { newestCheckpointFromMessages } from '../../server/swarm-checkpoints'
 import { checkpointFromRuntimeSnapshot, dispatchSwarmAssignments, readRuntimeCheckpointSnapshot, runtimeCheckpointSignature } from './swarm-dispatch'
@@ -144,8 +145,39 @@ function clipText(value: string, max = 8000): string {
   return value.length <= max ? value : `${value.slice(0, max - 20)}\n...[truncated]`
 }
 
-export function buildNativeConductorAssignments(goal: string, options: { maxParallel: number; supervised: boolean }): Array<NativeConductorAssignment> {
+export function buildNativeConductorAssignments(
+  goal: string,
+  options: { maxParallel: number; supervised: boolean; rosterWorkers?: Array<SwarmRosterWorker> },
+): Array<NativeConductorAssignment> {
   const maxParallel = Math.min(5, Math.max(1, options.maxParallel || 1))
+  const customWorkers = (options.rosterWorkers ?? []).filter(
+    (w) => w.id && w.id.toLowerCase() !== 'orchestrator',
+  )
+
+  if (customWorkers.length > 0) {
+    const selectedWorkers = customWorkers.slice(0, maxParallel)
+    return selectedWorkers.map((worker) => ({
+      workerId: worker.id,
+      rationale:
+        worker.mission ||
+        `${worker.name || worker.id} (${worker.role || 'Worker'}) owns ${worker.specialty || 'assigned execution'}.`,
+      reviewRequired: Boolean(worker.reviewRequired),
+      direct: true,
+      task: [
+        `Conductor mission: ${goal}`,
+        '',
+        `Lane: ${worker.name || worker.id} / ${worker.role || 'Specialist'}.`,
+        worker.specialty ? `Specialty focus: ${worker.specialty}.` : '',
+        worker.mission || 'Execute your part of the mission safely, make concrete progress, and produce a checkpoint.',
+        options.supervised
+          ? 'Supervised mode: stop before destructive writes or commits and report the exact approval needed.'
+          : 'Do not ask for confirmation unless blocked; start immediately.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }))
+  }
+
   const normalizedGoal = goal.toLowerCase()
   const wantsOps = /production|ready|harden|audit|clean|fix|bug|test|build|release|deploy|operational|runtime|gateway|tmux|service|health/.test(normalizedGoal)
   const wantsDocs = /doc|handoff|readme|spec|plan|summary|knowledge|note/.test(normalizedGoal)
@@ -310,9 +342,12 @@ function createNativeConductorMission(input: {
   maxParallel: number
   supervised: boolean
 }) {
+  const swarmStatus = getProjectSwarmStatus()
+  const customRoster = swarmStatus.hasProjectRoster ? readSwarmRoster().workers : undefined
   const assignments = buildNativeConductorAssignments(input.goal, {
     maxParallel: input.maxParallel,
     supervised: input.supervised,
+    rosterWorkers: customRoster,
   })
   const missionTitle = `Conductor: ${clipText(input.goal, 120)}`
   void dispatchSwarmAssignments({

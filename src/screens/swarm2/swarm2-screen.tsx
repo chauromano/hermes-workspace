@@ -195,7 +195,13 @@ type SwarmRosterWorker = {
 
 type SwarmRosterResponse = {
   ok?: boolean
+  path?: string
+  scope?: 'project' | 'global'
+  projectId?: string | null
+  projectName?: string | null
+  hasProjectRoster?: boolean
   roster?: { workers?: Array<SwarmRosterWorker> }
+  globalRoster?: { workers?: Array<SwarmRosterWorker> }
 }
 
 type SwarmMissionSummary = {
@@ -362,11 +368,10 @@ async function fetchHealth(): Promise<HealthData> {
   return res.json()
 }
 
-async function fetchRoster(): Promise<Array<SwarmRosterWorker>> {
+async function fetchRoster(): Promise<SwarmRosterResponse> {
   const res = await fetch('/api/swarm-roster')
   if (!res.ok) throw new Error(`Roster request failed: ${res.status}`)
-  const data = (await res.json()) as SwarmRosterResponse
-  return Array.isArray(data.roster?.workers) ? data.roster!.workers! : []
+  return res.json()
 }
 
 async function fetchMissions(): Promise<Array<SwarmMissionSummary>> {
@@ -1145,9 +1150,18 @@ export function Swarm2Screen() {
     return map
   }, [runtimeQuery.data])
   const members = useMemo(() => {
-    const merged = sortSwarmMembers(crew, roomIds).map((member) => {
+    const rosterWorkers = rosterQuery.data?.roster?.workers ?? []
+    const isProjectScope = rosterQuery.data?.scope === 'project'
+    const projectWorkerIds = new Set(rosterWorkers.map((w) => w.id))
+
+    // In project scope, only show workers that are part of the project's roster
+    const relevantCrew = isProjectScope
+      ? crew.filter((member) => projectWorkerIds.has(member.id))
+      : crew
+
+    const merged = sortSwarmMembers(relevantCrew, roomIds).map((member) => {
       const runtime = runtimeByWorker.get(member.id)
-      const roster = rosterQuery.data?.find((worker) => worker.id === member.id)
+      const roster = rosterWorkers.find((worker) => worker.id === member.id)
       return {
         ...member,
         displayName: runtime?.displayName || roster?.name || member.displayName,
@@ -1160,7 +1174,7 @@ export function Swarm2Screen() {
       }
     })
     const seen = new Set(merged.map((member) => member.id))
-    const extras = (rosterQuery.data ?? [])
+    const extras = rosterWorkers
       .filter((worker) => !seen.has(worker.id))
       .map((worker) => ({
         id: worker.id,
@@ -1492,9 +1506,20 @@ export function Swarm2Screen() {
                 <HugeiconsIcon icon={UserMultipleIcon} size={22} />
               </div>
               <div className="min-w-0">
-                <h1 className="truncate text-base font-semibold text-primary-900">
-                  Swarm
-                </h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="truncate text-base font-semibold text-primary-900">
+                    Swarm
+                  </h1>
+                  {rosterQuery.data?.scope === 'project' ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-500/15 border border-accent-500/30 px-2 py-0.5 text-[11px] font-medium text-accent-700">
+                      📁 Project: {rosterQuery.data.projectName || 'Active Project'}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--theme-border)] bg-[var(--theme-card)] px-2 py-0.5 text-[11px] font-medium text-[var(--theme-muted)]">
+                      🌐 Global Swarm
+                    </span>
+                  )}
+                </div>
                 <p className="truncate text-xs text-[var(--theme-muted-2)]">
                   {members.length > 0
                     ? `Detected ${members.length} worker${members.length === 1 ? '' : 's'} for planning, routing, reports, and reviewer-gated execution.`
@@ -1582,6 +1607,53 @@ export function Swarm2Screen() {
                   </div>
                 </div>
               ) : null}
+              {rosterQuery.data?.scope === 'global' && rosterQuery.data?.projectId ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/swarm-roster', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'enable-project' }),
+                      })
+                      if (res.ok) {
+                        toast({ title: 'Project Swarm enabled', description: 'Initialized swarm.yaml for active project.' })
+                        void rosterQuery.refetch()
+                      }
+                    } catch (e) {
+                      toast({ title: 'Error', description: 'Failed to customize swarm for project.', variant: 'destructive' })
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent-500/40 bg-accent-500/10 px-3 py-2 text-xs font-medium text-accent-700 hover:bg-accent-500/20 shadow-sm transition-colors"
+                >
+                  <HugeiconsIcon icon={UserMultipleIcon} size={14} />
+                  <span>Customize for Project</span>
+                </button>
+              ) : rosterQuery.data?.scope === 'project' ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/swarm-roster', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'disable-project' }),
+                      })
+                      if (res.ok) {
+                        toast({ title: 'Reset to Global Swarm', description: 'Removed project swarm override.' })
+                        void rosterQuery.refetch()
+                      }
+                    } catch (e) {
+                      toast({ title: 'Error', description: 'Failed to reset swarm.', variant: 'destructive' })
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-3 py-2 text-xs font-medium text-[var(--theme-muted)] hover:text-red-600 hover:border-red-500/40 shadow-sm transition-colors"
+                >
+                  <span>Reset to Global</span>
+                </button>
+              ) : null}
+
               <button
                 type="button"
                 onClick={openAddSwarm}

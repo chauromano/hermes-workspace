@@ -39,6 +39,82 @@ describe('native Conductor fallback', () => {
     expect(assignments.map((assignment) => assignment.workerId)).toEqual(['builder', 'reviewer'])
   })
 
+  it('uses custom project roster workers when provided', () => {
+    const customWorkers = [
+      {
+        id: 'orchestrator',
+        name: 'Orchestrator',
+        role: 'Orchestrator',
+        specialty: 'routing',
+        model: 'GPT-5.5',
+        mission: 'Coordinate work',
+        skills: [],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: [],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: false,
+      },
+      {
+        id: 'vault-indexer',
+        name: 'Vault Indexer',
+        role: 'Knowledge Steward',
+        specialty: 'Markdown wikilinks',
+        model: 'qwen2.5-coder',
+        mission: 'Index and organize Obsidian notes.',
+        skills: ['obsidian-cli'],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: [],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: false,
+      },
+      {
+        id: 'summarizer',
+        name: 'Summarizer',
+        role: 'Note Synthesizer',
+        specialty: 'Executive briefings',
+        model: 'GPT-5.5',
+        mission: 'Summarize meeting and literature notes.',
+        skills: [],
+        tools: [],
+        capabilities: [],
+        preferredTaskTypes: [],
+        modes: [],
+        plugins: [],
+        pluginToolsets: [],
+        mcpServers: [],
+        greenlightRequiredFor: [],
+        maxConcurrentTasks: 1,
+        acceptsBroadcast: true,
+        reviewRequired: false,
+      },
+    ]
+
+    const assignments = buildNativeConductorAssignments('Index new research notes and summarize meetings', {
+      maxParallel: 2,
+      supervised: false,
+      rosterWorkers: customWorkers,
+    })
+
+    expect(assignments.map((a) => a.workerId)).toEqual(['vault-indexer', 'summarizer'])
+    expect(assignments[0].task).toContain('Lane: Vault Indexer / Knowledge Steward.')
+    expect(assignments[0].task).toContain('Specialty focus: Markdown wikilinks.')
+    expect(assignments[1].task).toContain('Lane: Summarizer / Note Synthesizer.')
+  })
+
   it('normalizes native swarm missions into the Conductor mission status contract', () => {
     const mission: SwarmMission = {
       id: 'conductor-test',

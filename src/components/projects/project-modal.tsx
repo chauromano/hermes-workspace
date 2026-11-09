@@ -11,6 +11,8 @@ import {
   ArrowRight01Icon,
   ArrowLeft01Icon,
   Loading03Icon,
+  UserGroupIcon,
+  Delete02Icon,
 } from '@hugeicons/core-free-icons'
 import {
   DialogContent,
@@ -69,6 +71,30 @@ export function ProjectModal({
   const [newFolderName, setNewFolderName] = useState('')
   const [folderCreateError, setFolderCreateError] = useState<string | null>(null)
 
+  // Swarm Squad configuration state
+  const [enableCustomSwarm, setEnableCustomSwarm] = useState(false)
+  const [hadCustomSwarmInitially, setHadCustomSwarmInitially] = useState(false)
+  const [loadingSwarm, setLoadingSwarm] = useState(false)
+  const [projectWorkers, setProjectWorkers] = useState<
+    Array<{
+      id: string
+      name: string
+      role: string
+      specialty: string
+      model: string
+      mission: string
+      skills?: string[]
+      enabled: boolean
+      isCustom?: boolean
+    }>
+  >([])
+  const [isAddingSpecialist, setIsAddingSpecialist] = useState(false)
+  const [specialistName, setSpecialistName] = useState('')
+  const [specialistRole, setSpecialistRole] = useState('')
+  const [specialistSpecialty, setSpecialistSpecialty] = useState('')
+  const [specialistModel, setSpecialistModel] = useState('')
+  const [specialistError, setSpecialistError] = useState<string | null>(null)
+
   const { projects: existingProjects } = useProjects({ includeArchived: true })
   const createProject = useCreateProject()
   const updateProject = useUpdateProject()
@@ -108,13 +134,74 @@ export function ProjectModal({
     setIsCreatingFolder(false)
     setNewFolderName('')
     setFolderCreateError(null)
+    setIsAddingSpecialist(false)
+    setSpecialistName('')
+    setSpecialistRole('')
+    setSpecialistSpecialty('')
+    setSpecialistModel('')
+    setSpecialistError(null)
   }, [project])
+
+  const fetchSwarmRosterForModal = useCallback(async (projId?: string | null) => {
+    setLoadingSwarm(true)
+    try {
+      const url = projId ? `/api/swarm-roster?projectId=${encodeURIComponent(projId)}` : '/api/swarm-roster'
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.ok) {
+        setHadCustomSwarmInitially(Boolean(data.hasProjectRoster))
+        setEnableCustomSwarm(Boolean(data.hasProjectRoster))
+
+        const activeRosterWorkers: Array<any> = Array.isArray(data.roster?.workers) ? data.roster.workers : []
+        const globalWorkers: Array<any> = Array.isArray(data.globalRoster?.workers) ? data.globalRoster.workers : []
+        const activeIds = new Set(activeRosterWorkers.map((w: any) => w.id))
+
+        const combined: Array<any> = []
+        // Add active/custom workers first
+        for (const w of activeRosterWorkers) {
+          if (w.id.toLowerCase() === 'orchestrator') continue
+          combined.push({
+            id: w.id,
+            name: w.name || w.id,
+            role: w.role || 'Worker',
+            specialty: w.specialty || '',
+            model: w.model || 'Worker',
+            mission: w.mission || 'Awaiting orchestrator dispatch.',
+            skills: w.skills || [],
+            enabled: true,
+            isCustom: !globalWorkers.some((gw: any) => gw.id === w.id),
+          })
+        }
+        // Add remaining global workers as unselected if in project mode
+        for (const gw of globalWorkers) {
+          if (gw.id.toLowerCase() === 'orchestrator' || activeIds.has(gw.id)) continue
+          combined.push({
+            id: gw.id,
+            name: gw.name || gw.id,
+            role: gw.role || 'Worker',
+            specialty: gw.specialty || '',
+            model: gw.model || 'Worker',
+            mission: gw.mission || 'Awaiting orchestrator dispatch.',
+            skills: gw.skills || [],
+            enabled: !data.hasProjectRoster,
+            isCustom: false,
+          })
+        }
+        setProjectWorkers(combined)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingSwarm(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (open) {
       resetForm()
+      void fetchSwarmRosterForModal(project?.id)
     }
-  }, [open, resetForm])
+  }, [open, resetForm, fetchSwarmRosterForModal, project])
 
   const handleNameChange = (val: string) => {
     setName(val)
@@ -197,6 +284,7 @@ export function ProjectModal({
       setIsSubmitting(true)
       hapticTap()
 
+      let targetProjectId: string | null = null
       if (isEdit && project) {
         const updated = await updateProject.mutateAsync({
           id: project.id,
@@ -205,6 +293,7 @@ export function ProjectModal({
           primary_path: primaryPath.trim(),
           set_active: setActive,
         })
+        targetProjectId = updated.id
 
         try {
           toast.success(`Project "${updated.name}" updated successfully`)
@@ -212,7 +301,6 @@ export function ProjectModal({
           // ignore notification error
         }
         onUpdated?.(updated)
-        onOpenChange(false)
       } else {
         const created = await createProject.mutateAsync({
           name: name.trim(),
@@ -222,6 +310,7 @@ export function ProjectModal({
           description: description.trim() || undefined,
           set_active: setActive,
         })
+        targetProjectId = created.id
 
         try {
           toast.success(`Project "${created.name}" created successfully`)
@@ -229,8 +318,38 @@ export function ProjectModal({
           // ignore notification error
         }
         onCreated?.(created)
-        onOpenChange(false)
       }
+
+      // Sync Swarm Squad settings if project was saved
+      if (targetProjectId) {
+        try {
+          if (enableCustomSwarm) {
+            const enabledWorkers = projectWorkers.filter((w) => w.enabled)
+            await fetch('/api/swarm-roster', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'set-roster',
+                projectId: targetProjectId,
+                workers: enabledWorkers,
+              }),
+            })
+          } else if (isEdit && hadCustomSwarmInitially && !enableCustomSwarm) {
+            await fetch('/api/swarm-roster', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'disable-project',
+                projectId: targetProjectId,
+              }),
+            })
+          }
+        } catch {
+          // squad sync errors shouldn't prevent closing modal
+        }
+      }
+
+      onOpenChange(false)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       setError(msg)
@@ -588,6 +707,247 @@ export function ProjectModal({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Swarm Squad Section */}
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3 space-y-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="enable-custom-swarm"
+                  checked={enableCustomSwarm}
+                  onChange={(e) => setEnableCustomSwarm(e.target.checked)}
+                  className="mt-0.5 size-4 rounded border-[var(--theme-border)] text-accent-600 focus:ring-accent-500 accent-accent-600 cursor-pointer"
+                />
+                <div>
+                  <label htmlFor="enable-custom-swarm" className="text-xs font-medium text-[var(--theme-text)] cursor-pointer select-none flex items-center gap-1.5">
+                    <HugeiconsIcon icon={UserGroupIcon} size={14} className="text-accent-600" />
+                    <span>Enable Custom Project Swarm (swarm.yaml)</span>
+                  </label>
+                  <p className="text-[11px] text-[var(--theme-muted)] leading-tight mt-0.5">
+                    Configure a dedicated agent squad for this project's Swarm and Missions. When unchecked, inherits the Global Swarm.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {enableCustomSwarm && (
+              <div className="pt-2 border-t border-[var(--theme-border)] space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-medium text-[var(--theme-muted)]">
+                    {projectWorkers.filter((w) => w.enabled).length} of {projectWorkers.length} agents enabled
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticTap()
+                        setProjectWorkers((prev) => prev.map((w) => ({ ...w, enabled: true })))
+                      }}
+                      className="text-accent-600 hover:underline"
+                    >
+                      Enable all
+                    </button>
+                    <span className="text-[var(--theme-border)]">|</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hapticTap()
+                        setIsAddingSpecialist((v) => !v)
+                        setSpecialistError(null)
+                      }}
+                      className="text-accent-600 hover:underline font-medium flex items-center gap-1"
+                    >
+                      <HugeiconsIcon icon={PlusSignIcon} size={11} strokeWidth={2.2} />
+                      <span>Add Specialist</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inline Add Specialist Form */}
+                {isAddingSpecialist && (
+                  <div className="rounded-lg border border-accent-500/30 bg-accent-500/5 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-medium text-[var(--theme-text)]">
+                      <span>Add specialist to project squad:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingSpecialist(false)
+                          setSpecialistError(null)
+                        }}
+                        className="text-[var(--theme-muted)] hover:text-[var(--theme-text)]"
+                      >
+                        <HugeiconsIcon icon={Cancel01Icon} size={12} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Name (e.g. Vault Indexer)"
+                          value={specialistName}
+                          onChange={(e) => setSpecialistName(e.target.value)}
+                          className="w-full rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] outline-none focus:border-accent-500"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Role (e.g. Knowledge Steward)"
+                          value={specialistRole}
+                          onChange={(e) => setSpecialistRole(e.target.value)}
+                          className="w-full rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] outline-none focus:border-accent-500"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Specialty (e.g. Obsidian wikilinks)"
+                          value={specialistSpecialty}
+                          onChange={(e) => setSpecialistSpecialty(e.target.value)}
+                          className="w-full rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] outline-none focus:border-accent-500"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          placeholder="Model (e.g. GPT-5.5, qwen2.5)"
+                          value={specialistModel}
+                          onChange={(e) => setSpecialistModel(e.target.value)}
+                          className="w-full rounded-md border border-[var(--theme-border)] bg-[var(--theme-bg)] px-2 py-1 text-xs text-[var(--theme-text)] outline-none focus:border-accent-500"
+                        />
+                      </div>
+                    </div>
+
+                    {specialistError && (
+                      <div className="text-[10px] text-red-500 font-medium">
+                        {specialistError}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-end gap-1.5 pt-1">
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="default"
+                        onClick={() => {
+                          if (!specialistName.trim()) {
+                            setSpecialistError('Specialist name is required')
+                            return
+                          }
+                          const newId = autoSlug(specialistName)
+                          if (!newId || projectWorkers.some((w) => w.id === newId)) {
+                            setSpecialistError('Name generates duplicate or invalid worker ID')
+                            return
+                          }
+                          setProjectWorkers((prev) => [
+                            ...prev,
+                            {
+                              id: newId,
+                              name: specialistName.trim(),
+                              role: specialistRole.trim() || 'Specialist',
+                              specialty: specialistSpecialty.trim(),
+                              model: specialistModel.trim() || 'Worker',
+                              mission: `Specialist for ${specialistName.trim()}`,
+                              enabled: true,
+                              isCustom: true,
+                            },
+                          ])
+                          setIsAddingSpecialist(false)
+                          setSpecialistName('')
+                          setSpecialistRole('')
+                          setSpecialistSpecialty('')
+                          setSpecialistModel('')
+                          setSpecialistError(null)
+                        }}
+                        className="bg-accent-600 hover:bg-accent-700 text-white text-[11px] px-2.5 py-1 h-auto"
+                      >
+                        Add Specialist
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsAddingSpecialist(false)
+                          setSpecialistError(null)
+                        }}
+                        className="text-[11px] px-2 py-1 h-auto"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Worker List */}
+                <div className="max-h-40 overflow-y-auto space-y-1 pr-1 scrollbar-thin">
+                  {loadingSwarm ? (
+                    <div className="py-3 text-center text-xs text-[var(--theme-muted)]">
+                      <HugeiconsIcon icon={Loading03Icon} size={14} className="animate-spin inline mr-1" />
+                      Loading squad roster...
+                    </div>
+                  ) : projectWorkers.length === 0 ? (
+                    <div className="py-2 text-center text-xs text-[var(--theme-muted)]">
+                      No workers in roster
+                    </div>
+                  ) : (
+                    projectWorkers.map((worker) => (
+                      <div
+                        key={worker.id}
+                        className={cn(
+                          'flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors border',
+                          worker.enabled
+                            ? 'bg-[var(--theme-card)] border-[var(--theme-border)] text-[var(--theme-text)]'
+                            : 'bg-transparent border-transparent opacity-60 hover:opacity-100 text-[var(--theme-muted)]',
+                        )}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={worker.enabled}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setProjectWorkers((prev) =>
+                                prev.map((w) => (w.id === worker.id ? { ...w, enabled: checked } : w)),
+                              )
+                            }}
+                            className="size-3.5 rounded border-[var(--theme-border)] text-accent-600 accent-accent-600 cursor-pointer"
+                          />
+                          <div className="min-w-0 truncate">
+                            <span className="font-medium text-[var(--theme-text)] mr-1.5">
+                              {worker.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-[var(--theme-muted)] mr-2">
+                              ({worker.id})
+                            </span>
+                            <span className="text-[11px] text-[var(--theme-muted-2)]">
+                              — {worker.role} {worker.specialty ? `(${worker.specialty})` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {worker.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              hapticTap()
+                              setProjectWorkers((prev) => prev.filter((w) => w.id !== worker.id))
+                            }}
+                            className="p-1 text-[var(--theme-muted)] hover:text-red-500 rounded transition-colors ml-1"
+                            title="Remove specialist"
+                          >
+                            <HugeiconsIcon icon={Delete02Icon} size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Set as Active */}
