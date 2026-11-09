@@ -248,8 +248,8 @@ function MobileSessionItem({
       className={cn(
         'group flex items-center gap-1.5 w-full rounded-xl px-2.5 py-1.5 text-left transition-all active:scale-[0.99]',
         active
-          ? 'bg-accent-500/10 text-accent-700 font-semibold'
-          : 'hover:bg-primary-100/70 text-ink',
+          ? 'bg-accent-500/10 text-accent-500 font-semibold'
+          : 'text-primary-900 hover:bg-primary-200 dark:hover:bg-primary-800',
       )}
     >
       <button
@@ -261,10 +261,10 @@ function MobileSessionItem({
           className={cn(
             'flex size-7 shrink-0 items-center justify-center rounded-lg',
             active
-              ? 'bg-accent-500/20 text-accent-600'
+              ? 'bg-accent-500/20 text-accent-500'
               : isPinned
-                ? 'bg-accent-500/15 text-accent-600'
-                : 'bg-primary-100 text-primary-500',
+                ? 'bg-accent-500/15 text-accent-500'
+                : 'bg-primary-100 dark:bg-primary-800 text-primary-500',
           )}
         >
           {isPinned ? (
@@ -278,7 +278,7 @@ function MobileSessionItem({
             {title}
           </span>
           {timestamp ? (
-            <span className="block truncate text-[10px] text-primary-400">
+            <span className="block truncate text-[10px] text-primary-500 dark:text-neutral-400">
               {timestamp}
             </span>
           ) : null}
@@ -299,8 +299,8 @@ function MobileSessionItem({
         className={cn(
           'flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
           isPinned
-            ? 'text-accent-600 hover:bg-accent-500/20'
-            : 'text-primary-300 opacity-60 hover:opacity-100 hover:bg-primary-200/60 hover:text-primary-700',
+            ? 'text-accent-500 hover:bg-accent-500/20'
+            : 'text-primary-400 opacity-60 hover:opacity-100 hover:bg-primary-200 hover:text-primary-900 dark:hover:bg-primary-800',
         )}
       >
         <HugeiconsIcon
@@ -498,8 +498,8 @@ export function MobileHamburgerMenu({
             <ProjectSwitcher variant="mobile" />
           </div>
 
-          {/* Segmented Switch: Sessions vs Workspace */}
-          <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 p-1 text-xs font-medium">
+          {/* Segmented Switch: Sessions vs Tools */}
+          <div className="grid grid-cols-2 rounded-xl bg-primary-100/70 dark:bg-primary-900/40 p-1 text-xs font-medium border border-primary-200/60 dark:border-primary-800/40">
             <button
               type="button"
               onClick={() => {
@@ -510,7 +510,7 @@ export function MobileHamburgerMenu({
                 'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
                 activeTab === 'sessions'
                   ? 'bg-surface text-ink font-semibold shadow-xs'
-                  : 'text-primary-500 hover:text-primary-800',
+                  : 'text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-200',
               )}
             >
               <HugeiconsIcon
@@ -532,7 +532,7 @@ export function MobileHamburgerMenu({
                 'flex items-center justify-center gap-1.5 py-1.5 rounded-lg transition-all',
                 activeTab === 'apps'
                   ? 'bg-surface text-ink font-semibold shadow-xs'
-                  : 'text-primary-500 hover:text-primary-800',
+                  : 'text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-200',
               )}
             >
               <HugeiconsIcon
@@ -676,7 +676,7 @@ export function MobileHamburgerMenu({
           <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 px-3 pt-2 pb-4">
             {/* Command Section */}
             <div className="space-y-1">
-              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
                 Command
               </div>
               {MOBILE_COMMAND_ITEMS.filter((item) => item.id !== 'echo-studio' || echoStudioEnabled).map((item) => {
@@ -690,8 +690,8 @@ export function MobileHamburgerMenu({
                       'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
                       'transition-all duration-150 active:scale-[0.98]',
                       isActive
-                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
-                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                        ? 'bg-accent-500/10 text-accent-500 font-semibold'
+                        : 'text-primary-900 hover:bg-primary-200 dark:hover:bg-primary-800',
                     )}
                   >
                     <HugeiconsIcon
@@ -707,7 +707,7 @@ export function MobileHamburgerMenu({
 
             {/* Workspace Section */}
             <div className="space-y-1">
-              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
                 Workspace
               </div>
               {MOBILE_WORKSPACE_ITEMS.map((item) => {
@@ -721,8 +721,8 @@ export function MobileHamburgerMenu({
                       'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
                       'transition-all duration-150 active:scale-[0.98]',
                       isActive
-                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
-                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                        ? 'bg-accent-500/10 text-accent-500 font-semibold'
+                        : 'text-primary-900 hover:bg-primary-200 dark:hover:bg-primary-800',
                     )}
                   >
                     <HugeiconsIcon
@@ -738,7 +738,7 @@ export function MobileHamburgerMenu({
 
             {/* Knowledge Section */}
             <div className="space-y-1">
-              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-400 dark:text-primary-500">
+              <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
                 Knowledge
               </div>
               {MOBILE_KNOWLEDGE_ITEMS.map((item) => {
@@ -752,8 +752,8 @@ export function MobileHamburgerMenu({
                       'flex items-center gap-3 px-3 py-2 rounded-xl text-left w-full',
                       'transition-all duration-150 active:scale-[0.98]',
                       isActive
-                        ? 'bg-accent-500/10 text-accent-700 font-semibold'
-                        : 'text-primary-700 dark:text-primary-300 hover:bg-primary-100/70 dark:hover:bg-primary-800/40',
+                        ? 'bg-accent-500/10 text-accent-500 font-semibold'
+                        : 'text-primary-900 hover:bg-primary-200 dark:hover:bg-primary-800',
                     )}
                   >
                     <HugeiconsIcon
