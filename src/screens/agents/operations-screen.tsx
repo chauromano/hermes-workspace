@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { motion } from 'motion/react'
 import {
   AiBrain03Icon,
-  PlusSignIcon,
-  Settings01Icon,
+  UserGroupIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { seedAgentPresets } from './agent-presets'
 import { OperationsAgentCard } from './components/operations-agent-card'
-import { OperationsAgentDetail } from './components/operations-agent-detail'
-import { OperationsNewAgentModal } from './components/operations-new-agent-modal'
-import { OperationsSettingsModal } from './components/operations-settings-modal'
 import { UnifiedProfileSettingsModal } from '@/components/profile-settings/unified-profile-settings-modal'
 import { useOperations } from './hooks/use-operations'
 import type { CSSProperties } from 'react'
@@ -50,26 +46,12 @@ export const THEME_STYLE: CSSProperties = {
 }
 
 export function OperationsScreen() {
-  useEffect(() => {
-    seedAgentPresets()
-  }, [])
-  const [newAgentOpen, setNewAgentOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null)
   const {
     agents,
     configQuery,
     sessionsQuery,
     cronJobsQuery,
-    settings,
-    saveSettings,
-    defaultModel,
-    createAgent,
-    isCreatingAgent,
-    saveAgent,
-    isSavingAgent,
-    deleteAgent,
-    isDeletingAgent,
   } = useOperations()
 
   const isLoading =
@@ -79,8 +61,6 @@ export function OperationsScreen() {
     (sessionsQuery.error instanceof Error && sessionsQuery.error.message) ||
     (cronJobsQuery.error instanceof Error && cronJobsQuery.error.message) ||
     null
-  const settingsAgent =
-    agents.find((agent) => agent.id === settingsAgentId) ?? null
 
   return (
     <main
@@ -103,25 +83,19 @@ export function OperationsScreen() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              className="bg-[var(--theme-accent)] text-primary-950 hover:bg-[var(--theme-accent-strong)]"
-              onClick={() => setNewAgentOpen(true)}
-            >
-              <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.8} />
-              New Agent
-            </Button>
-            <Button
-              variant="secondary"
-              className="border border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-text)] hover:bg-[var(--theme-card2)]"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <HugeiconsIcon
-                icon={Settings01Icon}
-                size={16}
-                strokeWidth={1.8}
-              />
-              Settings
-            </Button>
+            <Link to="/profiles">
+              <Button
+                variant="secondary"
+                className="gap-2 border border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-text)] hover:bg-[var(--theme-card2)]"
+              >
+                <HugeiconsIcon
+                  icon={UserGroupIcon}
+                  size={16}
+                  strokeWidth={1.8}
+                />
+                Manage Profiles
+              </Button>
+            </Link>
           </div>
         </header>
 
@@ -145,57 +119,37 @@ export function OperationsScreen() {
                 active
               </span>
             </div>
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {agents.map((agent, index) => (
-                <motion.div
-                  key={agent.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.04, duration: 0.22 }}
+            {agents.length === 0 ? (
+              <section className="rounded-2xl border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] p-8 text-center text-sm text-[var(--theme-muted)]">
+                No agents configured yet.{' '}
+                <Link
+                  to="/profiles"
+                  className="font-semibold text-[var(--theme-accent)] hover:underline"
                 >
-                  <OperationsAgentCard
-                    agent={agent}
-                    onOpenSettings={(agentId) => setSettingsAgentId(agentId)}
-                  />
-                </motion.div>
-              ))}
-              <motion.button
-                type="button"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: agents.length * 0.04, duration: 0.22 }}
-                onClick={() => setNewAgentOpen(true)}
-                className="flex min-h-[19rem] flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-[var(--theme-border)] bg-[var(--theme-card)] p-4 text-center shadow-[0_20px_60px_color-mix(in_srgb,var(--theme-shadow)_10%,transparent)] transition-colors hover:border-[var(--theme-accent)] hover:bg-[var(--theme-accent-soft)]"
-              >
-                <HugeiconsIcon
-                  icon={PlusSignIcon}
-                  size={32}
-                  strokeWidth={1.7}
-                  className="text-[var(--theme-muted)]"
-                />
-                <span className="mt-3 text-sm text-[var(--theme-muted)]">
-                  Add Agent
-                </span>
-              </motion.button>
-            </section>
+                  Create a profile in Profiles
+                </Link>{' '}
+                to get started.
+              </section>
+            ) : (
+              <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {agents.map((agent, index) => (
+                  <motion.div
+                    key={agent.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.04, duration: 0.22 }}
+                  >
+                    <OperationsAgentCard
+                      agent={agent}
+                      onOpenSettings={(agentId) => setSettingsAgentId(agentId)}
+                    />
+                  </motion.div>
+                ))}
+              </section>
+            )}
           </>
         )}
       </section>
-
-      <OperationsNewAgentModal
-        open={newAgentOpen}
-        defaultModel={defaultModel}
-        onClose={() => setNewAgentOpen(false)}
-        onCreate={createAgent}
-        isSaving={isCreatingAgent}
-      />
-
-      <OperationsSettingsModal
-        open={settingsOpen}
-        settings={settings}
-        onClose={() => setSettingsOpen(false)}
-        onSave={saveSettings}
-      />
 
       <UnifiedProfileSettingsModal
         open={Boolean(settingsAgentId)}
