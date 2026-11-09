@@ -331,7 +331,7 @@ export function useSetSessionProject() {
       const prevProjects = queryClient.getQueryData<{ projects: Project[]; active_id: string | null }>(PROJECTS_QUERY_KEY)
 
       const targetProject = prevProjects?.projects.find((p) => p.id === projectId)
-      const targetName = targetProject ? targetProject.name : 'Personal Sandbox'
+      const targetName = targetProject ? targetProject.name : 'None'
       const targetSlug = targetProject ? targetProject.slug : null
       const targetCwd = targetProject ? targetProject.primary_path : '/workspace'
 

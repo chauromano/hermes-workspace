@@ -44,7 +44,7 @@ export function ProjectSwitcher({
     setActiveMutation.mutate(projectId)
   }
 
-  const activeLabel = activeProject ? activeProject.name : 'Personal Sandbox'
+  const activeLabel = activeProject ? activeProject.name : 'None'
 
   return (
     <>
@@ -179,9 +179,9 @@ export function ProjectSwitcher({
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="size-2 rounded-full bg-[var(--theme-muted)]/60" />
                 <div className="min-w-0 flex-1">
-                  <span className="block truncate">No Project (Personal Sandbox)</span>
+                  <span className="block truncate">None</span>
                   <span className="block truncate text-[10px] text-[var(--theme-muted)]">
-                    Use each profile's default folder
+                    No project (use profile's default folder)
                   </span>
                 </div>
               </div>

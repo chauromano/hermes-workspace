@@ -60,12 +60,12 @@ export function useSessionProjectSelection({
   // Find assigned project or match against active project for new sessions
   const effectiveProjectId = overrideTarget ? overrideTarget.id : (projectId !== undefined ? projectId : activeId)
   const currentProject = projects.find((p) => p.id === effectiveProjectId)
-  const displayName = overrideTarget?.name ?? currentProject?.name ?? projectName ?? 'Personal Sandbox'
+  const displayName = overrideTarget?.name ?? currentProject?.name ?? projectName ?? 'None'
   const isPersonalSandbox = !effectiveProjectId
 
   const handleSelect = (targetId: string | null) => {
     hapticTap()
-    const targetName = targetId ? (projects.find((p) => p.id === targetId)?.name ?? 'Project') : 'Personal Sandbox'
+    const targetName = targetId ? (projects.find((p) => p.id === targetId)?.name ?? 'Project') : 'None'
     setOverrideTarget({ id: targetId, name: targetName })
 
     if (!sessionKey || sessionKey === 'new') {
@@ -181,7 +181,7 @@ export function ProjectSessionChip({
             </p>
           </div>
 
-          {/* Personal Sandbox Option */}
+          {/* No Project / None Option */}
           <MenuItem
             onClick={() => handleSelect(null)}
             className={cn(
@@ -192,8 +192,8 @@ export function ProjectSessionChip({
             <div className="flex items-center gap-2 min-w-0">
               <HugeiconsIcon icon={Folder01Icon} size={14} className="shrink-0 text-[var(--theme-muted)]" />
               <div className="min-w-0 text-left">
-                <span className="truncate block">Personal Sandbox</span>
-                <span className="text-[10px] text-[var(--theme-muted)] font-mono block">/workspace</span>
+                <span className="truncate block">None</span>
+                <span className="text-[10px] text-[var(--theme-muted)] font-mono block">No project (/workspace)</span>
               </div>
             </div>
             {isPersonalSandbox && (

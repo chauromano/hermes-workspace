@@ -2360,9 +2360,7 @@ function ChatComposerComponent({
                   </span>
                   <span className="truncate">
                     {showProjectControl
-                      ? projectSelection.displayName === 'Personal Sandbox'
-                        ? 'Sandbox'
-                        : projectSelection.displayName
+                      ? projectSelection.displayName
                       : activeProfileName}
                   </span>
                   <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="shrink-0 opacity-50" />

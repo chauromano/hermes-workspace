@@ -973,7 +973,7 @@ export function setSessionProject(
   projectName: string
 } {
   let targetPath: string | null = null
-  let projectName = 'Personal Sandbox'
+  let projectName = 'None'
 
   if (projectId) {
     const proj = getProject(projectId, projectsDb)
@@ -986,7 +986,7 @@ export function setSessionProject(
   } else {
     setActiveProject(null, projectsDb)
     targetPath = '/workspace'
-    projectName = 'Personal Sandbox'
+    projectName = 'None'
   }
 
   if (existsSync(stateDb)) {
