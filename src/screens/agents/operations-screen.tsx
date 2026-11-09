@@ -64,7 +64,7 @@ export function OperationsScreen() {
 
   return (
     <main
-      className="min-h-full bg-surface px-3 pb-24 pt-5 text-primary-900 md:px-5 md:pt-8"
+      className="min-h-full bg-surface px-3 pb-24 pt-3 text-primary-900 md:px-5 md:pt-4"
       style={THEME_STYLE}
     >
       <section className="mx-auto w-full max-w-[1320px] space-y-4">
