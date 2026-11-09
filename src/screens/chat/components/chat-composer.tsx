@@ -2352,7 +2352,7 @@ function ChatComposerComponent({
                     setIsModelMenuOpen(false)
                     setIsSettingsSheetOpen(true)
                   }}
-                  className="flex h-8 min-w-0 max-w-[48%] shrink items-center gap-1.5 rounded-full pl-1 pr-2.5 text-xs font-medium text-primary-600 active:bg-neutral-100 dark:active:bg-white/10"
+                  className="flex h-8 min-w-0 max-w-[38%] shrink items-center gap-1 rounded-full pl-1 pr-2 text-xs font-medium text-primary-600 active:bg-neutral-100 dark:active:bg-white/10"
                   aria-label={`Chat settings: profile ${activeProfileName}${showProjectControl ? `, project ${projectSelection.displayName}` : ''}`}
                 >
                   <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold uppercase text-primary-600 dark:bg-primary-800 dark:text-primary-200">
@@ -2360,7 +2360,9 @@ function ChatComposerComponent({
                   </span>
                   <span className="truncate">
                     {showProjectControl
-                      ? projectSelection.displayName
+                      ? projectSelection.displayName === 'Personal Sandbox'
+                        ? 'Sandbox'
+                        : projectSelection.displayName
                       : activeProfileName}
                   </span>
                   <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="shrink-0 opacity-50" />
@@ -2381,10 +2383,10 @@ function ChatComposerComponent({
                     setIsMobileActionsMenuOpen(false)
                     setIsModelMenuOpen(true)
                   }}
-                  className="flex h-8 min-w-0 shrink items-center gap-1 rounded-full px-2.5 text-xs font-medium text-primary-600 active:bg-neutral-100 disabled:opacity-50 dark:active:bg-white/10"
+                  className="flex h-8 min-w-0 shrink items-center gap-1 rounded-full px-2 text-xs font-medium text-primary-600 active:bg-neutral-100 disabled:opacity-50 dark:active:bg-white/10"
                   aria-label={`Model ${modelButtonLabel}, effort ${thinkingLabel(thinkingLevel)}`}
                 >
-                  <span className="max-w-[6.5rem] truncate">
+                  <span className="max-w-[11rem] truncate">
                     {formatModelName(modelButtonLabel)}
                   </span>
                   <span

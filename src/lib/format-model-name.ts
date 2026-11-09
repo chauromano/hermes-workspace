@@ -49,7 +49,7 @@ export function formatModelName(raw: string | undefined | null): string {
   // Direct match on full string
   if (MODEL_MAP[raw]) return MODEL_MAP[raw]
 
-  // Split provider/model
+  // Strip all provider/namespace segments (e.g. "openrouter/google/gemini-3-flash" → "gemini-3-flash")
   const slashIdx = raw.indexOf('/')
   if (slashIdx === -1) {
     // No provider prefix — check model map
@@ -57,7 +57,8 @@ export function formatModelName(raw: string | undefined | null): string {
   }
 
   const provider = raw.slice(0, slashIdx)
-  const model = raw.slice(slashIdx + 1)
+  const lastSlashIdx = raw.lastIndexOf('/')
+  const model = raw.slice(lastSlashIdx + 1)
 
   // Check model map first
   if (MODEL_MAP[model]) {
@@ -69,9 +70,14 @@ export function formatModelName(raw: string | undefined | null): string {
   }
 
   // Local models (ollama, lmstudio)
-  if (provider.startsWith('ollama-') || provider.startsWith('lmstudio-')) {
+  if (
+    provider === 'ollama' ||
+    provider.startsWith('ollama-') ||
+    provider === 'lmstudio' ||
+    provider.startsWith('lmstudio-')
+  ) {
     const cleanModel = model.replace(/:latest$/, '').replace(/^hf\.co\//, '')
-    return `Local: ${cleanModel}`
+    return cleanModel
   }
 
   // Codex provider with unknown model
@@ -79,14 +85,18 @@ export function formatModelName(raw: string | undefined | null): string {
     return `Codex (${titleCase(model)})`
   }
 
-  // Generic: strip provider, clean up model name
+  // Generic: strip provider(s), clean up model name
   return titleCase(model)
 }
 
 function titleCase(s: string): string {
   return s
+    .replace(/:(latest|free)$/i, '')
+    .replace(/-(high|medium|low|preview|exp|latest)$/i, '')
+    // Preserve decimal version numbers like "claude-sonnet-4-5" → "claude-sonnet-4.5"
+    .replace(/(\d)-(\d)(?=-|$)/g, '$1.$2')
     .replace(/[-_]/g, ' ')
-    .replace(/:latest$/, '')
+    .replace(/\bGpt\b/gi, 'GPT')
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .trim()
 }
