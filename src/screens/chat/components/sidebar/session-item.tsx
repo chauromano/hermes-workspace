@@ -3,6 +3,7 @@
 import { Link } from '@tanstack/react-router'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  Chat01Icon,
   Delete01Icon,
   MoreHorizontalIcon,
   Pen01Icon,
@@ -87,13 +88,7 @@ function getSessionDisplayTitle(
   if (title) return title
 
   if (isGenerating) return 'Naming…'
-  const shortId = getSessionShortId(session)
-  return shortId ? `Session ${shortId}` : 'Session'
-}
-
-function getFriendlyIdLabel(friendlyId: string): string {
-  if (!isUuidLike(friendlyId)) return friendlyId
-  return `ID ${friendlyId.slice(0, 8)}`
+  return 'Chat'
 }
 
 function SessionItemComponent({
@@ -124,11 +119,9 @@ function SessionItemComponent({
     if (formatted) parts.push(formatted)
     if (session.projectName) {
       parts.push(session.projectName)
-    } else if (session.friendlyId) {
-      parts.push(getFriendlyIdLabel(session.friendlyId))
     }
     return parts.join(' • ')
-  }, [isError, session.friendlyId, session.projectName, session.titleError, updatedAt])
+  }, [isError, session.projectName, session.titleError, updatedAt])
 
   return (
     <Link
@@ -141,90 +134,153 @@ function SessionItemComponent({
         onSelect?.()
       }}
       className={cn(
-        'group inline-flex items-center justify-between',
-        'w-full text-left pl-1.5 pr-0.5 h-14 rounded-lg transition-colors duration-0',
-        'select-none',
+        'group flex items-center gap-2.5 w-full text-left px-2 py-2 rounded-xl transition-all duration-150',
+        'select-none relative',
         active
-          ? 'bg-primary-200 text-primary-950'
-          : 'bg-transparent text-primary-950 [&:hover:not(:has(button:hover))]:bg-primary-200',
+          ? 'bg-accent-500/10 text-primary-950 dark:text-primary-50 font-medium'
+          : 'text-primary-900 hover:bg-primary-200/60 dark:hover:bg-primary-800/50',
       )}
     >
-      <div className="flex-1 min-w-0 py-1.5">
+      {/* Left Icon Badge */}
+      <span
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors',
+          active
+            ? 'bg-accent-500/20 text-accent-500'
+            : isPinned
+              ? 'bg-accent-500/15 text-accent-500'
+              : 'bg-primary-100 dark:bg-primary-800/60 text-primary-500 dark:text-primary-400 group-hover:text-primary-700 dark:group-hover:text-primary-200',
+        )}
+      >
+        {isPinned ? (
+          <HugeiconsIcon icon={PinIcon} size={15} strokeWidth={2} />
+        ) : (
+          <HugeiconsIcon icon={Chat01Icon} size={15} strokeWidth={1.7} />
+        )}
+      </span>
+
+      {/* Title & Subtitle */}
+      <div className="flex-1 min-w-0 py-0.5">
         <div
           className={cn(
-            'truncate text-sm font-[500]',
-            isGenerating ? 'text-primary-700' : '',
+            'truncate text-xs font-medium leading-snug',
+            active
+              ? 'text-accent-500 dark:text-accent-400 font-semibold'
+              : 'text-primary-900',
+            isGenerating ? 'animate-pulse text-primary-500' : '',
           )}
         >
-          <span className={cn(isGenerating ? 'animate-pulse' : undefined)}>
-            {baseTitle}
-          </span>
+          {baseTitle}
         </div>
-        <div
-          className={cn(
-            'mt-0.5 text-[11px] text-primary-600 truncate',
-            isError ? 'text-red-600' : undefined,
-          )}
-        >
-          {subtitle}
-        </div>
+        {subtitle ? (
+          <div
+            className={cn(
+              'mt-0.5 text-[10px] text-primary-500 dark:text-neutral-400 truncate leading-tight',
+              isError ? 'text-red-500' : undefined,
+            )}
+          >
+            {subtitle}
+          </div>
+        ) : null}
       </div>
-      <MenuRoot>
-        <MenuTrigger
+
+      {/* Pinned Icon Indicator (visible on row when pinned and not hovered) */}
+      {isPinned && (
+        <span
+          className="flex size-5 items-center justify-center text-accent-500 shrink-0 group-hover:hidden"
+          title="Pinned session"
+        >
+          <HugeiconsIcon icon={PinIcon} size={12} strokeWidth={2} />
+        </span>
+      )}
+
+      {/* Active Dot (when not pinned) */}
+      {active && !isPinned && (
+        <span className="size-1.5 rounded-full bg-accent-500 shrink-0 mr-1 group-hover:hidden" />
+      )}
+
+      {/* Actions: Quick Pin Button + More Menu */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
           type="button"
           onClick={(event) => {
             event.preventDefault()
             event.stopPropagation()
+            onTogglePin(session)
           }}
+          aria-label={isPinned ? 'Unpin session' : 'Pin session'}
+          title={isPinned ? 'Unpin session' : 'Pin session'}
           className={cn(
-            'ml-2 inline-flex size-7 items-center justify-center rounded-md text-primary-700',
-            'opacity-0 transition-opacity group-hover:opacity-100 hover:bg-primary-200 dark:hover:bg-primary-800',
-            'aria-expanded:opacity-100 aria-expanded:bg-primary-200',
+            'inline-flex size-6 items-center justify-center rounded-md transition-all',
+            isPinned
+              ? 'text-accent-500 hover:bg-accent-500/20 opacity-0 group-hover:opacity-100'
+              : 'text-primary-400 hover:text-primary-900 dark:hover:text-primary-100 hover:bg-primary-200 dark:hover:bg-primary-700 opacity-0 group-hover:opacity-100',
           )}
-          aria-label="Session options"
         >
           <HugeiconsIcon
-            icon={MoreHorizontalIcon}
-            size={20}
-            strokeWidth={1.5}
+            icon={PinIcon}
+            size={13}
+            strokeWidth={isPinned ? 2 : 1.5}
           />
-        </MenuTrigger>
-        <MenuContent side="bottom" align="end">
-          <MenuItem
+        </button>
+
+        <MenuRoot>
+          <MenuTrigger
+            type="button"
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
-              onTogglePin(session)
             }}
-            className="gap-2"
+            className={cn(
+              'inline-flex size-6 items-center justify-center rounded-md text-primary-500 dark:text-primary-400',
+              'opacity-0 transition-opacity group-hover:opacity-100 hover:bg-primary-200 dark:hover:bg-primary-700',
+              'aria-expanded:opacity-100 aria-expanded:bg-primary-200 dark:aria-expanded:bg-primary-700',
+            )}
+            aria-label="Session options"
           >
-            <HugeiconsIcon icon={PinIcon} size={20} strokeWidth={1.5} />{' '}
-            {isPinned ? 'Unpin session' : 'Pin session'}
-          </MenuItem>
-          <MenuItem
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onRename(session)
-            }}
-            className="gap-2"
-          >
-            <HugeiconsIcon icon={Pen01Icon} size={20} strokeWidth={1.5} />{' '}
-            Rename
-          </MenuItem>
-          <MenuItem
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              onDelete(session)
-            }}
-            className="text-red-700 gap-2 hover:bg-red-50 dark:hover:bg-red-900/30/80 data-highlighted:bg-red-50/80"
-          >
-            <HugeiconsIcon icon={Delete01Icon} size={20} strokeWidth={1.5} />{' '}
-            Delete
-          </MenuItem>
-        </MenuContent>
-      </MenuRoot>
+            <HugeiconsIcon
+              icon={MoreHorizontalIcon}
+              size={16}
+              strokeWidth={1.5}
+            />
+          </MenuTrigger>
+          <MenuContent side="bottom" align="end">
+            <MenuItem
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onTogglePin(session)
+              }}
+              className="gap-2"
+            >
+              <HugeiconsIcon icon={PinIcon} size={16} strokeWidth={1.5} />{' '}
+              {isPinned ? 'Unpin session' : 'Pin session'}
+            </MenuItem>
+            <MenuItem
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onRename(session)
+              }}
+              className="gap-2"
+            >
+              <HugeiconsIcon icon={Pen01Icon} size={16} strokeWidth={1.5} />{' '}
+              Rename
+            </MenuItem>
+            <MenuItem
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onDelete(session)
+              }}
+              className="text-red-700 dark:text-red-400 gap-2 hover:bg-red-50 dark:hover:bg-red-900/30 data-highlighted:bg-red-50/80"
+            >
+              <HugeiconsIcon icon={Delete01Icon} size={16} strokeWidth={1.5} />{' '}
+              Delete
+            </MenuItem>
+          </MenuContent>
+        </MenuRoot>
+      </div>
     </Link>
   )
 }

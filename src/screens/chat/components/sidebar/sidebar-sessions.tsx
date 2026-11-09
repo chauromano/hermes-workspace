@@ -1,15 +1,10 @@
 'use client'
 
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
+import { PinIcon } from '@hugeicons/core-free-icons'
 import { memo, useMemo } from 'react'
 import { SessionItem } from './session-item'
 import type { SessionMeta } from '../../types'
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import {
   ScrollAreaRoot,
   ScrollAreaScrollbar,
@@ -65,103 +60,94 @@ export const SidebarSessions = memo(function SidebarSessions({
   }
 
   return (
-    <Collapsible
-      className="flex h-full flex-col flex-1 min-h-0 w-full"
-      defaultOpen={defaultOpen}
-    >
-      <CollapsibleTrigger className="w-full flex items-center gap-1.5 rounded-none px-5 pt-3 pb-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider hover:bg-transparent data-panel-open:text-primary-500">
-        <span className="select-none">Sessions</span>
-        <span className="ml-auto p-0.5 rounded hover:bg-primary-200 dark:hover:bg-primary-800 transition-colors">
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={12}
-            strokeWidth={2}
-            className="text-primary-500 transition-transform duration-150 -rotate-90 group-data-panel-open:rotate-0"
-          />
-        </span>
-      </CollapsibleTrigger>
+    <div className="flex h-full flex-col flex-1 min-h-0 w-full">
+      <ScrollAreaRoot className="flex-1 min-h-0">
+        <ScrollAreaViewport className="min-h-0">
+          <div className="flex flex-col gap-1 px-1 py-1">
+            {/* Pinned sessions */}
+            {pinnedSessions.length > 0 ? (
+              <div className="flex flex-col gap-1 pb-1">
+                <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-500 select-none">
+                  <HugeiconsIcon icon={PinIcon} size={12} strokeWidth={2} />
+                  <span>Pinned</span>
+                </div>
+                {pinnedSessions.map((session) => (
+                  <SessionItem
+                    key={session.key}
+                    session={session}
+                    active={session.friendlyId === activeFriendlyId}
+                    isPinned
+                    onSelect={onSelect}
+                    onTogglePin={handleTogglePin}
+                    onRename={onRename}
+                    onDelete={onDelete}
+                  />
+                ))}
+                {unpinnedSessions.length > 0 ? (
+                  <div className="my-1.5 mx-2 border-t border-primary-200/60 dark:border-primary-800/40" />
+                ) : null}
+              </div>
+            ) : null}
 
-      {/* Pinned sessions — always visible (outside collapsible panel) */}
-      {pinnedSessions.length > 0 ? (
-        <div className="flex shrink-0 flex-col gap-px pl-3 pr-2 pt-1">
-          {pinnedSessions.map((session) => (
-            <SessionItem
-              key={session.key}
-              session={session}
-              active={session.friendlyId === activeFriendlyId}
-              isPinned
-              onSelect={onSelect}
-              onTogglePin={handleTogglePin}
-              onRename={onRename}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      ) : null}
+            {/* Recent / Unpinned sessions */}
+            {unpinnedSessions.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                {pinnedSessions.length > 0 ? (
+                  <div className="flex items-center gap-1.5 px-2.5 pt-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
+                    <span>Recent</span>
+                  </div>
+                ) : null}
+                {unpinnedSessions.map((session) => (
+                  <SessionItem
+                    key={session.key}
+                    session={session}
+                    active={session.friendlyId === activeFriendlyId}
+                    isPinned={false}
+                    onSelect={onSelect}
+                    onTogglePin={handleTogglePin}
+                    onRename={onRename}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </div>
+            ) : pinnedSessions.length === 0 ? (
+              <div className="px-3 py-6 text-xs text-primary-500 text-center">
+                {loading ? 'Loading sessions…' : 'No sessions yet. Start a conversation.'}
+              </div>
+            ) : null}
 
-      <CollapsiblePanel
-        className="w-full min-h-0"
-        contentClassName="flex flex-col overflow-y-auto max-h-[calc(100vh-300px)]"
-      >
-        <ScrollAreaRoot className="flex-1 min-h-0">
-          <ScrollAreaViewport className="min-h-0">
-            <div className="flex flex-col gap-px pl-3 pr-2">
-              {loading ? (
-                <div className="px-2 py-2 text-xs text-primary-500">
-                  Loading sessions…
-                </div>
-              ) : error ? (
-                <div className="px-2 py-2 text-xs text-primary-500">
-                  <div className="mb-2">Failed to load sessions.</div>
-                  <div className="text-[11px] opacity-80">{error}</div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="mt-2"
-                    onClick={onRetry}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              ) : unpinnedSessions.length > 0 ? (
-                <>
-                  {pinnedSessions.length > 0 ? (
-                    <div className="my-1 border-t border-primary-200/80" />
-                  ) : null}
-                  {unpinnedSessions.map((session) => (
-                    <SessionItem
-                      key={session.key}
-                      session={session}
-                      active={session.friendlyId === activeFriendlyId}
-                      isPinned={false}
-                      onSelect={onSelect}
-                      onTogglePin={handleTogglePin}
-                      onRename={onRename}
-                      onDelete={onDelete}
-                    />
-                  ))}
-                </>
-              ) : (
-                <div className="px-2 py-2 text-xs text-primary-500">
-                  {pinnedSessions.length > 0
-                    ? 'All sessions are pinned.'
-                    : 'No sessions yet. Start a conversation →'}
-                </div>
-              )}
-              {fetching && !loading && !error && sessions.length > 0 ? (
-                <div className="px-2 py-1 text-[11px] text-primary-400">
-                  Updating…
-                </div>
-              ) : null}
-            </div>
-          </ScrollAreaViewport>
-          <ScrollAreaScrollbar orientation="vertical">
-            <ScrollAreaThumb />
-          </ScrollAreaScrollbar>
-        </ScrollAreaRoot>
-      </CollapsiblePanel>
-    </Collapsible>
+            {loading && (
+              <div className="px-3 py-2 text-xs text-primary-500">
+                Loading sessions…
+              </div>
+            )}
+            {error && (
+              <div className="px-3 py-2 text-xs text-primary-500">
+                <div className="mb-2">Failed to load sessions.</div>
+                <div className="text-[11px] opacity-80">{error}</div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2"
+                  onClick={onRetry}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+            {fetching && !loading && !error && sessions.length > 0 ? (
+              <div className="px-3 py-1 text-[11px] text-primary-400">
+                Updating…
+              </div>
+            ) : null}
+          </div>
+        </ScrollAreaViewport>
+        <ScrollAreaScrollbar orientation="vertical">
+          <ScrollAreaThumb />
+        </ScrollAreaScrollbar>
+      </ScrollAreaRoot>
+    </div>
   )
 }, areSidebarSessionsEqual)
 
