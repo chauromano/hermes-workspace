@@ -120,8 +120,23 @@ function SessionItemComponent({
     if (session.projectName) {
       parts.push(session.projectName)
     }
+    const rawProfile = session.profileName ?? session.profile
+    const validProfile =
+      rawProfile && !['default', 'general'].includes(rawProfile.toLowerCase())
+        ? rawProfile
+        : null
+    if (validProfile) {
+      parts.push(validProfile)
+    }
     return parts.join(' • ')
-  }, [isError, session.projectName, session.titleError, updatedAt])
+  }, [
+    isError,
+    session.projectName,
+    session.profileName,
+    session.profile,
+    session.titleError,
+    updatedAt,
+  ])
 
   return (
     <Link
@@ -302,7 +317,10 @@ function areSessionItemsEqual(prev: SessionItemProps, next: SessionItemProps) {
     prev.session.updatedAt === next.session.updatedAt &&
     prev.session.titleStatus === next.session.titleStatus &&
     prev.session.titleSource === next.session.titleSource &&
-    prev.session.titleError === next.session.titleError
+    prev.session.titleError === next.session.titleError &&
+    prev.session.projectName === next.session.projectName &&
+    (prev.session.profileName ?? prev.session.profile) ===
+      (next.session.profileName ?? next.session.profile)
   )
 }
 

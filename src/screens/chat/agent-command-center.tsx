@@ -153,6 +153,7 @@ function NativeSessionRow({
           </span>
           <span className="block truncate text-xs text-primary-500">
             {typeof session.projectName === 'string' && session.projectName ? `${session.projectName} · ` : ''}
+            {typeof (session as any).profileName === 'string' && (session as any).profileName && !['default', 'general'].includes(String((session as any).profileName).toLowerCase()) ? `${(session as any).profileName} · ` : ''}
             {model ? `${formatModelName(model)} · ` : ''}
             {typeof count === 'number'
               ? `${count} ${count === 1 ? 'message' : 'messages'}`

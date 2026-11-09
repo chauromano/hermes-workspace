@@ -243,6 +243,23 @@ function MobileSessionItem({
   const timestamp = formatUpdatedAt(session.updatedAt)
   const title = getSessionTitle(session)
 
+  const subtitle = useMemo(() => {
+    const parts: Array<string> = []
+    if (timestamp) parts.push(timestamp)
+    if (session.projectName) {
+      parts.push(session.projectName)
+    }
+    const rawProfile = session.profileName ?? session.profile
+    const validProfile =
+      rawProfile && !['default', 'general'].includes(rawProfile.toLowerCase())
+        ? rawProfile
+        : null
+    if (validProfile) {
+      parts.push(validProfile)
+    }
+    return parts.join(' • ')
+  }, [timestamp, session.projectName, session.profileName, session.profile])
+
   return (
     <div
       className={cn(
@@ -277,9 +294,9 @@ function MobileSessionItem({
           <span className="block truncate text-xs font-medium">
             {title}
           </span>
-          {timestamp ? (
+          {subtitle ? (
             <span className="block truncate text-[10px] text-primary-500 dark:text-neutral-400">
-              {timestamp}
+              {subtitle}
             </span>
           ) : null}
         </span>

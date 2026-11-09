@@ -270,6 +270,8 @@ export function normalizeSessions(
       projectId: session.projectId ?? null,
       projectName: session.projectName ?? null,
       projectSlug: session.projectSlug ?? null,
+      profileName: session.profileName ?? session.profile ?? null,
+      profile: session.profile ?? session.profileName ?? null,
     }
   })
 }

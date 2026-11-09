@@ -97,6 +97,8 @@ export type SessionSummary = {
   projectId?: string | null
   projectName?: string | null
   projectSlug?: string | null
+  profileName?: string | null
+  profile?: string | null
 }
 
 export type SessionListResponse = {
@@ -125,6 +127,8 @@ export type SessionMeta = {
   projectId?: string | null
   projectName?: string | null
   projectSlug?: string | null
+  profileName?: string | null
+  profile?: string | null
 }
 
 export type PathsPayload = {

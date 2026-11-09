@@ -757,56 +757,208 @@ export function extractPathFromDirective(text: string | null | undefined): strin
   return m ? m[1].trim() : null
 }
 
+export type SessionMetadata = {
+  cwd: string
+  profile: string | null
+}
+
+const sessionMetaCache = new Map<string, SessionMetadata & { timestamp: number }>()
 const sessionCwdCache = new Map<string, { cwd: string; timestamp: number }>()
 const CWD_CACHE_TTL_MS = 30_000
 
 export function invalidateSessionCwd(sessionId?: string): void {
   if (sessionId) {
     sessionCwdCache.delete(sessionId)
+    sessionMetaCache.delete(sessionId)
   } else {
     sessionCwdCache.clear()
+    sessionMetaCache.clear()
   }
 }
 
-export function getSessionCwdMap(sessionIds: string[], stateDb = getStateDbPath()): Map<string, string> {
-  const map = new Map<string, string>()
+export function getProfilesDir(): string {
+  const primary = join(getHermesRoot(), 'profiles')
+  if (existsSync(primary)) return primary
+
+  const fallback = '/opt/data/profiles'
+  if (existsSync(fallback)) return fallback
+
+  return primary
+}
+
+export function getSessionMetaMap(
+  sessionIds: string[],
+  stateDb = getStateDbPath(),
+): Map<string, SessionMetadata> {
+  const map = new Map<string, SessionMetadata>()
   if (sessionIds.length === 0) return map
 
   const now = Date.now()
   const missingIds: string[] = []
 
   for (const id of sessionIds) {
-    const cached = sessionCwdCache.get(id)
+    const cached = sessionMetaCache.get(id)
     if (cached && now - cached.timestamp < CWD_CACHE_TTL_MS) {
-      if (cached.cwd) map.set(id, cached.cwd)
+      map.set(id, { cwd: cached.cwd, profile: cached.profile })
     } else {
       missingIds.push(id)
     }
   }
 
-  if (missingIds.length > 0 && existsSync(stateDb)) {
-    try {
-      const inList = missingIds.map(sqliteQuote).join(', ')
-      const raw = runSqlite(stateDb, `SELECT id, cwd FROM sessions WHERE id IN (${inList});`)
-      if (raw) {
-        const rows = JSON.parse(raw) as Array<{ id: string; cwd?: string | null }>
-        const found = new Set<string>()
-        for (const row of rows) {
-          found.add(row.id)
-          const cwd = row.cwd && row.cwd.trim() ? row.cwd.trim() : ''
-          sessionCwdCache.set(row.id, { cwd, timestamp: now })
-          if (cwd) map.set(row.id, cwd)
-        }
-        for (const id of missingIds) {
-          if (!found.has(id)) {
-            sessionCwdCache.set(id, { cwd: '', timestamp: now })
+  if (missingIds.length > 0) {
+    const foundMap = new Map<string, { cwd: string; profile: string | null }>()
+
+    // 1. Query root state.db
+    if (existsSync(stateDb)) {
+      try {
+        const inList = missingIds.map(sqliteQuote).join(', ')
+        const raw = runSqlite(
+          stateDb,
+          `SELECT id, cwd, profile_name FROM sessions WHERE id IN (${inList});`,
+        )
+        if (raw) {
+          const rows = JSON.parse(raw) as Array<{
+            id: string
+            cwd?: string | null
+            profile_name?: string | null
+          }>
+          for (const row of rows) {
+            const cwd = row.cwd && row.cwd.trim() ? row.cwd.trim() : ''
+            let profile: string | null = null
+            if (
+              row.profile_name &&
+              !['default', 'general'].includes(
+                String(row.profile_name).toLowerCase(),
+              )
+            ) {
+              profile = String(row.profile_name).trim()
+            } else if (cwd) {
+              const match = cwd.match(/\/workspace\/hermes_default_spaces\/([^/]+)/)
+              if (
+                match &&
+                match[1] &&
+                !['hermes', 'default', 'general'].includes(
+                  match[1].toLowerCase(),
+                )
+              ) {
+                profile = match[1]
+              }
+            }
+            foundMap.set(row.id, { cwd, profile })
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
+
+    // 2. For IDs without a profile, check individual profile state.db files
+    const profDir = getProfilesDir()
+    const needsProfile = missingIds.filter((id) => !foundMap.get(id)?.profile)
+    if (needsProfile.length > 0 && existsSync(profDir)) {
+      try {
+        const entries = readdirSync(profDir, { withFileTypes: true })
+        for (const entry of entries) {
+          if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+          const profName = entry.name
+          if (['default', 'general', 'hermes'].includes(profName.toLowerCase()))
+            continue
+          const profDb = join(profDir, profName, 'state.db')
+          if (!existsSync(profDb)) continue
+          try {
+            const profInList = needsProfile.map(sqliteQuote).join(', ')
+            const rawProf = runSqlite(
+              profDb,
+              `SELECT id, cwd, profile_name FROM sessions WHERE id IN (${profInList});`,
+            )
+            if (rawProf) {
+              const pRows = JSON.parse(rawProf) as Array<{
+                id: string
+                cwd?: string | null
+                profile_name?: string | null
+              }>
+              for (const pRow of pRows) {
+                const prev = foundMap.get(pRow.id)
+                const pCwd =
+                  prev?.cwd ||
+                  (pRow.cwd && pRow.cwd.trim() ? pRow.cwd.trim() : '')
+                const resolvedProf =
+                  pRow.profile_name &&
+                  !['default', 'general'].includes(
+                    String(pRow.profile_name).toLowerCase(),
+                  )
+                    ? String(pRow.profile_name).trim()
+                    : profName
+                foundMap.set(pRow.id, { cwd: pCwd, profile: resolvedProf })
+              }
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // Cache results and populate return map
+    for (const id of missingIds) {
+      const res = foundMap.get(id) || { cwd: '', profile: null }
+      sessionMetaCache.set(id, { ...res, timestamp: now })
+      sessionCwdCache.set(id, { cwd: res.cwd, timestamp: now })
+      map.set(id, res)
+    }
   }
 
   return map
+}
+
+export function getSessionCwdMap(
+  sessionIds: string[],
+  stateDb = getStateDbPath(),
+): Map<string, string> {
+  const metaMap = getSessionMetaMap(sessionIds, stateDb)
+  const cwdMap = new Map<string, string>()
+  for (const [id, meta] of metaMap.entries()) {
+    if (meta.cwd) cwdMap.set(id, meta.cwd)
+  }
+  return cwdMap
+}
+
+export function setSessionProfile(
+  sessionId: string,
+  profileName: string | null,
+  stateDb = getStateDbPath(),
+): {
+  success: boolean
+  profile: string | null
+} {
+  const cleanProfile =
+    profileName &&
+    profileName.trim() &&
+    !['default', 'general'].includes(profileName.trim().toLowerCase())
+      ? profileName.trim().toLowerCase()
+      : 'default'
+
+  if (existsSync(stateDb)) {
+    const sql = `UPDATE sessions SET profile_name = ${sqliteQuote(cleanProfile)} WHERE id = ${sqliteQuote(sessionId)};`
+    runSqliteExec(stateDb, sql)
+  }
+
+  const cached = sessionMetaCache.get(sessionId)
+  const displayProfile = cleanProfile === 'default' ? null : cleanProfile
+  if (cached) {
+    sessionMetaCache.set(sessionId, {
+      ...cached,
+      profile: displayProfile,
+      timestamp: Date.now(),
+    })
+  } else {
+    sessionMetaCache.set(sessionId, {
+      cwd: '',
+      profile: displayProfile,
+      timestamp: Date.now(),
+    })
+  }
+
+  return {
+    success: true,
+    profile: displayProfile,
+  }
 }
 
 export function setSessionProject(
@@ -843,6 +995,12 @@ export function setSessionProject(
   }
 
   sessionCwdCache.set(sessionId, { cwd: targetPath || '', timestamp: Date.now() })
+  const cachedMeta = sessionMetaCache.get(sessionId)
+  sessionMetaCache.set(sessionId, {
+    cwd: targetPath || '',
+    profile: cachedMeta?.profile ?? null,
+    timestamp: Date.now(),
+  })
   invalidateProjectsCache()
 
   return {
@@ -859,38 +1017,48 @@ export function readSessionsFromStateDb(
 ): Array<Record<string, unknown>> {
   if (!existsSync(stateDb)) return []
   try {
-    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
+    const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
     const raw = runSqlite(stateDb, sql)
     if (!raw) return []
     const rows = JSON.parse(raw) as Array<Record<string, any>>
-    return rows.map((s) => ({
-      key: s.id,
-      id: s.id,
-      friendlyId: s.id,
-      kind: 'chat',
-      status: 'idle',
-      model: s.model || '',
-      label: s.title || undefined,
-      title: s.title || undefined,
-      derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
-      preview: undefined,
-      tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
-      totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
-      message_count: s.message_count || 0,
-      tool_call_count: s.tool_call_count || 0,
-      messageCount: s.message_count || 0,
-      toolCallCount: s.tool_call_count || 0,
-      cost: 0,
-      createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-      startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-      updatedAt: s.last_activity_at
-        ? Math.floor(s.last_activity_at * 1000)
-        : s.started_at
-          ? Math.floor(s.started_at * 1000)
-          : Date.now(),
-      isPinned: Boolean(s.pinned),
-      cwd: s.cwd || null,
-    }))
+    return rows.map((s) => {
+      const rawProf =
+        s.profile_name &&
+        !['default', 'general'].includes(String(s.profile_name).toLowerCase())
+          ? String(s.profile_name).trim()
+          : null
+      return {
+        key: s.id,
+        id: s.id,
+        friendlyId: s.id,
+        kind: 'chat',
+        status: 'idle',
+        model: s.model || '',
+        label: s.title || undefined,
+        title: s.title || undefined,
+        derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
+        preview: undefined,
+        tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
+        totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
+        message_count: s.message_count || 0,
+        tool_call_count: s.tool_call_count || 0,
+        messageCount: s.message_count || 0,
+        toolCallCount: s.tool_call_count || 0,
+        cost: 0,
+        createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+        startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+        updatedAt: s.last_activity_at
+          ? Math.floor(s.last_activity_at * 1000)
+          : s.started_at
+            ? Math.floor(s.started_at * 1000)
+            : Date.now(),
+        isPinned: Boolean(s.pinned),
+        cwd: s.cwd || null,
+        profile_name: rawProf,
+        profileName: rawProf,
+        profile: rawProf,
+      }
+    })
   } catch {
     return []
   }

@@ -21,7 +21,7 @@ import {
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
-import { findProjectForPath, getSessionCwdMap, extractPathFromDirective, listProjects, setSessionProject, readSessionsFromStateDb } from '../../server/projects-backend'
+import { findProjectForPath, getSessionCwdMap, getSessionMetaMap, extractPathFromDirective, listProjects, setSessionProject, setSessionProfile, readSessionsFromStateDb } from '../../server/projects-backend'
 import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
@@ -92,17 +92,30 @@ export const Route = createFileRoute('/api/sessions')({
           }
 
           const sessionIds = gatewaySessions.map((s: any) => String(s.key || s.friendlyId || s.id))
-          const cwdMap = getSessionCwdMap(sessionIds)
+          const sessionMetaMap = getSessionMetaMap(sessionIds)
           const { projects: allProjects } = listProjects({ includeArchived: true })
 
           for (const s of gatewaySessions as any[]) {
             const sid = String(s.key || s.friendlyId || s.id)
-            const cwd = s.cwd || cwdMap.get(sid) || extractPathFromDirective(s.preview) || null
+            const meta = sessionMetaMap.get(sid)
+            const cwd = s.cwd || meta?.cwd || extractPathFromDirective(s.preview) || null
             const project = findProjectForPath(cwd, allProjects)
+            const profile =
+              meta?.profile ||
+              (s.profile_name &&
+              !['default', 'general'].includes(
+                String(s.profile_name).toLowerCase(),
+              )
+                ? String(s.profile_name).trim()
+                : null) ||
+              null
+
             s.cwd = cwd
             s.projectId = project?.id ?? null
             s.projectName = project?.name ?? null
             s.projectSlug = project?.slug ?? null
+            s.profileName = profile
+            s.profile = profile
           }
 
           return json({ sessions: gatewaySessions, pinnedSessionKeys })
@@ -110,12 +123,30 @@ export const Route = createFileRoute('/api/sessions')({
           // Robust fallback to state.db even on unexpected processing errors
           try {
             const fallbackSessions = readSessionsFromStateDb(50) as any[]
+            const fallbackIds = fallbackSessions.map((s: any) => String(s.key || s.friendlyId || s.id))
+            const sessionMetaMap = getSessionMetaMap(fallbackIds)
             const { projects: allProjects } = listProjects({ includeArchived: true })
             for (const s of fallbackSessions) {
-              const project = findProjectForPath(s.cwd, allProjects)
+              const sid = String(s.key || s.friendlyId || s.id)
+              const meta = sessionMetaMap.get(sid)
+              const cwd = s.cwd || meta?.cwd || extractPathFromDirective(s.preview) || null
+              const project = findProjectForPath(cwd, allProjects)
+              const profile =
+                meta?.profile ||
+                (s.profile_name &&
+                !['default', 'general'].includes(
+                  String(s.profile_name).toLowerCase(),
+                )
+                  ? String(s.profile_name).trim()
+                  : null) ||
+                null
+
+              s.cwd = cwd
               s.projectId = project?.id ?? null
               s.projectName = project?.name ?? null
               s.projectSlug = project?.slug ?? null
+              s.profileName = profile
+              s.profile = profile
             }
             return json({ sessions: fallbackSessions, pinnedSessionKeys: [] })
           } catch {}
@@ -279,6 +310,28 @@ export const Route = createFileRoute('/api/sessions')({
                 key: sessionKey,
                 id: sessionKey,
                 ...projectRes,
+              },
+              updated: true,
+            })
+          }
+
+          if (body.profile !== undefined || body.profileName !== undefined) {
+            const targetProfile =
+              typeof body.profile === 'string'
+                ? body.profile.trim()
+                : typeof body.profileName === 'string'
+                  ? body.profileName.trim()
+                  : null
+            const profileRes = setSessionProfile(sessionKey, targetProfile)
+            return json({
+              ok: true,
+              sessionKey,
+              friendlyId: rawFriendlyId || sessionKey,
+              entry: {
+                key: sessionKey,
+                id: sessionKey,
+                profileName: profileRes.profile,
+                profile: profileRes.profile,
               },
               updated: true,
             })
