@@ -2400,6 +2400,9 @@ function ChatComposerComponent({
                 </button>
               ) : null}
 
+              {/* Context window donut meter */}
+              <ContextBar compact sessionId={sessionKey} />
+
               {/* Right side: stop / send / mic */}
               <div className="shrink-0">
                 {isLoading ? (
@@ -3200,7 +3203,6 @@ function ChatComposerComponent({
               </div>
 
               <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
-                <ContextBar compact sessionId={sessionKey} />
                 {!hideModelSelector ? (
                           <div
                             className="relative flex min-w-0 items-center"
@@ -3444,6 +3446,7 @@ function ChatComposerComponent({
                             )}
                           </div>
                         ) : null}
+                <ContextBar compact sessionId={sessionKey} />
                 {voiceInput.isSupported || voiceRecorder.isSupported ? (
                   <PromptInputAction
                     tooltip={

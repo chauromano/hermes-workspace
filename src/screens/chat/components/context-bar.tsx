@@ -31,7 +31,7 @@ function formatTokens(n: number): string {
 }
 
 function ContextBarComponent({
-  compact: _compact,
+  compact = false,
   sessionId,
 }: {
   compact?: boolean
@@ -40,6 +40,7 @@ function ContextBarComponent({
   const [ctx, setCtx] = useState<ContextData>(EMPTY)
   const [showLabel, setShowLabel] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 767px)')
@@ -114,6 +115,117 @@ function ContextBarComponent({
       : isWarning
         ? 'text-yellow-600'
         : 'text-emerald-600'
+
+  if (compact) {
+    const radius = 7
+    const circumference = 2 * Math.PI * radius
+    const strokeDashoffset = circumference * (1 - clampedPct / 100)
+
+    const strokeColor = isCritical
+      ? 'text-red-500'
+      : isDanger
+        ? 'text-orange-500'
+        : isWarning
+          ? 'text-amber-500'
+          : 'text-emerald-500'
+
+    const trackColor = isCritical
+      ? 'text-red-200 dark:text-red-950/60'
+      : isDanger
+        ? 'text-orange-200 dark:text-orange-950/60'
+        : isWarning
+          ? 'text-amber-200 dark:text-amber-950/60'
+          : 'text-neutral-200 dark:text-neutral-700/80'
+
+    return (
+      <PreviewCard open={open} onOpenChange={setOpen}>
+        <PreviewCardTrigger
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((prev) => !prev)
+          }}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer select-none"
+          title={`Context window: ${Math.round(clampedPct)}% (${formatTokens(ctx.usedTokens)}/${formatTokens(ctx.maxTokens)})`}
+          aria-label={`Context window: ${Math.round(clampedPct)}% used`}
+        >
+          <svg
+            className="size-4 -rotate-90"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+          >
+            {/* Background track circle */}
+            <circle
+              cx="10"
+              cy="10"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              className={trackColor}
+            />
+            {/* Filled progress donut segment */}
+            <circle
+              cx="10"
+              cy="10"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round"
+              className={cn('transition-all duration-500 ease-out', strokeColor)}
+            />
+          </svg>
+        </PreviewCardTrigger>
+
+        <PreviewCardPopup
+          align="end"
+          sideOffset={8}
+          className="w-64 rounded-xl p-3 shadow-xl"
+        >
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-neutral-800 dark:text-neutral-100">
+                Context Window
+              </span>
+              <span className={cn('font-bold tabular-nums', textColor)}>
+                {Math.round(clampedPct)}%
+              </span>
+            </div>
+            <div className={cn('w-full h-1.5 rounded-full overflow-hidden', barBg)}>
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all duration-500',
+                  barColor,
+                )}
+                style={{ width: `${clampedPct}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400">
+              <span className="tabular-nums">
+                {formatTokens(ctx.usedTokens)} / {formatTokens(ctx.maxTokens)} tokens
+              </span>
+              {ctx.model && (
+                <span
+                  className="truncate max-w-[100px] font-mono text-[10px]"
+                  title={ctx.model}
+                >
+                  {ctx.model}
+                </span>
+              )}
+            </div>
+            {isCritical && (
+              <p className="text-[10px] text-red-600 dark:text-red-400 font-medium pt-1 border-t border-neutral-100 dark:border-neutral-800">
+                Context almost full — consider starting a new chat
+              </p>
+            )}
+          </div>
+        </PreviewCardPopup>
+      </PreviewCard>
+    )
+  }
 
   if (isMobile) {
     return (
