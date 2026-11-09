@@ -1097,12 +1097,11 @@ export function deleteSessionFromStateDb(
   sessionId: string,
   stateDb = getStateDbPath(),
 ): boolean {
+  const quoted = sqliteQuote(sessionId)
+  const deleteSql = `DELETE FROM messages WHERE session_id = ${quoted}; DELETE FROM session_admissions WHERE target_session_id = ${quoted}; DELETE FROM worker_executions WHERE session_id = ${quoted}; DELETE FROM sessions WHERE id = ${quoted};`
   if (existsSync(stateDb)) {
     try {
-      runSqliteExec(
-        stateDb,
-        `DELETE FROM messages WHERE session_id = ${sqliteQuote(sessionId)}; DELETE FROM sessions WHERE id = ${sqliteQuote(sessionId)};`,
-      )
+      runSqliteExec(stateDb, deleteSql)
     } catch (e) {
       console.warn('[projects-backend] Direct SQLite session delete bypassed:', e)
     }
@@ -1116,10 +1115,7 @@ export function deleteSessionFromStateDb(
         const profDb = join(profilesDir, entry.name, 'state.db')
         if (existsSync(profDb)) {
           try {
-            runSqliteExec(
-              profDb,
-              `DELETE FROM messages WHERE session_id = ${sqliteQuote(sessionId)}; DELETE FROM sessions WHERE id = ${sqliteQuote(sessionId)};`,
-            )
+            runSqliteExec(profDb, deleteSql)
           } catch {}
         }
       }
