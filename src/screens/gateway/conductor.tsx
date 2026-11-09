@@ -10,6 +10,7 @@ import type { AgentWorkingRow } from './components/agents-working-panel'
 import { type GatewaySession } from '@/lib/gateway-api'
 import { cn } from '@/lib/utils'
 import { type MissionHistoryEntry, type MissionHistoryWorkerDetail, useConductorGateway } from './hooks/use-conductor-gateway'
+import { useProjects } from '@/hooks/use-projects'
 
 type ConductorPhase = 'home' | 'preview' | 'active' | 'complete'
 type QuickActionId = 'research' | 'build' | 'review' | 'deploy'
@@ -710,8 +711,162 @@ function deriveSessionStatus(session: GatewaySession): 'running' | 'completed' |
   return 'running'
 }
 
+function MissionsHelpContent() {
+  return (
+    <div className="space-y-6">
+      {/* Overview Banner */}
+      <div className="rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card2)] p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">🚀</span>
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-[var(--theme-text)]">
+              Autonomous Software Engineering Squad
+            </h3>
+            <p className="text-xs sm:text-sm leading-relaxed text-[var(--theme-muted)]">
+              Missions runs end-to-end software delivery from a single objective prompt.
+              Unlike 1-on-1 chat or Swarm (which is for personal profiles and collaborative tasks),
+              Missions acts as a complete hands-off engineering squad: decomposing the goal, writing code,
+              running tests, and delivering artifacts directly into your Project.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* The 5 Squad Roles */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--theme-muted)]">
+            The Dedicated Software Squad
+          </h4>
+          <span className="text-[11px] text-[var(--theme-muted-2)]">5 specialized roles</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-xs text-[var(--theme-text)]">🔨 Builder</span>
+              <span className="rounded-md border border-sky-500/20 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">Implementation</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--theme-muted)] leading-normal">
+              Writes feature code, prototypes interfaces, and makes concrete, scoped deliverables.
+            </p>
+            <div className="mt-2 text-[10px] text-[var(--theme-muted-2)]">Personas: Nova, Pixel</div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-xs text-[var(--theme-text)]">🔍 Reviewer</span>
+              <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">Quality Gate</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--theme-muted)] leading-normal">
+              Conducts independent code reviews, checks for regressions, and flags unsafe assumptions.
+            </p>
+            <div className="mt-2 text-[10px] text-[var(--theme-muted-2)]">Personas: Sage, Drift</div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-xs text-[var(--theme-text)]">🧪 QA</span>
+              <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">Verification</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--theme-muted)] leading-normal">
+              Executes focused test suites, runs build commands, and performs automated smoke checks.
+            </p>
+            <div className="mt-2 text-[10px] text-[var(--theme-muted-2)]">Personas: Volt, Echo</div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-xs text-[var(--theme-text)]">🛡️ Ops Watch</span>
+              <span className="rounded-md border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">Runtime Safety</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--theme-muted)] leading-normal">
+              Monitors service health, background processes, environment risk, and deployment readiness.
+            </p>
+            <div className="mt-2 text-[10px] text-[var(--theme-muted-2)]">Persona: Blaze</div>
+          </div>
+
+          <div className="sm:col-span-2 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-xs text-[var(--theme-text)]">📝 Knowledge Manager (KM)</span>
+              <span className="rounded-md border border-neutral-500/20 bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400">Handoff Notes</span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--theme-muted)] leading-normal">
+              Produces structured release summaries, architecture changelogs, and operational handoff notes without exposing secrets.
+            </p>
+            <div className="mt-2 text-[10px] text-[var(--theme-muted-2)]">Persona: Flux</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3-Step Execution Lifecycle */}
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--theme-muted)]">
+          Execution Lifecycle
+        </h4>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3 text-center sm:text-left">
+            <div className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--theme-accent)] text-white text-xs font-bold mb-2">1</div>
+            <div className="text-xs font-semibold text-[var(--theme-text)]">Decompose</div>
+            <p className="mt-1 text-[11px] text-[var(--theme-muted)] leading-relaxed">
+              The Orchestrator analyzes your brief and breaks the mission down into discrete worker tasks.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3 text-center sm:text-left">
+            <div className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--theme-accent)] text-white text-xs font-bold mb-2">2</div>
+            <div className="text-xs font-semibold text-[var(--theme-text)]">Parallel Execute</div>
+            <p className="mt-1 text-[11px] text-[var(--theme-muted)] leading-relaxed">
+              Workers execute in parallel (1-5 lanes) writing directly to your chosen Target Project directory.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] p-3 text-center sm:text-left">
+            <div className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--theme-accent)] text-white text-xs font-bold mb-2">3</div>
+            <div className="text-xs font-semibold text-[var(--theme-text)]">Deliver & Verify</div>
+            <p className="mt-1 text-[11px] text-[var(--theme-muted)] leading-relaxed">
+              Inspect finished code in the live Output Browser with transparent token and USD cost tracking.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Pro Tips */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+        <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--theme-text)]">
+            <span>📁</span>
+            <span>Target Project</span>
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--theme-muted)] leading-relaxed">
+            Link missions directly to your configured Projects (Homelab, Vault, etc.) to keep output cleanly in repo context.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--theme-text)]">
+            <span>🛡️</span>
+            <span>Supervised Mode</span>
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--theme-muted)] leading-relaxed">
+            Toggle Supervised Mode in Settings if you want workers to pause for your approval before writing or committing changes.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Conductor() {
   const conductor = useConductorGateway()
+  const { projects, activeProject } = useProjects()
+
+  const matchedProject = useMemo(() => {
+    const currentDir = conductor.conductorSettings.projectsDir?.trim()
+    if (!currentDir) return activeProject ?? null
+    return projects.find((p) => p.primary_path === currentDir) ?? activeProject ?? null
+  }, [projects, activeProject, conductor.conductorSettings.projectsDir])
   const [goalDraft, setGoalDraft] = useState(() => loadConductorGoalDraft())
   const [missionModalOpen, setMissionModalOpen] = useState(false)
   const [continueDraft, setContinueDraft] = useState('')
@@ -832,6 +987,9 @@ export function Conductor() {
     if (!trimmed) return
     setMissionModalOpen(false)
     setContinueDraft('')
+    if (!conductor.conductorSettings.projectsDir && activeProject?.primary_path) {
+      updateSettings({ projectsDir: activeProject.primary_path })
+    }
     await conductor.sendMission(trimmed)
     persistConductorGoalDraft('')
     setGoalDraft('')
@@ -1299,38 +1457,18 @@ export function Conductor() {
               <div className="flex items-center gap-2">
                 <div className="hidden md:block flex-1" />
                 <div className="hidden md:inline-flex shrink-0 items-center gap-2.5 rounded-full border border-[var(--theme-border)] bg-[var(--theme-card)] px-5 py-2.5 text-sm font-semibold uppercase tracking-[0.24em] text-[var(--theme-muted)]">
-                  <span>Conductor</span>
+                  <span>Missions</span>
                   <span className="size-2.5 shrink-0 rounded-full bg-emerald-400" />
                 </div>
                 <div className="flex md:flex-1 items-center justify-end gap-2 ml-auto md:ml-0">
                   <WorkflowHelpModal
                     compact
-                    eyebrow="Conductor"
-                    title="How Conductor works"
-                    sections={[
-                      {
-                        title: 'What Conductor is for',
-                        bullets: [
-                          'Conductor is the mission-level orchestration surface for coordinated agent execution.',
-                          'Use it when one goal should be planned, assigned, and tracked end to end.',
-                        ],
-                      },
-                      {
-                        title: 'Typical flow',
-                        bullets: [
-                          'Start a mission, watch worker progress, and intervene only when something is blocked or clearly off-course.',
-                          'Use the mission views to understand what happened before retrying or launching the next mission.',
-                        ],
-                      },
-                      {
-                        title: 'FAQ',
-                        bullets: [
-                          'If Conductor says upstream is unavailable, the underlying runtime capability is not ready yet.',
-                          'Conductor is for orchestration, not first-time setup. Fix setup issues in Operations first.',
-                        ],
-                      },
-                    ]}
-                  />
+                    eyebrow="Missions"
+                    title="How Missions works"
+                    maxWidth="max-w-3xl"
+                  >
+                    <MissionsHelpContent />
+                  </WorkflowHelpModal>
                   <button
                     type="button"
                     onClick={() => setMissionModalOpen(true)}
@@ -1545,6 +1683,48 @@ export function Conductor() {
                     ))}
                   </div>
 
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-3.5 py-2.5 text-xs">
+                    <div className="flex items-center gap-2 text-[var(--theme-muted)]">
+                      <span className="font-semibold text-[var(--theme-text)]">Target Project:</span>
+                      {matchedProject ? (
+                        <span className="inline-flex items-center gap-1.5 font-medium text-[var(--theme-text)]">
+                          <span>{matchedProject.icon || '📁'}</span>
+                          <span>{matchedProject.name}</span>
+                          {matchedProject.is_active && (
+                            <span className="size-1.5 rounded-full bg-emerald-500" title="Active Project" />
+                          )}
+                        </span>
+                      ) : conductor.conductorSettings.projectsDir ? (
+                        <span className="font-mono text-[11px] text-[var(--theme-text)]">
+                          {conductor.conductorSettings.projectsDir}
+                        </span>
+                      ) : (
+                        <span className="text-[var(--theme-muted-2)]">Default (/tmp)</span>
+                      )}
+                    </div>
+                    {projects.length > 0 && (
+                      <select
+                        value={matchedProject?.id ?? ''}
+                        onChange={(event) => {
+                          const selected = projects.find((p) => p.id === event.target.value)
+                          if (selected?.primary_path) {
+                            updateSettings({ projectsDir: selected.primary_path })
+                          } else if (event.target.value === '') {
+                            updateSettings({ projectsDir: '' })
+                          }
+                        }}
+                        className="rounded-lg border border-[var(--theme-border)] bg-[var(--theme-card)] px-2.5 py-1 text-xs font-medium text-[var(--theme-text)] outline-none transition-colors focus:border-[var(--theme-accent)]"
+                      >
+                        <option value="">Default (/tmp)</option>
+                        {projects.map((proj) => (
+                          <option key={proj.id} value={proj.id}>
+                            {proj.icon ? `${proj.icon} ` : ''}{proj.name} {proj.is_active ? '(Active)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
                   <textarea
                     value={goalDraft}
                     onChange={(event) => setGoalDraft(event.target.value)}
@@ -1577,7 +1757,7 @@ export function Conductor() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Mission Defaults</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--theme-text)]">Conductor settings</h2>
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--theme-text)]">Missions settings</h2>
                     <p className="mt-2 text-sm text-[var(--theme-muted-2)]">Set the models and defaults every new mission should inherit.</p>
                   </div>
                   <button
@@ -1606,13 +1786,46 @@ export function Conductor() {
                   />
 
                   <div className="space-y-2">
-                    <span className="text-sm font-medium text-[var(--theme-text)]">Project Directory</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-[var(--theme-text)]">Project Directory</span>
+                      {projects.length > 0 && (
+                        <span className="text-xs text-[var(--theme-muted-2)]">Quick-select configured project</span>
+                      )}
+                    </div>
+                    {projects.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {projects.map((proj) => {
+                          const isSelected = (conductor.conductorSettings.projectsDir || activeProject?.primary_path) === proj.primary_path
+                          return (
+                            <button
+                              key={proj.id}
+                              type="button"
+                              onClick={() => {
+                                if (proj.primary_path) {
+                                  updateSettings({ projectsDir: proj.primary_path })
+                                }
+                              }}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors',
+                                isSelected
+                                  ? 'border-[var(--theme-accent)] bg-[var(--theme-accent-soft)] text-[var(--theme-accent-strong)]'
+                                  : 'border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-muted)] hover:border-[var(--theme-border2)] hover:text-[var(--theme-text)]'
+                              )}
+                            >
+                              <span>{proj.icon || '📁'}</span>
+                              <span>{proj.name}</span>
+                              {proj.is_active && <span className="size-1.5 rounded-full bg-emerald-500" title="Active Project" />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={conductor.conductorSettings.projectsDir}
                         onChange={(event) => updateSettings({ projectsDir: event.target.value })}
-                        placeholder="~/conductor-projects"
+                        placeholder={activeProject?.primary_path || "~/conductor-projects"}
                         className="min-w-0 flex-1 rounded-xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-4 py-3 text-sm text-[var(--theme-text)] outline-none transition-colors placeholder:text-[var(--theme-muted-2)] focus:border-[var(--theme-accent)]"
                       />
                       <button
@@ -1623,7 +1836,7 @@ export function Conductor() {
                         Browse
                       </button>
                     </div>
-                    <p className="text-xs text-[var(--theme-muted-2)]">Type a path directly or choose a directory from the browser.</p>
+                    <p className="text-xs text-[var(--theme-muted-2)]">Select an existing Project above, type a path directly, or choose a directory from the browser.</p>
                   </div>
 
                   <label className="block space-y-2">
@@ -1659,7 +1872,7 @@ export function Conductor() {
                     <div className="flex items-center justify-between rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-bg)] px-4 py-3">
                       <div>
                         <p className="text-sm font-medium text-[var(--theme-text)]">Reset saved state</p>
-                        <p className="mt-1 text-xs text-[var(--theme-muted-2)]">Clear mission history and any persisted Conductor mission state.</p>
+                        <p className="mt-1 text-xs text-[var(--theme-muted-2)]">Clear mission history and any persisted Missions state.</p>
                       </div>
                       <button
                         type="button"
@@ -1691,7 +1904,7 @@ export function Conductor() {
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--theme-muted)]">Directory Browser</p>
                     <h3 className="mt-2 text-xl font-semibold tracking-tight text-[var(--theme-text)]">Choose project directory</h3>
-                    <p className="mt-2 text-sm text-[var(--theme-muted-2)]">Select the folder where Conductor should create project output.</p>
+                    <p className="mt-2 text-sm text-[var(--theme-muted-2)]">Select the folder where Missions should create project output.</p>
                   </div>
                   <button
                     type="button"
@@ -1913,33 +2126,13 @@ export function Conductor() {
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <WorkflowHelpModal
-                      compact
-                      eyebrow="Conductor"
-                      title="How Conductor works"
-                      sections={[
-                        {
-                          title: 'What Conductor is for',
-                          bullets: [
-                            'Conductor is the mission-level orchestration surface for coordinated agent execution.',
-                            'Use it when one goal should be planned, assigned, and tracked end to end.',
-                          ],
-                        },
-                        {
-                          title: 'Typical flow',
-                          bullets: [
-                            'Start a mission, watch worker progress, and intervene only when something is blocked or clearly off-course.',
-                            'Use the mission views to understand what happened before retrying or launching the next mission.',
-                          ],
-                        },
-                        {
-                          title: 'FAQ',
-                          bullets: [
-                            'If Conductor says upstream is unavailable, the underlying runtime capability is not ready yet.',
-                            'Conductor is for orchestration, not first-time setup. Fix setup issues in Operations first.',
-                          ],
-                        },
-                      ]}
-                    />
+                    compact
+                    eyebrow="Missions"
+                    title="How Missions works"
+                    maxWidth="max-w-3xl"
+                  >
+                    <MissionsHelpContent />
+                  </WorkflowHelpModal>
                     <Button
                       type="button"
                       onClick={() => void conductor.retryMission()}

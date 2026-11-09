@@ -1016,7 +1016,7 @@ function ChatSidebarComponent({
       kind: 'link',
       to: '/conductor',
       icon: Rocket01Icon,
-      label: 'Conductor',
+      label: 'Missions',
       active: isConductorActive,
     },
   ]

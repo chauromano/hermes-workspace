@@ -56,7 +56,7 @@ export function AgentsScreen() {
               onClick={() => void navigate({ to: '/conductor' })}
             >
               <HugeiconsIcon icon={Rocket01Icon} size={16} strokeWidth={1.8} />
-              Open Conductor
+              Open Missions
             </Button>
           </div>
         </header>
@@ -65,7 +65,7 @@ export function AgentsScreen() {
           <h2 className="text-lg font-semibold text-primary-900">Screen simplified</h2>
           <p className="mt-2 max-w-2xl text-sm text-primary-600">
             The deleted workspace daemon and project stack backed the previous agent directory.
-            Use Conductor for mission launch and the Gateway Conductor for live session visibility.
+            Use Missions for squad launch and the Gateway Conductor for live session visibility.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Button
@@ -73,7 +73,7 @@ export function AgentsScreen() {
               className="border border-primary-200 bg-[var(--theme-card)] text-primary-700 hover:bg-primary-50"
               onClick={() => void navigate({ to: '/conductor' })}
             >
-              Open Conductor
+              Open Missions
             </Button>
             <Button
               className="bg-accent-500 text-primary-950 hover:bg-accent-400"

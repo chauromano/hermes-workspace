@@ -11,15 +11,19 @@ type HelpSection = {
 export function WorkflowHelpModal({
   title,
   eyebrow,
-  sections,
+  sections = [],
+  children,
   triggerLabel = 'How it works',
   compact = false,
+  maxWidth = 'max-w-2xl',
 }: {
   title: string
   eyebrow?: string
-  sections: HelpSection[]
+  sections?: HelpSection[]
+  children?: React.ReactNode
   triggerLabel?: string
   compact?: boolean
+  maxWidth?: string
 }) {
   const [open, setOpen] = useState(false)
 
@@ -39,7 +43,7 @@ export function WorkflowHelpModal({
 
       {open ? (
         <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/45 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-text)] shadow-2xl">
+          <div className={cn("w-full overflow-hidden rounded-2xl border border-[var(--theme-border)] bg-[var(--theme-card)] text-[var(--theme-text)] shadow-2xl", maxWidth)}>
             <div className="flex items-start justify-between gap-4 border-b border-[var(--theme-border)] px-5 py-4">
               <div className="min-w-0">
                 {eyebrow ? (
@@ -59,8 +63,8 @@ export function WorkflowHelpModal({
               </button>
             </div>
 
-            <div className="max-h-[70vh] space-y-5 overflow-y-auto px-5 py-5">
-              {sections.map((section) => (
+            <div className="max-h-[75vh] space-y-5 overflow-y-auto px-5 py-5">
+              {children ? children : sections.map((section) => (
                 <section key={section.title} className="space-y-2">
                   <h3 className="text-sm font-semibold text-[var(--theme-text)]">
                     {section.title}
