@@ -111,6 +111,7 @@ export async function* streamResponses(
   }
   if (req.sessionId && BEARER_TOKEN) {
     headers['X-Hermes-Session-Id'] = req.sessionId
+    headers['X-Hermes-Session-Key'] = req.sessionId
   }
 
   const body: Record<string, unknown> = {

@@ -159,30 +159,40 @@ export async function createSession(opts?: {
   title?: string
   model?: string
 }): Promise<ClaudeSession> {
+  try {
+    const resp = await claudePost<{ session: ClaudeSession }>(
+      '/api/sessions',
+      opts || {},
+    )
+    if (resp?.session) return resp.session
+  } catch (err) {
+    if (!getCapabilities().dashboard.available) throw err
+  }
   if (getCapabilities().dashboard.available) {
     const resp = await createDashboardSession(opts || {})
     return resp.session as ClaudeSession
   }
-  const resp = await claudePost<{ session: ClaudeSession }>(
-    '/api/sessions',
-    opts || {},
-  )
-  return resp.session
+  throw new Error('Failed to create session on gateway or dashboard')
 }
 
 export async function updateSession(
   sessionId: string,
   updates: { title?: string },
 ): Promise<ClaudeSession> {
+  try {
+    const resp = await claudePatch<{ session: ClaudeSession }>(
+      `/api/sessions/${sessionId}`,
+      updates,
+    )
+    if (resp?.session) return resp.session
+  } catch (err) {
+    if (!getCapabilities().dashboard.available) throw err
+  }
   if (getCapabilities().dashboard.available) {
     const resp = await updateDashboardSession(sessionId, updates)
     return resp.session as ClaudeSession
   }
-  const resp = await claudePatch<{ session: ClaudeSession }>(
-    `/api/sessions/${sessionId}`,
-    updates,
-  )
-  return resp.session
+  throw new Error(`Failed to update session ${sessionId}`)
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

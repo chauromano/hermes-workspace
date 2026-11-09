@@ -425,9 +425,7 @@ export const Route = createFileRoute('/api/sessions')({
           deleteLocalSession(sessionKey)
         }
 
-        // Delete from state.db (including profile state.db instances)
-        deleteSessionFromStateDb(sessionKey)
-
+        // Delete from gateway first if available (uses authoritative SessionDB logic)
         const capabilities = await ensureGatewayProbed()
         if (capabilities.sessions) {
           try {
@@ -436,6 +434,9 @@ export const Route = createFileRoute('/api/sessions')({
             console.error('Failed to delete session from gateway:', err)
           }
         }
+
+        // Delete from state.db as fallback/sync (including profile state.db instances)
+        deleteSessionFromStateDb(sessionKey)
 
         return json({ ok: true, sessionKey })
       },

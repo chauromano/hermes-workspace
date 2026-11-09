@@ -17,7 +17,7 @@ import {
   upsertRunToolCall,
 } from '../../server/run-store'
 import { getChatMode } from '../../server/gateway-capabilities'
-import { appendLocalMessage, ensureLocalSession, getLocalMessages, touchLocalSession } from '../../server/local-session-store'
+import { appendLocalMessage, deleteLocalSession, ensureLocalSession, getLocalMessages, touchLocalSession } from '../../server/local-session-store'
 import { getDiscoveredModels, getLocalProviderDef } from '../../server/local-provider-discovery'
 import { openaiChat } from '../../server/openai-compat-api'
 import { streamResponses } from '../../server/responses-api'
@@ -727,6 +727,9 @@ export const Route = createFileRoute('/api/send-stream')({
                         timestamp: Date.now(),
                       })
                       touchLocalSession(portableSessionKey)
+                      if (!localBaseUrl) {
+                        deleteLocalSession(portableSessionKey)
+                      }
                       persistActiveRun((runSessionKey, activeId) =>
                         markRunStatus(runSessionKey, activeId, 'complete'),
                       )
@@ -842,6 +845,9 @@ export const Route = createFileRoute('/api/send-stream')({
                     timestamp: Date.now(),
                   })
                   touchLocalSession(portableSessionKey)
+                  if (!localBaseUrl) {
+                    deleteLocalSession(portableSessionKey)
+                  }
 
                   persistActiveRun((runSessionKey, activeId) =>
                     markRunStatus(runSessionKey, activeId, 'complete'),
