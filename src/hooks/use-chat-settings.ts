@@ -12,7 +12,7 @@ export type LoaderStyle =
   | 'braille-wave'
   | 'lobster'
   | 'logo'
-export const DEFAULT_CHAT_DISPLAY_NAME = 'User'
+export const DEFAULT_CHAT_DISPLAY_NAME = 'Romano'
 
 export type EnterBehavior = 'send' | 'newline'
 export type ChatWidth = 'comfortable' | 'wide' | 'full'
@@ -88,13 +88,18 @@ function mergePersistedSettings(
   }
 
   const state = persistedState as Partial<ChatSettingsState>
+  const settings = {
+    ...currentState.settings,
+    ...(state.settings || {}),
+  }
+  // Automatically migrate legacy default 'User' to 'Romano'
+  if (settings.displayName === 'User') {
+    settings.displayName = DEFAULT_CHAT_DISPLAY_NAME
+  }
   return {
     ...currentState,
     ...state,
-    settings: {
-      ...currentState.settings,
-      ...(state.settings || {}),
-    },
+    settings,
   }
 }
 

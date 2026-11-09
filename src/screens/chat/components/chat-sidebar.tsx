@@ -18,6 +18,7 @@ import {
   Search01Icon,
   Settings01Icon,
   Sun02Icon,
+  UserCircle02Icon,
   UserGroupIcon,
   UserMultipleIcon,
   ViewOffIcon,
@@ -1380,6 +1381,21 @@ function ChatSidebarComponent({
               </AnimatePresence>
             </MenuTrigger>
             <MenuContent side="top" align="start" className="min-w-[200px]">
+              <MenuItem
+                onClick={function onOpenProfile() {
+                  handleOpenSettings('profile')
+                }}
+                className="justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <HugeiconsIcon
+                    icon={UserCircle02Icon}
+                    size={20}
+                    strokeWidth={1.5}
+                  />
+                  User Profile
+                </span>
+              </MenuItem>
               <MenuItem
                 onClick={function onOpenSettings() {
                   handleOpenSettings('claude')

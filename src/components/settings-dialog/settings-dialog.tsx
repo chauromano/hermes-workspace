@@ -14,6 +14,7 @@ import {
   PaintBoardIcon,
   Settings02Icon,
   Sun01Icon,
+  UserCircle02Icon,
   VolumeHighIcon,
 } from '@hugeicons/core-free-icons'
 import { Component, useCallback, useEffect, useRef, useState } from 'react'
@@ -64,6 +65,7 @@ import { LOCALE_LABELS,  getLocale, setLocale } from '@/lib/i18n'
 // ── Types ───────────────────────────────────────────────────────────────
 
 type SectionId =
+  | 'profile'
   | 'claude'
   | 'agent'
   | 'voice'
@@ -74,6 +76,7 @@ type SectionId =
   | 'language'
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: any }> = [
+  { id: 'profile', label: 'User Profile', icon: UserCircle02Icon },
   { id: 'claude', label: 'Model & Provider', icon: CloudIcon },
   { id: 'agent', label: 'Agent', icon: Settings02Icon },
   { id: 'voice', label: 'Voice', icon: VolumeHighIcon },
@@ -1280,7 +1283,7 @@ function HermesContent() {
   )
 }
 
-function _ProfileContent() {
+function ProfileContent() {
   const { settings: cs, updateSettings: updateCS } = useChatSettingsStore()
   const [profileError, setProfileError] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
@@ -2474,6 +2477,7 @@ function LanguageContent() {
 // ── Main Dialog ─────────────────────────────────────────────────────────
 
 const CONTENT_MAP: Record<SectionId, () => React.JSX.Element> = {
+  profile: ProfileContent,
   claude: HermesContent,
   agent: AgentBehaviorContent,
   voice: VoiceContent,

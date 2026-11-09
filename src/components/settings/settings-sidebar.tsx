@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
 export type SettingsNavId =
+  | 'profile'
   | 'connection'
   | 'claude'
   | 'agent'
@@ -15,6 +16,7 @@ export type SettingsNavId =
 type NavItem = { id: SettingsNavId; label: string }
 
 export const SETTINGS_NAV_ITEMS: Array<NavItem> = [
+  { id: 'profile', label: 'User Profile' },
   { id: 'connection', label: 'Connection' },
   { id: 'claude', label: 'Model & Provider' },
   { id: 'agent', label: 'Agent Behavior' },
