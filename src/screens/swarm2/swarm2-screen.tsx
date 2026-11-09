@@ -1521,7 +1521,7 @@ export function Swarm2Screen() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="truncate text-base font-semibold text-primary-900">
-                    Swarm
+                    Swarm Studio
                   </h1>
                   {rosterQuery.data?.scope === 'project' ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-accent-500/15 border border-accent-500/30 px-2 py-0.5 text-[11px] font-medium text-accent-700">

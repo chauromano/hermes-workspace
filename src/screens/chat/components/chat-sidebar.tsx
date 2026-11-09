@@ -965,6 +965,13 @@ function ChatSidebarComponent({
     },
     {
       kind: 'link',
+      to: '/conductor',
+      icon: Rocket01Icon,
+      label: 'Missions',
+      active: isConductorActive,
+    },
+    {
+      kind: 'link',
       to: '/operations',
       icon: UserMultipleIcon,
       label: 'Assistants',
@@ -974,14 +981,14 @@ function ChatSidebarComponent({
       kind: 'link',
       to: '/tasks',
       icon: CheckListIcon,
-      label: 'Tasks',
+      label: 'Kanban',
       active: isTasksActive,
     },
     {
       kind: 'link',
       to: '/swarm',
       icon: UserGroupIcon,
-      label: 'Swarm',
+      label: 'Swarm Studio',
       active: isSwarmActive,
     },
     ...(echoStudioEnabled
@@ -1025,13 +1032,6 @@ function ChatSidebarComponent({
       icon: Clock01Icon,
       label: t('nav.jobs'),
       active: isJobsActive,
-    },
-    {
-      kind: 'link',
-      to: '/conductor',
-      icon: Rocket01Icon,
-      label: 'Missions',
-      active: isConductorActive,
     },
   ]
 

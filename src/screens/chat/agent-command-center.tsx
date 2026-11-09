@@ -1296,14 +1296,14 @@ export function AgentCommandCenter({
         {!selectedRuntime && (
           <nav className="mt-5 grid w-full min-w-0 max-w-full grid-cols-2 sm:grid-cols-5 gap-2">
             {[
+              { to: '/conductor', label: 'Missions', icon: Rocket01Icon },
               {
                 to: '/operations',
                 label: 'Assistants',
                 icon: UserMultipleIcon,
               },
-              { to: '/tasks', label: 'Tasks', icon: CheckListIcon },
+              { to: '/tasks', label: 'Kanban', icon: CheckListIcon },
               { to: '/swarm', label: 'Swarm Studio', icon: UserGroupIcon },
-              { to: '/conductor', label: 'Missions', icon: Rocket01Icon },
               { to: '/projects', label: 'Projects', icon: Folder01Icon },
             ].map((item) => (
               <Link

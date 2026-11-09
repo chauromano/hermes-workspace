@@ -14,6 +14,6 @@ export const Route = createFileRoute('/tasks')({
 })
 
 function TasksRoute() {
-  usePageTitle('Tasks')
+  usePageTitle('Kanban')
   return <TasksScreen />
 }

@@ -54,14 +54,14 @@ export const MOBILE_NAV_TABS: Array<TabItem> = [
   },
   {
     id: 'tasks',
-    label: 'Tasks',
+    label: 'Kanban',
     icon: CheckListIcon,
     to: '/tasks',
     match: (p) => p.startsWith('/tasks'),
   },
   {
     id: 'swarm',
-    label: 'Swarm',
+    label: 'Swarm Studio',
     icon: UserGroupIcon,
     to: '/swarm',
     match: (p) => p === '/swarm' || p.startsWith('/swarm2'),
