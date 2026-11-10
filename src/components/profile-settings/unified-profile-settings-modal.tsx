@@ -27,6 +27,9 @@ import { cn } from '@/lib/utils'
 
 export const PRESET_AVATARS = [
   { id: 'default', label: 'Hermes Classic', src: '/claude-avatar.webp' },
+  { id: 'architect-1', label: 'Architect 1', src: '/avatars/profiles/architect-1.png' },
+  { id: 'architect-2', label: 'Architect 2', src: '/avatars/profiles/architect-2.png' },
+  { id: 'architect-3', label: 'Architect 3', src: '/avatars/profiles/architect-3.png' },
   { id: 'hermes', label: 'Hermes', src: '/avatars/hermes.png' },
   { id: 'athena', label: 'Athena', src: '/avatars/athena.png' },
   { id: 'apollo', label: 'Apollo', src: '/avatars/apollo.png' },
@@ -537,7 +540,7 @@ export function UnifiedProfileSettingsModal({
                     ) : null}
 
                     {/* Presets Gallery */}
-                    <div className="mt-3 grid grid-cols-6 sm:grid-cols-11 gap-2">
+                    <div className="mt-3 grid grid-cols-4 sm:grid-cols-7 md:grid-cols-9 gap-2 max-h-56 overflow-y-auto p-1 scrollbar-thin rounded-xl border border-primary-200/50 dark:border-neutral-800 bg-primary-50/30 dark:bg-neutral-900/40">
                       {PRESET_AVATARS.map((preset) => {
                         const isSelected =
                           (preset.src === 'pixel' && avatarDraft === 'pixel') ||
