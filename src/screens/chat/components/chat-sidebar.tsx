@@ -368,8 +368,6 @@ function SectionLabel({
   collapsible,
   expanded,
   onToggle,
-  navigateTo,
-  onSelectSession,
 }: {
   label: string
   isCollapsed: boolean
@@ -382,42 +380,32 @@ function SectionLabel({
 }) {
   if (isCollapsed) return null
 
-  const labelContent = (
-    <span className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
-      {label}
-    </span>
-  )
-
   if (collapsible) {
     return (
       <motion.div
         layout
         transition={{ layout: transition }}
-        className="flex items-center gap-1.5 px-3 pt-3 pb-1 w-full"
+        className="w-full pt-2 pb-0.5"
       >
-        {navigateTo ? (
-          <Link
-            to={navigateTo}
-            onClick={onSelectSession}
-            className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 hover:text-primary-700 dark:hover:text-neutral-200 select-none transition-colors"
-          >
-            {label}
-          </Link>
-        ) : (
-          labelContent
-        )}
         <button
           type="button"
           onClick={onToggle}
-          className="ml-auto p-0.5 rounded hover:bg-primary-200 dark:hover:bg-primary-800 transition-colors"
+          className={cn(
+            'flex items-center justify-between w-full px-2.5 py-1.5 rounded-lg group select-none transition-colors text-left cursor-pointer',
+            'hover:bg-primary-200/50 dark:hover:bg-neutral-800/50 active:scale-[0.99]',
+          )}
+          aria-expanded={expanded}
           aria-label={expanded ? `Collapse ${label}` : `Expand ${label}`}
         >
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 group-hover:text-primary-700 dark:group-hover:text-neutral-200 transition-colors">
+            {label}
+          </span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={12}
             strokeWidth={2}
             className={cn(
-              'text-primary-500 transition-transform duration-150',
+              'text-primary-400 dark:text-neutral-500 group-hover:text-primary-600 dark:group-hover:text-neutral-300 transition-transform duration-150',
               expanded ? 'rotate-0' : '-rotate-90',
             )}
           />
@@ -432,16 +420,9 @@ function SectionLabel({
       transition={{ layout: transition }}
       className="px-3 pt-3 pb-1"
     >
-      {navigateTo ? (
-        <Link
-          to={navigateTo}
-          className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 hover:text-primary-700 dark:hover:text-neutral-200 select-none transition-colors"
-        >
-          {label}
-        </Link>
-      ) : (
-        labelContent
-      )}
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-primary-500 dark:text-neutral-400 select-none">
+        {label}
+      </span>
     </motion.div>
   )
 }
@@ -1245,22 +1226,30 @@ function ChatSidebarComponent({
                 expanded={sessionsExpanded}
                 onToggle={toggleSessions}
               />
-              {sessionsExpanded && (
-                <div className="pt-0.5 pb-1">
-                  <SidebarSessions
-                    sessions={sessions}
-                    activeFriendlyId={activeFriendlyId}
-                    onSelect={onSelectSession}
-                    onRename={handleOpenRename}
-                    onToggleArchive={toggleArchive}
-                    onDelete={handleOpenDelete}
-                    loading={sessionsLoading}
-                    fetching={sessionsFetching}
-                    error={sessionsError}
-                    onRetry={onRetrySessions}
-                  />
-                </div>
-              )}
+              <AnimatePresence initial={false}>
+                {sessionsExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="overflow-hidden pt-0.5 pb-1"
+                  >
+                    <SidebarSessions
+                      sessions={sessions}
+                      activeFriendlyId={activeFriendlyId}
+                      onSelect={onSelectSession}
+                      onRename={handleOpenRename}
+                      onToggleArchive={toggleArchive}
+                      onDelete={handleOpenDelete}
+                      loading={sessionsLoading}
+                      fetching={sessionsFetching}
+                      error={sessionsError}
+                      onRetry={onRetrySessions}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* ── 2. Command Parent Grouping ── */}
@@ -1272,8 +1261,6 @@ function ChatSidebarComponent({
                 collapsible={!isVisuallyCollapsed}
                 expanded={mainExpanded}
                 onToggle={toggleMain}
-                navigateTo="/chat"
-                onSelectSession={onSelectSession}
               />
               <CollapsibleSection
                 expanded={mainExpanded}
