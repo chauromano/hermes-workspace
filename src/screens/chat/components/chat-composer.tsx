@@ -72,6 +72,7 @@ import {
   EffortSegmented,
   ProfileGlyph,
 } from './composer-settings-sheet'
+import { ProfileAvatar } from '@/components/avatars'
 
 type ChatComposerAttachment = {
   id: string
@@ -2370,12 +2371,16 @@ function ChatComposerComponent({
                     setIsModelMenuOpen(false)
                     setIsSettingsSheetOpen(true)
                   }}
-                  className="flex h-8 min-w-0 max-w-[38%] shrink items-center gap-1 rounded-full pl-1 pr-2 text-xs font-medium text-primary-600 active:bg-neutral-100 dark:active:bg-white/10"
+                  className="flex h-8 min-w-0 max-w-[38%] shrink items-center gap-1.5 rounded-full pl-1 pr-2 text-xs font-medium text-primary-600 active:bg-neutral-100 dark:active:bg-white/10"
                   aria-label={`Chat settings: profile ${activeProfileName}${showProjectControl ? `, project ${projectSelection.displayName}` : ''}`}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold uppercase text-primary-600 dark:bg-primary-800 dark:text-primary-200">
-                    {activeProfileName.slice(0, 1)}
-                  </span>
+                  <ProfileAvatar
+                    name={activeProfileName}
+                    avatar={activeProfile?.avatar}
+                    emoji={activeProfile?.emoji}
+                    color={activeProfile?.color}
+                    size={22}
+                  />
                   <span className="truncate">
                     {showProjectControl
                       ? projectSelection.displayName
@@ -2593,9 +2598,13 @@ function ChatComposerComponent({
                           }}
                           className="rounded-xl border border-neutral-100 bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700 p-3 flex flex-col items-start gap-1.5 text-left disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] transition-transform"
                         >
-                          <span className="rounded-lg bg-indigo-100 dark:bg-indigo-900/30 p-1.5 text-indigo-600 dark:text-indigo-400">
-                            <ProfileGlyph size={22} />
-                          </span>
+                          <ProfileAvatar
+                            name={activeProfileName}
+                            avatar={activeProfile?.avatar}
+                            emoji={activeProfile?.emoji}
+                            color={activeProfile?.color}
+                            size={32}
+                          />
                           <div className="flex flex-col min-w-0 w-full mt-0.5">
                             <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">
                               Chat settings
@@ -3205,7 +3214,13 @@ function ChatComposerComponent({
                       }
                       aria-label={`Agent profile: ${activeProfileName}`}
                     >
-                      <ProfileGlyph size={14} />
+                      <ProfileAvatar
+                        name={activeProfileName}
+                        avatar={activeProfile?.avatar}
+                        emoji={activeProfile?.emoji}
+                        color={activeProfile?.color}
+                        size={18}
+                      />
                       <span className="hidden max-w-[7rem] truncate @md:inline">
                         {activeProfileName}
                       </span>
@@ -3237,6 +3252,13 @@ function ChatComposerComponent({
                               )}
                             >
                               <span className="flex items-center gap-2">
+                                <ProfileAvatar
+                                  name={profile.name}
+                                  avatar={profile.avatar}
+                                  emoji={profile.emoji}
+                                  color={profile.color}
+                                  size={18}
+                                />
                                 <span className="truncate font-medium">{profile.name}</span>
                                 {selected ? <span className="text-[10px] text-accent-500">active</span> : null}
                               </span>

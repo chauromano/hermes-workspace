@@ -3,11 +3,15 @@ import { BrainIcon, CodeIcon, PuzzleIcon } from '@hugeicons/core-free-icons'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { formatModelName } from '@/lib/format-model-name'
+import { ProfileAvatar } from '@/components/avatars'
 
 type ProfileSummary = {
   name: string
   model?: string
   active?: boolean
+  avatar?: string
+  emoji?: string
+  color?: string
 }
 
 type SuggestionChip = {
@@ -72,15 +76,13 @@ export function ChatEmptyState({
       <div className="flex max-w-xl flex-col items-center text-center">
         {/* Avatar in editorial frame, no glow — architectural restraint */}
         <div className="relative mb-6">
-          <img
-            src="/claude-avatar.webp"
-            alt="Hermes Agent"
-            className="relative size-20 rounded-md"
-            style={{
-              border: '1px solid var(--theme-border)',
-              padding: '4px',
-              background: 'var(--theme-card)',
-            }}
+          <ProfileAvatar
+            name={activeProfile?.name || 'Hermes Agent'}
+            avatar={activeProfile?.avatar || '/claude-avatar.webp'}
+            emoji={activeProfile?.emoji}
+            color={activeProfile?.color}
+            size={80}
+            className="rounded-xl border border-[var(--theme-border)] p-1 bg-[var(--theme-card)] shadow-sm"
           />
         </div>
 

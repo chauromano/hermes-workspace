@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { formatModelName } from '@/lib/format-model-name'
 import type { useSessionProjectSelection } from '@/components/projects/project-session-chip'
 import { ProjectModal } from '@/components/projects/project-modal'
+import { ProfileAvatar } from '@/components/avatars'
 
 export type SessionProjectSelection = ReturnType<typeof useSessionProjectSelection>
 
@@ -124,10 +125,13 @@ export function ProfileGlyph({ size = 13 }: { size?: number }) {
   )
 }
 
-type SheetProfile = {
+export type SheetProfile = {
   name: string
   model?: string
   provider?: string
+  avatar?: string
+  emoji?: string
+  color?: string
 }
 
 type ComposerSettingsSheetProps = {
@@ -305,9 +309,13 @@ export function ComposerSettingsSheet({
                               if (!selected) onSelectProfile(profile.name)
                             }}
                             icon={
-                              <span className="flex size-6 items-center justify-center rounded-full bg-primary-100 text-[11px] font-semibold uppercase text-primary-600 dark:bg-primary-800 dark:text-primary-200">
-                                {profile.name.slice(0, 1)}
-                              </span>
+                              <ProfileAvatar
+                                name={profile.name}
+                                avatar={profile.avatar}
+                                emoji={profile.emoji}
+                                color={profile.color}
+                                size={24}
+                              />
                             }
                             title={profile.name}
                             subtitle={meta || undefined}
