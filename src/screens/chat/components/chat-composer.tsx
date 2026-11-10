@@ -1104,22 +1104,59 @@ function ChatComposerComponent({
   })
   const profileActivateMutation = useMutation({
     mutationFn: activateProfile,
-    onSuccess: async (_data, profileName) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['profiles'] }),
-        queryClient.invalidateQueries({ queryKey: ['workspace'] }),
-        queryClient.invalidateQueries({ queryKey: ['claude', 'models'] }),
-        queryClient.invalidateQueries({
-          queryKey: ['claude', 'session-status-model'],
-        }),
-      ])
+    onMutate: async (profileName: string) => {
+      // 1. Instantly close dropdown
       setIsProfileMenuOpen(false)
+
+      // 2. Optimistically update profile in react-query cache
+      queryClient.setQueryData<ProfilesListResponse>(['profiles', 'composer'], (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          activeProfile: profileName,
+          profiles: old.profiles?.map((p) => ({
+            ...p,
+            active: p.name === profileName,
+          })),
+        }
+      })
+      queryClient.setQueryData<ProfilesListResponse>(['profiles'], (old) => {
+        if (!old) return old
+        return {
+          ...old,
+          activeProfile: profileName,
+          profiles: old.profiles?.map((p) => ({
+            ...p,
+            active: p.name === profileName,
+          })),
+        }
+      })
+
+      // 3. Sync default model for the activated profile to the composer session
+      const targetProfile = profilesQuery.data?.profiles?.find((p) => p.name === profileName)
+      if (targetProfile?.model) {
+        useSessionModelStore.getState().setModel(sessionKey, targetProfile.model)
+      }
+
+      // 4. Bind the active session to this profile immediately on backend
+      if (sessionKey && sessionKey !== 'new') {
+        void fetch(`/api/sessions/${encodeURIComponent(sessionKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile: profileName }),
+        }).catch(() => null)
+      }
+    },
+    onSuccess: (_data, profileName) => {
       toast(`Activated profile ${profileName}`)
+      void queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      void queryClient.invalidateQueries({ queryKey: ['workspace'] })
     },
     onError: (error) => {
       toast(
         error instanceof Error ? error.message : 'Failed to activate profile',
       )
+      void queryClient.invalidateQueries({ queryKey: ['profiles'] })
     },
   })
   const workspaceSelectMutation = useMutation({

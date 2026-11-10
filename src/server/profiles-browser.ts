@@ -460,9 +460,30 @@ export function getActiveProfileName(): string {
   }
 }
 
+// Cached profile summary list for instantaneous response
+let cachedProfilesList: {
+  results: Array<ProfileSummary>
+  activeProfile: string
+  timestamp: number
+} | null = null
+const PROFILES_CACHE_TTL_MS = 30_000
+
+export function invalidateProfilesCache(): void {
+  cachedProfilesList = null
+}
+
 export function listProfiles(): Array<ProfileSummary> {
-  const profilesRoot = getProfilesRoot()
   const activeProfile = getActiveProfileName()
+  const now = Date.now()
+  if (
+    cachedProfilesList &&
+    cachedProfilesList.activeProfile === activeProfile &&
+    now - cachedProfilesList.timestamp < PROFILES_CACHE_TTL_MS
+  ) {
+    return cachedProfilesList.results
+  }
+
+  const profilesRoot = getProfilesRoot()
   const results: Array<ProfileSummary> = []
 
   if (fs.existsSync(profilesRoot)) {
@@ -487,18 +508,10 @@ export function listProfiles(): Array<ProfileSummary> {
       }
       const configPath = path.join(profilePath, 'config.yaml')
       const envPath = path.join(profilePath, '.env')
-      const skillsDir = path.join(profilePath, 'skills')
-      const sessionsDir = path.join(profilePath, 'sessions')
       const config = readYamlConfig(configPath)
       const profileMeta = readProfileMetaYaml(profilePath)
       const { avatar, emoji, color } = extractAvatarMeta(profileMeta, config)
-      const skillCount = countFilesRecursive(
-        skillsDir,
-        (full) => path.basename(full) === 'SKILL.md',
-      )
-      const sessionCount = countFilesRecursive(sessionsDir, (full) =>
-        /\.(jsonl|json|sqlite|db)$/i.test(full),
-      )
+      
       // Resolve model/provider from nested or flat config structure
       let modelName: string | undefined
       let providerName: string | undefined
@@ -517,6 +530,16 @@ export function listProfiles(): Array<ProfileSummary> {
         providerName = config.provider
       }
       const soul = extractSoul(config, profilePath) || undefined
+      
+      // Fast timestamp check without recursive subfolder scanning
+      let updatedAt: string | undefined
+      try {
+        const stat = fs.existsSync(configPath) ? fs.statSync(configPath) : fs.statSync(profilePath)
+        updatedAt = new Date(stat.mtimeMs).toISOString()
+      } catch {
+        // ignore
+      }
+
       results.push({
         name,
         path: profilePath,
@@ -530,16 +553,10 @@ export function listProfiles(): Array<ProfileSummary> {
         avatar,
         emoji,
         color,
-        skillCount,
-        sessionCount,
+        skillCount: 0,
+        sessionCount: 0,
         hasEnv: fs.existsSync(envPath),
-        updatedAt: latestMtime([
-          profilePath,
-          configPath,
-          envPath,
-          skillsDir,
-          sessionsDir,
-        ]),
+        updatedAt,
       })
     }
   }
@@ -566,6 +583,14 @@ export function listProfiles(): Array<ProfileSummary> {
     defaultProvider = config.provider
   }
   const rootSoul = extractSoul(config, root) || undefined
+
+  let rootUpdatedAt: string | undefined
+  try {
+    const rootCfg = path.join(root, 'config.yaml')
+    const stat = fs.existsSync(rootCfg) ? fs.statSync(rootCfg) : fs.statSync(root)
+    rootUpdatedAt = new Date(stat.mtimeMs).toISOString()
+  } catch {}
+
   results.unshift({
     name: 'general',
     path: root,
@@ -579,15 +604,10 @@ export function listProfiles(): Array<ProfileSummary> {
     avatar: rootAvatarMeta.avatar,
     emoji: rootAvatarMeta.emoji,
     color: rootAvatarMeta.color,
-    skillCount: countFilesRecursive(
-      path.join(root, 'skills'),
-      (full) => path.basename(full) === 'SKILL.md',
-    ),
-    sessionCount: countFilesRecursive(path.join(root, 'sessions'), (full) =>
-      /\.(jsonl|json|sqlite|db)$/i.test(full),
-    ),
+    skillCount: 0,
+    sessionCount: 0,
     hasEnv: fs.existsSync(path.join(root, '.env')),
-    updatedAt: latestMtime([root, path.join(root, 'config.yaml')]),
+    updatedAt: rootUpdatedAt,
   })
 
   results.sort((a, b) => {
@@ -595,6 +615,13 @@ export function listProfiles(): Array<ProfileSummary> {
     if (!a.active && b.active) return 1
     return Date.parse(b.updatedAt || '') - Date.parse(a.updatedAt || '')
   })
+
+  cachedProfilesList = {
+    results,
+    activeProfile,
+    timestamp: now,
+  }
+
   return results
 }
 
@@ -640,6 +667,7 @@ export function readProfile(name: string): ProfileDetail {
 }
 
 export function setActiveProfile(name: string): void {
+  invalidateProfilesCache()
   const trimmed = name.trim()
   if (!trimmed) throw new Error('Profile name is required')
   // "default" or "general" means clear the active_profile file (revert to default)
