@@ -622,7 +622,7 @@ export function readProfile(name: string): ProfileDetail {
     name: normalized,
     path: profilePath,
     active: normalized === active,
-    config,
+    config: config || {},
     profileMeta,
     description: extractDescription(config, profileMeta),
     soul,

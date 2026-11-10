@@ -218,15 +218,19 @@ export function UnifiedProfileSettingsModal({
 
       let modelStr = ''
       let providerStr = ''
-      if (typeof p.config.model === 'string') {
-        modelStr = p.config.model
-      } else if (p.config.model && typeof p.config.model === 'object') {
-        const m = p.config.model as Record<string, unknown>
+      const cfg =
+        p && p.config && typeof p.config === 'object'
+          ? (p.config as Record<string, unknown>)
+          : {}
+      if (typeof cfg.model === 'string') {
+        modelStr = cfg.model
+      } else if (cfg.model && typeof cfg.model === 'object') {
+        const m = cfg.model as Record<string, unknown>
         if (typeof m.default === 'string') modelStr = m.default
         if (typeof m.provider === 'string') providerStr = m.provider
       }
-      if (!providerStr && typeof p.config.provider === 'string') {
-        providerStr = p.config.provider
+      if (!providerStr && typeof cfg.provider === 'string') {
+        providerStr = cfg.provider
       }
       setModelDraft(modelStr)
       setProviderDraft(providerStr)
@@ -824,7 +828,7 @@ export function UnifiedProfileSettingsModal({
                       Raw Config (config.yaml)
                     </div>
                     <pre className="max-h-60 overflow-auto rounded-lg border border-primary-200 bg-primary-100/70 p-3 font-mono text-xs leading-relaxed text-primary-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-                      {JSON.stringify(profile?.config, null, 2)}
+                      {JSON.stringify(profile?.config || {}, null, 2)}
                     </pre>
                   </div>
 
