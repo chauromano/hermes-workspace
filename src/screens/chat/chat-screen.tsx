@@ -486,7 +486,11 @@ export function ChatScreen({
   useTapDebug(mainRef, { label: 'chat-main' })
   const chatMode = useChatMode()
   const isPortableMode = chatMode === 'portable'
-  const portableChatFriendlyId = isPortableMode ? 'main' : activeFriendlyId
+  const portableChatFriendlyId = isNewChat
+    ? 'new'
+    : isPortableMode && (!activeFriendlyId || activeFriendlyId === 'main')
+      ? 'main'
+      : activeFriendlyId
   // --- Issue #43 fix: lift waitingForResponse into persistent Zustand store ---
   // The store survives component unmount, so navigating away mid-stream
   const [liveToolActivity, setLiveToolActivity] = useState<
@@ -693,25 +697,22 @@ export function ChatScreen({
     streamingRunId,
     activeToolCalls,
   } = useRealtimeChatHistory({
-    sessionKey: isPortableMode
-      ? 'main'
-      : isNewChat
-        ? 'new'
+    sessionKey: isNewChat
+      ? 'new'
+      : isPortableMode && (!resolvedSessionKey || resolvedSessionKey === 'main')
+        ? 'main'
         : resolvedSessionKey ||
         sessionKeyForHistory ||
         activeCanonicalKey ||
         'main',
-    friendlyId: portableChatFriendlyId,
+    friendlyId: isNewChat ? 'new' : portableChatFriendlyId,
     historyMessages,
     portableMode: isPortableMode,
     enabled:
-      // Always enable for new chats in portable mode (no sessions API to resolve).
-      // In enhanced mode, wait for session resolution before subscribing.
-      ((isPortableMode && isNewChat) ||
-        (!isNewChat &&
-          Boolean(
-            resolvedSessionKey || sessionKeyForHistory || activeCanonicalKey,
-          ))) &&
+      !isNewChat &&
+      Boolean(
+        resolvedSessionKey || sessionKeyForHistory || activeCanonicalKey,
+      ) &&
       !isRedirecting,
     onUserMessage: useCallback(() => {
       // External message arrived (e.g. from Telegram) — show thinking indicator
@@ -2081,10 +2082,14 @@ export function ChatScreen({
 
   useLayoutEffect(() => {
     if (isNewChat) return
+    const pendingSessionKey =
+      forcedSessionKey ||
+      resolvedSessionKey ||
+      activeSessionKey ||
+      portableChatFriendlyId ||
+      'main'
     const pending = consumePendingSend(
-      isPortableMode
-        ? 'main'
-        : forcedSessionKey || resolvedSessionKey || activeSessionKey,
+      pendingSessionKey,
       portableChatFriendlyId,
     )
     if (!pending) return
@@ -2468,9 +2473,8 @@ export function ChatScreen({
       )
 
       if (isNewChat) {
-        // In portable mode, use 'main' — no server-side sessions exist.
-        // In enhanced mode, create a UUID thread for the sessions API.
-        const threadId = isPortableMode ? 'main' : crypto.randomUUID()
+        // Create a unique UUID thread for the new session
+        const threadId = crypto.randomUUID()
         const { optimisticMessage } = createOptimisticMessage(
           trimmedBody,
           attachmentPayload,
@@ -2503,7 +2507,6 @@ export function ChatScreen({
             ? optimisticMessage.clientId
             : '',
         )
-        // In portable mode, navigate to /chat/main instead of UUID
         if (!embedded) {
           navigate({
             to: '/chat/$sessionKey',
@@ -2514,12 +2517,15 @@ export function ChatScreen({
         return
       }
 
-      const sessionKeyForSend = isPortableMode
-        ? 'main'
-        : forcedSessionKey || resolvedSessionKey || activeSessionKey || 'main'
+      const sessionKeyForSend =
+        forcedSessionKey ||
+        resolvedSessionKey ||
+        activeSessionKey ||
+        activeFriendlyId ||
+        'main'
       sendMessage(
         sessionKeyForSend,
-        isPortableMode ? 'main' : activeFriendlyId,
+        activeFriendlyId || sessionKeyForSend,
         trimmedBody,
         attachmentPayload,
         fastMode,

@@ -77,7 +77,12 @@ function ChatRoute() {
   // Clear history cache when navigating to new chat
   useEffect(() => {
     if (isNewChat) {
-      queryClient.removeQueries({ queryKey: ['chat', 'history', 'new', 'new'] })
+      queryClient.removeQueries({ queryKey: ['chat', 'history', 'new'] })
+      queryClient.setQueryData(['chat', 'history', 'new', 'new'], {
+        sessionKey: 'new',
+        sessionId: 'new',
+        messages: [],
+      })
     }
   }, [isNewChat, queryClient])
 

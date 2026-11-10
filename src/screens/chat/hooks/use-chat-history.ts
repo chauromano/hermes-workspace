@@ -43,22 +43,23 @@ function normalizeSessionCandidate(value: string | undefined): string {
   return trimmed
 }
 
-function readPortableHistory(): HistoryResponse {
-  if (typeof window === 'undefined') {
-    return { sessionKey: 'main', messages: [] }
+function readPortableHistory(key: string = 'main'): HistoryResponse {
+  if (typeof window === 'undefined' || key === 'new') {
+    return { sessionKey: key || 'main', messages: [] }
   }
 
   try {
-    const raw = window.localStorage.getItem(PORTABLE_HISTORY_STORAGE_KEY)
-    if (!raw) return { sessionKey: 'main', messages: [] }
+    const storageKey = key === 'main' ? PORTABLE_HISTORY_STORAGE_KEY : `claude_portable_chat_${key}`
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return { sessionKey: key, messages: [] }
     const parsed = JSON.parse(raw) as { messages?: Array<ChatMessage> } | null
     const messages = Array.isArray(parsed?.messages) ? parsed.messages : []
     return {
-      sessionKey: 'main',
+      sessionKey: key,
       messages: messages.slice(-PORTABLE_HISTORY_LIMIT),
     }
   } catch {
-    return { sessionKey: 'main', messages: [] }
+    return { sessionKey: key, messages: [] }
   }
 }
 
@@ -316,13 +317,24 @@ export function useChatHistory({
       (!isRedirecting &&
         (hasDirectSessionKey || !sessionsReady || activeExists)))
 
-  const effectiveFriendlyId = portableMode ? 'main' : activeFriendlyId
-  const effectiveSessionKeyForHistory = portableMode
-    ? 'main'
-    : sessionKeyForHistory
+  const effectiveFriendlyId = isNewChat
+    ? 'new'
+    : portableMode && (!activeFriendlyId || activeFriendlyId === 'main')
+      ? 'main'
+      : activeFriendlyId
+  const effectiveSessionKeyForHistory = isNewChat
+    ? 'new'
+    : portableMode && (!sessionKeyForHistory || sessionKeyForHistory === 'main')
+      ? 'main'
+      : sessionKeyForHistory
   const portableHistory = useMemo(
-    () => (portableMode ? readPortableHistory() : undefined),
-    [portableMode],
+    () => {
+      if (isNewChat || effectiveFriendlyId === 'new' || effectiveSessionKeyForHistory === 'new') {
+        return { sessionKey: 'new', messages: [] }
+      }
+      return portableMode ? readPortableHistory(effectiveSessionKeyForHistory) : undefined
+    },
+    [portableMode, isNewChat, effectiveFriendlyId, effectiveSessionKeyForHistory],
   )
   const historyKey = chatQueryKeys.history(
     effectiveFriendlyId,
@@ -332,8 +344,11 @@ export function useChatHistory({
   const historyQuery = useQuery({
     queryKey: historyKey,
     queryFn: async function fetchHistoryForSession() {
+      if (isNewChat || effectiveFriendlyId === 'new' || effectiveSessionKeyForHistory === 'new') {
+        return { sessionKey: 'new', messages: [] }
+      }
       if (portableMode) {
-        return readPortableHistory()
+        return readPortableHistory(effectiveSessionKeyForHistory)
       }
 
       const cached = queryClient.getQueryData(historyKey)
@@ -384,10 +399,16 @@ export function useChatHistory({
     },
     enabled: shouldFetchHistory,
     initialData: function useInitialHistory(): HistoryResponse | undefined {
+      if (isNewChat || effectiveFriendlyId === 'new' || effectiveSessionKeyForHistory === 'new') {
+        return {
+          sessionKey: 'new',
+          messages: [],
+        }
+      }
       if (portableMode) {
         return (
           portableHistory ?? {
-            sessionKey: 'main',
+            sessionKey: effectiveSessionKeyForHistory || 'main',
             messages: [],
           }
         )
@@ -411,16 +432,21 @@ export function useChatHistory({
 
   useEffect(() => {
     cleanupExpiredPendingSends()
+    if (isNewChat) {
+      setPersistedPending(null)
+      return
+    }
     setPersistedPending(
       readPendingMessage(sessionKeyForHistory, activeFriendlyId),
     )
-  }, [activeFriendlyId, sessionKeyForHistory])
+  }, [activeFriendlyId, sessionKeyForHistory, isNewChat])
 
   const rawHistoryMessages = useMemo(() => {
+    if (isNewChat || effectiveFriendlyId === 'new' || effectiveSessionKeyForHistory === 'new') return []
     return Array.isArray(historyQuery.data?.messages)
       ? historyQuery.data.messages
       : []
-  }, [historyQuery.data?.messages])
+  }, [historyQuery.data?.messages, isNewChat, effectiveFriendlyId, effectiveSessionKeyForHistory])
 
   useEffect(() => {
     if (!sessionKeyForHistory || sessionKeyForHistory === 'new') return
@@ -598,22 +624,25 @@ export function useChatHistory({
   const historyError =
     historyQuery.error instanceof Error ? historyQuery.error.message : null
   const resolvedSessionKey = useMemo(() => {
+    if (isNewChat) return undefined
     if (normalizedForcedSessionKey) return normalizedForcedSessionKey
     const key = historyQuery.data?.sessionKey
-    if (typeof key === 'string' && key.trim().length > 0) {
+    if (typeof key === 'string' && key.trim().length > 0 && key !== 'new') {
       return key.trim()
     }
     if (normalizedActiveSessionKey) return normalizedActiveSessionKey
-    if (explicitRouteSessionKey) return explicitRouteSessionKey
+    if (explicitRouteSessionKey && explicitRouteSessionKey !== 'new') return explicitRouteSessionKey
     return 'main'
   }, [
+    isNewChat,
     explicitRouteSessionKey,
     historyQuery.data?.sessionKey,
     normalizedActiveSessionKey,
     normalizedForcedSessionKey,
   ])
-  const activeCanonicalKey =
-    resolvedSessionKey || sessionKeyForHistory || 'main'
+  const activeCanonicalKey = isNewChat
+    ? 'new'
+    : (resolvedSessionKey || sessionKeyForHistory || 'main')
 
   return {
     historyQuery,

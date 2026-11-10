@@ -69,16 +69,21 @@ function attachmentSignature(message: ChatMessage): string {
     .join('|')
 }
 
-function persistPortableHistory(messages: Array<ChatMessage>) {
+function persistPortableHistory(storageSessionKey: string, messages: Array<ChatMessage>) {
   if (typeof window === 'undefined') return
+  if (!storageSessionKey || storageSessionKey === 'new') return
 
   const persistedMessages = messages
     .filter((message) => message.__streamingStatus !== 'streaming')
     .slice(-PORTABLE_HISTORY_LIMIT)
 
   try {
+    const storageKey =
+      storageSessionKey === 'main'
+        ? PORTABLE_HISTORY_STORAGE_KEY
+        : `claude_portable_chat_${storageSessionKey}`
     window.localStorage.setItem(
-      PORTABLE_HISTORY_STORAGE_KEY,
+      storageKey,
       JSON.stringify({
         messages: persistedMessages,
         updatedAt: Date.now(),
@@ -132,8 +137,17 @@ export function useRealtimeChatHistory({
   onCompactionEnd,
 }: UseRealtimeChatHistoryOptions & { portableMode?: boolean }) {
   const queryClient = useQueryClient()
-  const effectiveFriendlyId = portableMode ? 'main' : friendlyId
-  const effectiveSessionKey = portableMode ? 'main' : sessionKey
+  const isNewSession = sessionKey === 'new' || friendlyId === 'new'
+  const effectiveFriendlyId = isNewSession
+    ? 'new'
+    : portableMode && (!friendlyId || friendlyId === 'main')
+      ? 'main'
+      : friendlyId
+  const effectiveSessionKey = isNewSession
+    ? 'new'
+    : portableMode && (!sessionKey || sessionKey === 'main')
+      ? 'main'
+      : sessionKey
   const [lastCompletedRunAt, setLastCompletedRunAt] = useState<number | null>(
     null,
   )
@@ -536,9 +550,10 @@ export function useRealtimeChatHistory({
 
   useEffect(() => {
     if (!portableMode) return
+    if (isNewSession || effectiveSessionKey === 'new' || sessionKey === 'new') return
     if (mergedMessages.length === 0) return
-    persistPortableHistory(mergedMessages)
-  }, [mergedMessages, portableMode])
+    persistPortableHistory(effectiveSessionKey, mergedMessages)
+  }, [mergedMessages, portableMode, effectiveSessionKey, sessionKey, isNewSession])
 
   // History has caught up — cleanup realtime buffer outside render
   // DISABLED: This was aggressively clearing realtime messages before history
