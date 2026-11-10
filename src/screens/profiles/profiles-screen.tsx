@@ -301,7 +301,7 @@ export function ProfilesScreen() {
     try {
       await postJson('/api/profiles/update', {
         name: detailsName,
-        patch: { description: descriptionDraft.trim() || null },
+        patch: { description: (descriptionDraft || '').trim() || null },
       })
       toast(`Saved description for ${detailsName}`, { type: 'success' })
       await Promise.all([

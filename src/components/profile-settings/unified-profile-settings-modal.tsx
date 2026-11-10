@@ -206,9 +206,15 @@ export function UnifiedProfileSettingsModal({
   )
 
   useEffect(() => {
+    if (profileName) {
+      setNameDraft(profileName)
+    }
+  }, [profileName, open])
+
+  useEffect(() => {
     if (detailQuery.data) {
       const p = detailQuery.data
-      setNameDraft(p.name)
+      setNameDraft(p.name || profileName || '')
       setDescriptionDraft(p.description || '')
       setAvatarDraft(p.avatar || '')
       setEmojiDraft(p.emoji || '🤖')
@@ -268,7 +274,7 @@ export function UnifiedProfileSettingsModal({
 
   async function handleRename() {
     if (!profileName || isGeneral) return
-    const trimmed = nameDraft.trim()
+    const trimmed = (nameDraft || '').trim()
     if (!trimmed || trimmed === profileName) return
 
     setRenaming(true)
@@ -317,12 +323,12 @@ export function UnifiedProfileSettingsModal({
     setSaving(true)
     try {
       const patch: Record<string, unknown> = {
-        description: descriptionDraft.trim() || null,
-        avatar: avatarDraft.trim() || null,
-        emoji: emojiDraft.trim() || null,
-        soul: soulDraft,
-        memory: memoryDraft,
-        userContext: userContextDraft,
+        description: (descriptionDraft || '').trim() || null,
+        avatar: (avatarDraft || '').trim() || null,
+        emoji: (emojiDraft || '').trim() || null,
+        soul: soulDraft || '',
+        memory: memoryDraft || '',
+        userContext: userContextDraft || '',
       }
 
       if (modelDraft) patch.model = modelDraft
@@ -387,8 +393,8 @@ export function UnifiedProfileSettingsModal({
     return (
       models.find((m) => m.id === modelDraft) || {
         id: modelDraft,
-        name: modelDraft.split('/').pop() || modelDraft,
-        provider: providerDraft || (modelDraft.includes('/') ? modelDraft.split('/')[0] : 'custom'),
+        name: (modelDraft || '').split('/').pop() || modelDraft,
+        provider: providerDraft || ((modelDraft || '').includes('/') ? (modelDraft || '').split('/')[0] : 'custom'),
       }
     )
   })()
@@ -604,12 +610,12 @@ export function UnifiedProfileSettingsModal({
                       </label>
                       <div className="flex items-center gap-2">
                         <Input
-                          value={nameDraft}
+                          value={nameDraft || ''}
                           onChange={(e) => setNameDraft(e.target.value)}
                           disabled={isGeneral}
                           className="h-10 text-sm font-medium"
                         />
-                        {!isGeneral && nameDraft.trim() && nameDraft.trim() !== profileName ? (
+                        {!isGeneral && Boolean(nameDraft?.trim()) && nameDraft?.trim() !== profileName ? (
                           <Button size="sm" onClick={() => void handleRename()} disabled={renaming} className="h-10 text-xs">
                             {renaming ? 'Renaming…' : 'Rename'}
                           </Button>
