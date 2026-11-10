@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vanilla Hermes Agent /v1/responses streaming client.
  *
  * The OpenAI Responses API path (POST /v1/responses + stream:true) is the
@@ -18,7 +18,7 @@
  * `send-stream.ts` can translate to its existing `tool.*` events without
  * caring about Responses-spec quirks.
  */
-import { BEARER_TOKEN, CLAUDE_API } from './gateway-capabilities'
+import { BEARER_TOKEN, CLAUDE_API, getActiveGatewayUrl } from './gateway-capabilities'
 
 export type ResponsesStreamEvent =
   | { kind: 'text.delta'; delta: string }
@@ -53,6 +53,10 @@ export type ResponsesChatRequest = {
   model?: string
   sessionId?: string
   signal?: AbortSignal
+  baseUrl?: string
+  profile?: string
+  baseUrl?: string
+  profile?: string
 }
 
 const _authHeaders = (): Record<string, string> =>
@@ -124,7 +128,9 @@ export async function* streamResponses(
   if (req.model) body.model = req.model
   if (req.sessionId) body.session_id = req.sessionId
 
-  const res = await fetch(`${CLAUDE_API}/v1/responses`, {
+  if (req.profile) headers['X-Hermes-Profile'] = req.profile
+  const targetApi = req.baseUrl || getActiveGatewayUrl(req.profile)
+  const res = await fetch(`${targetApi}/v1/responses`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

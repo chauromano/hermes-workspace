@@ -65,6 +65,26 @@ export let CLAUDE_API = normalizeUrl(
     process.env.CLAUDE_API_URL ||
     'http://127.0.0.1:8642',
 )
+export const OPERATOR_CLAUDE_API = normalizeUrl(
+  process.env.HERMES_OPERATOR_API_URL || 'http://host.docker.internal:8643',
+)
+
+export function getActiveGatewayUrl(explicitProfile?: string | null): string {
+  let profile = explicitProfile ? explicitProfile.trim().toLowerCase() : ''
+  if (!profile) {
+    try {
+      const activeFile = path.join(getStateDir(), '..', 'active_profile')
+      if (fs.existsSync(activeFile)) {
+        profile = fs.readFileSync(activeFile, 'utf-8').trim().toLowerCase()
+      }
+    } catch {}
+  }
+  if (profile === 'operator') {
+    return OPERATOR_CLAUDE_API
+  }
+  return CLAUDE_API
+}
+
 export let CLAUDE_DASHBOARD_URL = normalizeUrl(
   _initialOverrides.claudeDashboardUrl ||
     process.env.HERMES_DASHBOARD_URL ||

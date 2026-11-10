@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+﻿import { createFileRoute } from '@tanstack/react-router'
 import { buildResolvedSessionHeaders } from '../../lib/send-stream-session-headers'
 import { buildWorkspaceScopedTextMessage } from '../../lib/workspace-message-scope'
 import { resolveSessionKey } from '../../server/session-utils'
@@ -20,6 +20,7 @@ import { getChatMode } from '../../server/gateway-capabilities'
 import { appendLocalMessage, deleteLocalSession, ensureLocalSession, getLocalMessages, touchLocalSession } from '../../server/local-session-store'
 import { getDiscoveredModels, getLocalProviderDef } from '../../server/local-provider-discovery'
 import { openaiChat } from '../../server/openai-compat-api'
+import { getSessionMetaMap, setSessionProfile } from '../../server/projects-backend'
 import { streamResponses } from '../../server/responses-api'
 import { selectPortableConversationHistory } from '../../server/portable-history'
 import {
@@ -371,6 +372,12 @@ export const Route = createFileRoute('/api/send-stream')({
         }
 
         const workspaceScope = await loadWorkspaceCatalog().catch(() => null)
+        // Resolve session profile and wire operator profile support
+        const sessionMeta = getSessionMetaMap([sessionKey]).get(sessionKey)
+        const requestedProfile = typeof body.profile === 'string' ? body.profile.trim() : (sessionMeta?.profile || undefined)
+        if (requestedProfile && requestedProfile !== sessionMeta?.profile) {
+          try { setSessionProfile(sessionKey, requestedProfile) } catch {}
+        }
         const scopedMessage = buildWorkspaceScopedTextMessage(
           getChatMessage(message, attachments),
           workspaceScope,
@@ -624,6 +631,7 @@ export const Route = createFileRoute('/api/send-stream')({
                         model:
                           typeof body.model === 'string' ? body.model : undefined,
                         sessionId: portableSessionKey,
+                        profile: requestedProfile,
                         signal: abortController.signal,
                       })
                       for await (const ev of responsesStream) {
@@ -770,6 +778,7 @@ export const Route = createFileRoute('/api/send-stream')({
                     signal: abortController.signal,
                     stream: true,
                     sessionId: portableSessionKey,
+                        profile: requestedProfile,
                     baseUrl: localBaseUrl,
                   })
 
