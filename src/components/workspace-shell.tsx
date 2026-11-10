@@ -471,7 +471,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
             type="button"
             aria-label="Close navigation sidebar"
             onClick={() => setSidebarCollapsed(true)}
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs transition-opacity duration-200 md:hidden"
+            className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-xs transition-opacity duration-200 md:hidden"
           />
         ) : null}
 

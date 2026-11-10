@@ -409,7 +409,7 @@ export function SearchModal() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="fixed inset-0 z-50 flex items-start justify-center bg-ink/45 px-4 pt-[9vh] backdrop-blur-md"
+          className="fixed inset-0 z-[150] flex items-start justify-center bg-ink/45 px-4 pt-[9vh] backdrop-blur-md"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeModal()

@@ -25,12 +25,12 @@ function AlertDialogContent({ className, children }: AlertDialogContentProps) {
   return (
     <AlertDialog.Portal>
       <AlertDialog.Backdrop
-        className="fixed inset-0 transition-all duration-150 data-[state=open]:opacity-100 data-[state=closed]:opacity-0"
+        className="fixed inset-0 z-[150] transition-all duration-150 data-[state=open]:opacity-100 data-[state=closed]:opacity-0"
         style={{ background: 'rgba(0,0,0,0.5)' }}
       />
       <AlertDialog.Popup
         className={cn(
-          'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
+          'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[151]',
           'w-[min(400px,92vw)] rounded-xl border p-0 shadow-xl',
           'transition-all duration-150',
           'data-[state=open]:opacity-100 data-[state=closed]:opacity-0',
