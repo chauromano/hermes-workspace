@@ -329,15 +329,21 @@ export function ProjectsScreen() {
                 </div>
 
                 {/* Card Actions */}
-                <div className="pt-3 border-t border-[var(--theme-border)] flex items-center justify-between gap-1.5 mt-2">
-                  <div className="flex items-center gap-1">
-                    {!isActive && (
+                <div className="pt-3 border-t border-[var(--theme-border)] flex items-center justify-between gap-2 mt-2">
+                  <div className="flex items-center gap-2">
+                    {isActive ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-accent-600 dark:text-accent-400 bg-accent-500/15 border border-accent-500/30">
+                        <HugeiconsIcon icon={CheckmarkCircle01Icon} size={13} />
+                        Active Workspace
+                      </span>
+                    ) : (
                       <Button
                         size="xs"
                         variant="default"
                         onClick={() => handleSetActive(proj.id)}
-                        className="bg-accent-600 hover:bg-accent-700 text-white font-medium"
+                        className="bg-accent-600 hover:bg-accent-700 text-white font-medium gap-1 shadow-sm"
                       >
+                        <HugeiconsIcon icon={FolderOpenIcon} size={13} />
                         Set Active
                       </Button>
                     )}
@@ -347,8 +353,9 @@ export function ProjectsScreen() {
                       variant="outline"
                       onClick={() => setAddingFolderProject(proj)}
                       title="Attach another repository or directory"
+                      className="gap-1 border-[var(--theme-border)] text-[var(--theme-text)] hover:bg-[var(--theme-hover)]"
                     >
-                      <HugeiconsIcon icon={Add01Icon} size={13} className="mr-1" />
+                      <HugeiconsIcon icon={Add01Icon} size={13} />
                       Add Folder
                     </Button>
                   </div>
@@ -359,16 +366,18 @@ export function ProjectsScreen() {
                       variant="ghost"
                       onClick={() => setEditingProject(proj)}
                       title="Edit project"
+                      className="text-[var(--theme-muted)] hover:text-[var(--theme-text)] hover:bg-[var(--theme-hover)]"
                     >
-                      <HugeiconsIcon icon={Edit01Icon} size={13} />
+                      <HugeiconsIcon icon={Edit01Icon} size={14} />
                     </Button>
                     <Button
                       size="icon-xs"
                       variant="ghost"
                       onClick={() => handleArchiveToggle(proj)}
                       title={proj.archived ? 'Restore' : 'Archive'}
+                      className="text-[var(--theme-muted)] hover:text-[var(--theme-text)] hover:bg-[var(--theme-hover)]"
                     >
-                      <HugeiconsIcon icon={Archive02Icon} size={13} />
+                      <HugeiconsIcon icon={Archive02Icon} size={14} />
                     </Button>
                     <Button
                       size="icon-xs"
@@ -377,7 +386,7 @@ export function ProjectsScreen() {
                       className="text-red-500 hover:bg-red-500/10"
                       title="Delete project"
                     >
-                      <HugeiconsIcon icon={Delete02Icon} size={13} />
+                      <HugeiconsIcon icon={Delete02Icon} size={14} />
                     </Button>
                   </div>
                 </div>
