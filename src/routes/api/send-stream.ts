@@ -1,4 +1,4 @@
-﻿import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { buildResolvedSessionHeaders } from '../../lib/send-stream-session-headers'
 import { buildWorkspaceScopedTextMessage } from '../../lib/workspace-message-scope'
 import { resolveSessionKey } from '../../server/session-utils'
@@ -632,6 +632,7 @@ export const Route = createFileRoute('/api/send-stream')({
                           typeof body.model === 'string' ? body.model : undefined,
                         sessionId: portableSessionKey,
                         profile: requestedProfile,
+                        cwd: sessionMeta?.cwd || undefined,
                         signal: abortController.signal,
                       })
                       for await (const ev of responsesStream) {
@@ -780,6 +781,7 @@ export const Route = createFileRoute('/api/send-stream')({
                     sessionId: portableSessionKey,
                         profile: requestedProfile,
                     baseUrl: localBaseUrl,
+                    cwd: sessionMeta?.cwd || undefined,
                   })
 
                   let thinking = ''
@@ -943,6 +945,15 @@ export const Route = createFileRoute('/api/send-stream')({
                 }
               }
 
+              if (!SESSION_BOOTSTRAP_KEYS.has(sessionKey)) {
+                // Ensure client-generated thread UUIDs exist in state.db before
+                // opening /api/sessions/{id}/chat/stream (eliminates first-message race).
+                await createSession({
+                  id: sessionKey,
+                  model: requestModel || (typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined),
+                }).catch(() => {})
+              }
+
               let startedSent = false
               // In enhanced mode, the HTTP stream response delivers all events
               // directly to useStreamingMessage. Skip publishChatEvent to prevent
@@ -1030,6 +1041,7 @@ export const Route = createFileRoute('/api/send-stream')({
                   model:
                     typeof body.model === 'string' ? body.model : undefined,
                   system_message: thinking,
+                  profile: requestedProfile,
                   attachments: attachments || undefined,
                 },
                 {

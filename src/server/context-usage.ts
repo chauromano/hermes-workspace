@@ -1,8 +1,8 @@
 import {
   BEARER_TOKEN,
-  CLAUDE_API,
   dashboardFetch,
   ensureGatewayProbed,
+  getActiveGatewayUrl,
   getCapabilities,
 } from '@/server/gateway-capabilities'
 import { listSessions } from '@/server/claude-api'
@@ -236,7 +236,7 @@ async function readGatewayRuntimeSnapshot(
   if (!sid) return null
   try {
     const res = await fetch(
-      `${CLAUDE_API}/api/sessions/${encodeURIComponent(sid)}/runtime`,
+      `${getActiveGatewayUrl()}/api/sessions/${encodeURIComponent(sid)}/runtime`,
       {
         headers: authHeaders(),
         signal: AbortSignal.timeout(2500),
@@ -466,7 +466,7 @@ export async function readContextUsage(
               signal: AbortSignal.timeout(3000),
             })
           : await fetch(
-              `${CLAUDE_API}/api/sessions/${encodeURIComponent(resolvedSessionId)}`,
+              `${getActiveGatewayUrl()}/api/sessions/${encodeURIComponent(resolvedSessionId)}`,
               {
                 headers: authHeaders(),
                 signal: AbortSignal.timeout(3000),
@@ -527,7 +527,7 @@ export async function readContextUsage(
                 },
               )
             : await fetch(
-                `${CLAUDE_API}/api/sessions/${encodeURIComponent(targetSessionId)}/messages`,
+                `${getActiveGatewayUrl()}/api/sessions/${encodeURIComponent(targetSessionId)}/messages`,
                 {
                   headers: authHeaders(),
                   signal: AbortSignal.timeout(5000),

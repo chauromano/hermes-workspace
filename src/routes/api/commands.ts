@@ -22,6 +22,9 @@ export const Route = createFileRoute('/api/commands')({
           const res = await gatewayFetch('/v1/commands')
 
           if (!res.ok) {
+            if (res.status === 404 || res.status === 405) {
+              return Response.json({ commands: [] })
+            }
             return json(
               { error: `Gateway responded with status ${res.status}` },
               { status: res.status },

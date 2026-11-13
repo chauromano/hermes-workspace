@@ -457,6 +457,7 @@ export function listSwarmWorkerIds(options?: { swarmOnly?: boolean }): Array<str
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
+    .filter((name) => name !== 'default' && name !== 'general')
     .filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
     .sort()
 }

@@ -200,11 +200,6 @@ export const Route = createFileRoute('/api/session-status')({
               },
             })
           } catch (sessionErr) {
-            const message =
-              sessionErr instanceof Error ? sessionErr.message : String(sessionErr)
-            if (!/not found|404/i.test(message)) {
-              throw sessionErr
-            }
             const contextUsage = await readContextUsage(sessionKey)
             return json({
               ok: true,

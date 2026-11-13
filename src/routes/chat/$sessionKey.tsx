@@ -5,6 +5,7 @@ import {
   moveHistoryMessages,
   reconcileSessionDraft,
 } from '../../screens/chat/chat-queries'
+import { isRecentSession } from '../../screens/chat/pending-send'
 import { ErrorBoundary } from '@/components/error-boundary'
 
 const ChatScreen = lazy(async () => {
@@ -14,6 +15,14 @@ const ChatScreen = lazy(async () => {
 
 export const Route = createFileRoute('/chat/$sessionKey')({
   component: ChatRoute,
+  validateSearch: (search: Record<string, unknown>) => ({
+    projectId:
+      typeof search.projectId === 'string' && search.projectId.trim()
+        ? search.projectId.trim()
+        : typeof search.project === 'string' && search.project.trim()
+          ? search.project.trim()
+          : undefined,
+  }),
   // Disable SSR to prevent hydration mismatches from async data
   ssr: false,
   errorComponent: function ChatError({ error, reset }) {
@@ -66,6 +75,7 @@ function ChatRoute() {
     sessionKey: string
   } | null>(null)
   const params = Route.useParams()
+  const search = Route.useSearch()
   const activeFriendlyId =
     typeof params.sessionKey === 'string' ? params.sessionKey : 'main'
   const isNewChat = activeFriendlyId === 'new'
@@ -146,8 +156,9 @@ function ChatRoute() {
           activeFriendlyId={activeFriendlyId}
           isNewChat={isNewChat}
           forcedSessionKey={forcedSessionKey}
+          initialProjectId={search.projectId}
           onSessionResolved={
-            isNewChat || activeFriendlyId === 'main'
+            isNewChat || activeFriendlyId === 'main' || isRecentSession(activeFriendlyId)
               ? handleSessionResolved
               : undefined
           }

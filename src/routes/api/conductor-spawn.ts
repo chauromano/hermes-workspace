@@ -247,14 +247,14 @@ export function buildNativeConductorAssignments(
   }
 
   pushUnique({
-    workerId: wantsOps ? 'ops-watch' : 'builder',
-    rationale: wantsOps ? 'Ops Watch owns runtime health, service quality, and production blockers.' : 'Builder owns scoped implementation and concrete progress.',
+    workerId: wantsOps ? 'operator' : 'developer',
+    rationale: wantsOps ? 'Operator owns runtime health, service quality, and production blockers.' : 'Developer owns scoped implementation and concrete progress.',
     reviewRequired: false,
     direct: true,
     task: [
       `Conductor mission: ${goal}`,
       '',
-      wantsOps ? 'Lane: Ops Watch / runtime quality.' : 'Lane: Builder / primary implementation.',
+      wantsOps ? 'Lane: Operator / runtime quality.' : 'Lane: Developer / primary implementation.',
       wantsOps
         ? 'Diagnose the runtime path, make the smallest safe operational improvement, and return proof. Avoid destructive changes unless explicitly approved.'
         : 'Find the smallest safe execution plan, make concrete progress, and produce a checkpoint. If code changes are required, keep them scoped and testable.',
@@ -264,16 +264,16 @@ export function buildNativeConductorAssignments(
 
   if (maxParallel >= 2) {
     pushUnique({
-      workerId: wantsOps ? 'builder' : 'reviewer',
+      workerId: wantsOps ? 'developer' : 'reviewer',
       rationale: wantsOps
-        ? 'Builder executes implementation or patch work in parallel with runtime analysis.'
+        ? 'Developer executes implementation or patch work in parallel with runtime analysis.'
         : 'Reviewer provides the second-lane quality gate for implementation work.',
       reviewRequired: false,
       direct: true,
       task: [
         `Conductor mission: ${goal}`,
         '',
-        wantsOps ? 'Lane: Builder.' : 'Lane: Reviewer / quality gate.',
+        wantsOps ? 'Lane: Developer.' : 'Lane: Reviewer / quality gate.',
         wantsOps
           ? 'Implement or prototype the concrete fix/feature path. Avoid broad refactors. Report files changed, tests run, and remaining risks.'
           : 'Review the execution path and any changes. Look for regressions, missing tests, unsafe assumptions, and production-readiness gaps.',
@@ -284,18 +284,18 @@ export function buildNativeConductorAssignments(
 
   if (maxParallel >= 3) {
     pushUnique({
-      workerId: wantsOps ? 'reviewer' : 'qa',
+      workerId: wantsOps ? 'reviewer' : 'tinker',
       rationale: wantsOps
         ? 'Reviewer independently checks correctness, regressions, and merge risk.'
-        : 'QA validates user-visible behavior with focused smoke checks.',
+        : 'Tinker validates user-visible behavior with focused experiments and smoke checks.',
       reviewRequired: false,
       direct: true,
       task: [
         `Conductor mission: ${goal}`,
         '',
-        wantsOps ? 'Lane: Reviewer / quality gate.' : 'Lane: QA.',
+        wantsOps ? 'Lane: Reviewer / quality gate.' : 'Lane: Tinker / QA & verification.',
         wantsOps
-          ? 'Review the implementation plan and any changes from Ops/Builder. Look for regressions, missing tests, unsafe assumptions, and production-readiness gaps. Do not make broad edits unless needed to unblock correctness.'
+          ? 'Review the implementation plan and any changes from Operator/Developer. Look for regressions, missing tests, unsafe assumptions, and production-readiness gaps. Do not make broad edits unless needed to unblock correctness.'
           : 'Run or design focused verification. Prefer targeted tests/build/smoke checks. Report exact commands and results. If tests are missing, identify the minimal regression coverage needed.',
       ].join('\n'),
     })
@@ -303,16 +303,16 @@ export function buildNativeConductorAssignments(
 
   if (maxParallel >= 4) {
     pushUnique({
-      workerId: wantsOps ? 'qa' : 'ops-watch',
+      workerId: wantsOps ? 'tinker' : 'operator',
       rationale: wantsOps
-        ? 'QA validates behavior with targeted tests and smoke checks.'
-        : 'Ops Watch checks runtime/service risks for implementation missions.',
+        ? 'Tinker validates behavior with targeted tests and smoke checks.'
+        : 'Operator checks runtime/service risks for implementation missions.',
       reviewRequired: false,
       direct: true,
       task: [
         `Conductor mission: ${goal}`,
         '',
-        wantsOps ? 'Lane: QA.' : 'Lane: Ops Watch / runtime quality.',
+        wantsOps ? 'Lane: Tinker / QA & verification.' : 'Lane: Operator / runtime quality.',
         wantsOps
           ? 'Run or design focused verification. Prefer targeted tests/build/smoke checks. Report exact commands and results. If tests are missing, identify the minimal regression coverage needed.'
           : 'Check runtime, service, deployment, and operational risk. Report only concrete blockers, verification gaps, and safe next actions.',
@@ -322,14 +322,14 @@ export function buildNativeConductorAssignments(
 
   if (maxParallel >= 5 || wantsDocs) {
     pushUnique({
-      workerId: 'km-agent',
-      rationale: 'KM Agent captures handoff, docs, and durable knowledge notes without leaking secrets.',
+      workerId: 'curator',
+      rationale: 'Curator captures handoff, docs, and durable knowledge notes without leaking secrets.',
       reviewRequired: false,
       direct: true,
       task: [
         `Conductor mission: ${goal}`,
         '',
-        'Lane: KM Agent / handoff and knowledge hygiene.',
+        'Lane: Curator / handoff and knowledge hygiene.',
         'Create a concise handoff/status note: what changed, how to operate it, verification, caveats, and next actions. Do not expose secrets.',
         options.supervised ? 'Supervised mode: stop before destructive writes or commits and report the exact approval needed.' : 'Proceed without asking unless blocked.',
       ].join('\n'),
@@ -337,16 +337,16 @@ export function buildNativeConductorAssignments(
   }
 
   const selected = assignments.slice(0, maxParallel)
-  if (wantsDocs && !selected.some((assignment) => assignment.workerId === 'km-agent')) {
+  if (wantsDocs && !selected.some((assignment) => assignment.workerId === 'curator')) {
     selected[selected.length - 1] = {
-      workerId: 'km-agent',
-      rationale: 'KM Agent captures handoff, docs, and durable knowledge notes without leaking secrets.',
+      workerId: 'curator',
+      rationale: 'Curator captures handoff, docs, and durable knowledge notes without leaking secrets.',
       reviewRequired: false,
       direct: true,
       task: [
         `Conductor mission: ${goal}`,
         '',
-        'Lane: KM Agent / handoff and knowledge hygiene.',
+        'Lane: Curator / handoff and knowledge hygiene.',
         'Create a concise handoff/status note: what changed, how to operate it, verification, caveats, and next actions. Do not expose secrets.',
         options.supervised ? 'Supervised mode: stop before destructive writes or commits and report the exact approval needed.' : 'Proceed without asking unless blocked.',
       ].join('\n'),

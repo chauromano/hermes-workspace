@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 
 export type SwarmChatMessage = {
@@ -17,127 +17,67 @@ export type SwarmChatReadResult = {
   error?: string
 }
 
-const PYTHON_SCRIPT = `import json, sqlite3, sys
+function extractMessageText(content: unknown): string {
+  if (typeof content !== 'string') {
+    return content != null ? String(content).trim() : ''
+  }
+  const stripped = content.trim()
+  if (!stripped.startsWith('[') && !stripped.startsWith('{')) {
+    return stripped
+  }
+  try {
+    const parsed = JSON.parse(content) as unknown
+    if (Array.isArray(parsed)) {
+      const parts: Array<string> = []
+      for (const block of parsed) {
+        if (!block || typeof block !== 'object') continue
+        const rec = block as Record<string, unknown>
+        const btype = rec.type
+        if (btype === undefined || btype === null || btype === 'text') {
+          parts.push(typeof rec.text === 'string' ? rec.text : '')
+        } else if (btype === 'tool_use') {
+          parts.push(`[tool:${String(rec.name ?? '?')}]`)
+        } else if (btype === 'tool_result') {
+          let val = rec.content ?? ''
+          if (Array.isArray(val)) {
+            val = val
+              .filter(
+                (v): v is Record<string, unknown> =>
+                  Boolean(v && typeof v === 'object' && (v as Record<string, unknown>).type === 'text'),
+              )
+              .map((v) => String(v.text ?? ''))
+              .join('\n')
+          }
+          parts.push(String(val).slice(0, 400))
+        }
+      }
+      return parts.filter(Boolean).join('\n').trim()
+    }
+    if (parsed && typeof parsed === 'object') {
+      const rec = parsed as Record<string, unknown>
+      return String(rec.text ?? rec.content ?? content).trim()
+    }
+  } catch {
+    // Fall back to raw content string
+  }
+  return stripped
+}
 
-db_path = sys.argv[1]
-limit = int(sys.argv[2])
+function parseTimestamp(rawTs: unknown): number | null {
+  if (typeof rawTs === 'number' && Number.isFinite(rawTs)) return Math.trunc(rawTs)
+  if (typeof rawTs === 'string') {
+    const num = Number(rawTs)
+    if (Number.isFinite(num)) return Math.trunc(num)
+  }
+  return null
+}
 
-conn = sqlite3.connect("file:" + db_path + "?mode=ro", uri=True)
-conn.row_factory = sqlite3.Row
-cur = conn.cursor()
-
-table_names = {row[0] for row in cur.execute(
-    "SELECT name FROM sqlite_master WHERE type='table'"
-).fetchall()}
-
-session_id = None
-session_title = None
-messages = []
-
-if "sessions" in table_names:
-    session_cols = {row[1] for row in cur.execute("PRAGMA table_info(sessions)").fetchall()}
-    title_col = "title" if "title" in session_cols else None
-    started_col = (
-        "started_at" if "started_at" in session_cols
-        else ("created_at" if "created_at" in session_cols else None)
-    )
-    order_clause = "ORDER BY " + started_col + " DESC" if started_col else ""
-    select_cols = ["id"]
-    if title_col:
-        select_cols.append(title_col)
-    if started_col:
-        select_cols.append(started_col)
-    row = cur.execute(
-        "SELECT " + ", ".join(select_cols) + " FROM sessions " + order_clause + " LIMIT 1"
-    ).fetchone()
-    if row is not None:
-        session_id = row["id"]
-        if title_col:
-            session_title = row[title_col]
-
-if session_id and "messages" in table_names:
-    msg_cols = {row[1] for row in cur.execute("PRAGMA table_info(messages)").fetchall()}
-    role_col = "role" if "role" in msg_cols else None
-    content_col = (
-        "content" if "content" in msg_cols
-        else ("text" if "text" in msg_cols else None)
-    )
-    ts_col = (
-        "created_at" if "created_at" in msg_cols
-        else ("timestamp" if "timestamp" in msg_cols
-              else ("started_at" if "started_at" in msg_cols else None))
-    )
-    if role_col and content_col:
-        order_by = ts_col if ts_col else "id"
-        ts_select = ", " + ts_col + " as ts" if ts_col else ""
-        rows = cur.execute(
-            "SELECT id, " + role_col + " as role, " + content_col + " as content"
-            + ts_select
-            + " FROM messages WHERE session_id = ? ORDER BY " + order_by + " DESC LIMIT ?",
-            (session_id, limit),
-        ).fetchall()
-        for r in reversed(rows):
-            content = r["content"]
-            text = ""
-            if isinstance(content, str):
-                stripped = content.strip()
-                if stripped.startswith("[") or stripped.startswith("{"):
-                    try:
-                        parsed = json.loads(content)
-                        if isinstance(parsed, list):
-                            parts = []
-                            for block in parsed:
-                                if not isinstance(block, dict):
-                                    continue
-                                btype = block.get("type")
-                                if btype in (None, "text"):
-                                    parts.append(block.get("text", ""))
-                                elif btype == "tool_use":
-                                    parts.append("[tool:" + str(block.get("name", "?")) + "]")
-                                elif btype == "tool_result":
-                                    val = block.get("content", "")
-                                    if isinstance(val, list):
-                                        sub = []
-                                        for v in val:
-                                            if isinstance(v, dict) and v.get("type") == "text":
-                                                sub.append(v.get("text", ""))
-                                        val = "\\n".join(sub)
-                                    parts.append(str(val)[:400])
-                            text = "\\n".join(p for p in parts if p)
-                        elif isinstance(parsed, dict):
-                            text = parsed.get("text") or parsed.get("content") or content
-                        else:
-                            text = content
-                    except Exception:
-                        text = content
-                else:
-                    text = content
-            else:
-                text = str(content) if content is not None else ""
-            ts = None
-            if ts_col:
-                raw_ts = r["ts"]
-                if isinstance(raw_ts, (int, float)):
-                    ts = int(raw_ts)
-                elif isinstance(raw_ts, str):
-                    try:
-                        ts = int(raw_ts)
-                    except ValueError:
-                        ts = None
-            messages.append({
-                "id": str(r["id"]),
-                "role": r["role"] or "assistant",
-                "content": text.strip(),
-                "timestamp": ts,
-            })
-
-conn.close()
-print(json.dumps({
-    "sessionId": session_id,
-    "sessionTitle": session_title,
-    "messages": messages,
-}))
-`
+function normalizeRole(role: unknown): SwarmChatMessage['role'] {
+  if (role === 'user' || role === 'assistant' || role === 'system' || role === 'tool') {
+    return role
+  }
+  return 'assistant'
+}
 
 export function readWorkerMessages(profilePath: string, limit: number): SwarmChatReadResult {
   const dbPath = join(profilePath, 'state.db')
@@ -149,18 +89,85 @@ export function readWorkerMessages(profilePath: string, limit: number): SwarmCha
       ok: false,
     }
   }
+
+  let db: DatabaseSync | null = null
   try {
-    const raw = execFileSync(
-      'python3',
-      ['-c', PYTHON_SCRIPT, dbPath, String(limit)],
-      { encoding: 'utf-8', timeout: 5_000 },
-    )
-    const parsed = JSON.parse(raw) as {
-      sessionId: string | null
-      sessionTitle: string | null
-      messages: Array<SwarmChatMessage>
+    db = new DatabaseSync(dbPath, { readOnly: true })
+    db.exec('PRAGMA busy_timeout = 1000;')
+
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all() as Array<{ name: string }>
+    const tableNames = new Set(tables.map((t) => t.name))
+
+    let sessionId: string | null = null
+    let sessionTitle: string | null = null
+    const messages: Array<SwarmChatMessage> = []
+
+    if (tableNames.has('sessions')) {
+      const sessionColsInfo = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+      const sessionCols = new Set(sessionColsInfo.map((c) => c.name))
+      const titleCol = sessionCols.has('title') ? 'title' : null
+      const startedCol = sessionCols.has('started_at')
+        ? 'started_at'
+        : sessionCols.has('created_at')
+          ? 'created_at'
+          : null
+      const orderClause = startedCol ? `ORDER BY ${startedCol} DESC` : ''
+      const selectCols = ['id']
+      if (titleCol) selectCols.push(titleCol)
+      if (startedCol) selectCols.push(startedCol)
+
+      const row = db
+        .prepare(`SELECT ${selectCols.join(', ')} FROM sessions ${orderClause} LIMIT 1`)
+        .get() as Record<string, unknown> | undefined
+
+      if (row) {
+        sessionId = row.id != null ? String(row.id) : null
+        if (titleCol) {
+          sessionTitle = row[titleCol] != null ? String(row[titleCol]) : null
+        }
+      }
     }
-    return { ...parsed, ok: true }
+
+    if (sessionId && tableNames.has('messages')) {
+      const msgColsInfo = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
+      const msgCols = new Set(msgColsInfo.map((c) => c.name))
+      const roleCol = msgCols.has('role') ? 'role' : null
+      const contentCol = msgCols.has('content')
+        ? 'content'
+        : msgCols.has('text')
+          ? 'text'
+          : null
+      const tsCol = msgCols.has('created_at')
+        ? 'created_at'
+        : msgCols.has('timestamp')
+          ? 'timestamp'
+          : msgCols.has('started_at')
+            ? 'started_at'
+            : null
+
+      if (roleCol && contentCol) {
+        const orderBy = tsCol ?? 'id'
+        const tsSelect = tsCol ? `, ${tsCol} as ts` : ''
+        const rows = db
+          .prepare(
+            `SELECT id, ${roleCol} as role, ${contentCol} as content${tsSelect} FROM messages WHERE session_id = ? ORDER BY ${orderBy} DESC LIMIT ?`,
+          )
+          .all(sessionId, limit) as Array<Record<string, unknown>>
+
+        for (const r of rows.reverse()) {
+          messages.push({
+            id: String(r.id),
+            role: normalizeRole(r.role),
+            content: extractMessageText(r.content),
+            timestamp: tsCol ? parseTimestamp(r.ts) : null,
+          })
+        }
+      }
+    }
+
+    return { sessionId, sessionTitle, messages, ok: true }
   } catch (err) {
     return {
       sessionId: null,
@@ -168,6 +175,12 @@ export function readWorkerMessages(profilePath: string, limit: number): SwarmCha
       messages: [],
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+    }
+  } finally {
+    try {
+      db?.close()
+    } catch {
+      // ignore close errors
     }
   }
 }

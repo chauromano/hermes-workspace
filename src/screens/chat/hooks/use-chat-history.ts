@@ -626,6 +626,10 @@ export function useChatHistory({
   const resolvedSessionKey = useMemo(() => {
     if (isNewChat) return undefined
     if (normalizedForcedSessionKey) return normalizedForcedSessionKey
+    const sid = (historyQuery.data as any)?.sessionId
+    if (typeof sid === 'string' && sid.trim().length > 0 && sid !== 'new') {
+      return sid.trim()
+    }
     const key = historyQuery.data?.sessionKey
     if (typeof key === 'string' && key.trim().length > 0 && key !== 'new') {
       return key.trim()
@@ -636,7 +640,7 @@ export function useChatHistory({
   }, [
     isNewChat,
     explicitRouteSessionKey,
-    historyQuery.data?.sessionKey,
+    historyQuery.data,
     normalizedActiveSessionKey,
     normalizedForcedSessionKey,
   ])

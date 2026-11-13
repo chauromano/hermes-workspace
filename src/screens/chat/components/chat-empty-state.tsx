@@ -1,7 +1,7 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import { BrainIcon, CodeIcon, PuzzleIcon } from '@hugeicons/core-free-icons'
 import { motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { formatModelName } from '@/lib/format-model-name'
 import { ProfileAvatar } from '@/components/avatars'
 
@@ -44,27 +44,28 @@ type ChatEmptyStateProps = {
   onSuggestionClick?: (prompt: string) => void
   compact?: boolean
   model?: string
+  profile?: ProfileSummary | null
 }
 
 export function ChatEmptyState({
   onSuggestionClick,
   compact = false,
   model,
+  profile,
 }: ChatEmptyStateProps) {
-  const [activeProfile, setActiveProfile] = useState<ProfileSummary | null>(null)
+  const profilesQuery = useQuery({
+    queryKey: ['profiles', 'composer'],
+    queryFn: async () => {
+      const res = await fetch('/api/profiles/list')
+      if (!res.ok) return { profiles: [] }
+      return (await res.json()) as { profiles?: Array<ProfileSummary>; activeProfile?: string }
+    },
+    staleTime: 30_000,
+  })
 
-  useEffect(() => {
-    fetch('/api/profiles/list')
-      .then((res) => res.json())
-      .then((data) => {
-        const profiles = data?.profiles as Array<ProfileSummary> | undefined
-        const active = profiles?.find((p) => p.active)
-        if (active) setActiveProfile(active)
-      })
-      .catch(() => {
-        // silently ignore — profile info is cosmetic
-      })
-  }, [])
+  const activeProfile =
+    profile ??
+    profilesQuery.data?.profiles?.find((p) => p.active || p.name === profilesQuery.data?.activeProfile)
 
   return (
     <motion.div

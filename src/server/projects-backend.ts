@@ -56,36 +56,57 @@ function sqliteQuote(value: string): string {
 
 const dbCache = new Map<string, DatabaseSync>()
 
-function getDatabase(dbPath: string): DatabaseSync {
-  let db = dbCache.get(dbPath)
+function getDatabase(dbPath: string, readOnly = false): DatabaseSync {
+  const cacheKey = `${dbPath}:${readOnly ? 'ro' : 'rw'}`
+  let db = dbCache.get(cacheKey)
   if (!db) {
-    db = new DatabaseSync(dbPath)
+    db = new DatabaseSync(dbPath, { readOnly })
     db.exec('PRAGMA busy_timeout = 5000;')
-    dbCache.set(dbPath, db)
+    dbCache.set(cacheKey, db)
+    if (!readOnly && dbPath.includes('projects.db')) {
+      try {
+        db.exec('CREATE TABLE IF NOT EXISTS session_projects (session_id TEXT PRIMARY KEY, project_id TEXT, updated_at INTEGER);')
+      } catch {}
+    }
   }
   return db
 }
 
 function runSqlite(dbPath: string, sql: string): string {
+  const isSelect = sql.trim().toUpperCase().startsWith('SELECT')
+  const cacheKey = `${dbPath}:${isSelect ? 'ro' : 'rw'}`
   try {
-    const db = getDatabase(dbPath)
+    const db = getDatabase(dbPath, isSelect)
     const rows = db.prepare(sql).all()
     return JSON.stringify(rows)
   } catch (err: unknown) {
+    dbCache.delete(cacheKey)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[projects-backend] runSqlite error:', message, '\nSQL:\n', sql)
-    throw new Error(`Failed to query projects.db: ${message}`)
+    throw new Error(`Failed to query database: ${message}`)
   }
 }
 
 function runSqliteExec(dbPath: string, sql: string): void {
-  try {
-    const db = getDatabase(dbPath)
-    db.exec(sql)
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[projects-backend] runSqliteExec error:', message, '\nSQL:\n', sql)
-    throw new Error(`Failed to update projects.db: ${message}`)
+  const cacheKey = `${dbPath}:rw`
+  const maxAttempts = 4
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const db = getDatabase(dbPath, false)
+      db.exec(sql)
+      return
+    } catch (err: unknown) {
+      dbCache.delete(cacheKey)
+      const message = err instanceof Error ? err.message : String(err)
+      const isBusy = /database is locked|SQLITE_BUSY/i.test(message)
+      if (isBusy && attempt < maxAttempts) {
+        // Brief synchronous backoff so concurrent gateway writes can commit
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 150)
+        continue
+      }
+      console.error('[projects-backend] runSqliteExec error:', message, '\nSQL:\n', sql)
+      throw new Error(`Failed to update database: ${message}`)
+    }
   }
 }
 
@@ -612,6 +633,7 @@ export function deleteProject(
   const statements = [
     'BEGIN TRANSACTION;',
     `DELETE FROM project_folders WHERE project_id = ${sqliteQuote(proj.id)};`,
+    `DELETE FROM session_projects WHERE project_id = ${sqliteQuote(proj.id)};`,
     `DELETE FROM projects WHERE id = ${sqliteQuote(proj.id)};`,
     `DELETE FROM project_meta WHERE key = 'active_id' AND value = ${sqliteQuote(proj.id)};`,
     'COMMIT;',
@@ -961,6 +983,119 @@ export function setSessionProfile(
   }
 }
 
+export function getDeclaredConversationMap(stateDb = getStateDbPath()): {
+  declaredToInternal: Map<string, string>
+  internalToDeclared: Map<string, string>
+} {
+  const declaredToInternal = new Map<string, string>()
+  const internalToDeclared = new Map<string, string>()
+  if (!existsSync(stateDb)) return { declaredToInternal, internalToDeclared }
+  try {
+    const raw = runSqlite(
+      stateDb,
+      "SELECT key, value FROM state_meta WHERE key LIKE 'gateway.api.conversation.v1.%';",
+    )
+    if (raw) {
+      const rows = JSON.parse(raw) as Array<{ key: string; value: string }>
+      for (const row of rows) {
+        const declaredKey = row.key.replace('gateway.api.conversation.v1.', '')
+        const internalId = row.value
+        if (declaredKey && internalId) {
+          declaredToInternal.set(declaredKey, internalId)
+          internalToDeclared.set(internalId, declaredKey)
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[projects-backend] failed to read declared conversation map:', err)
+  }
+  return { declaredToInternal, internalToDeclared }
+}
+
+export function resolveInternalSessionId(
+  sessionKey: string,
+  stateDb = getStateDbPath(),
+): string {
+  if (!sessionKey || !existsSync(stateDb)) return sessionKey
+  try {
+    const raw = runSqlite(
+      stateDb,
+      `SELECT value FROM state_meta WHERE key = ${sqliteQuote('gateway.api.conversation.v1.' + sessionKey)};`,
+    )
+    if (raw) {
+      const rows = JSON.parse(raw) as Array<{ value: string }>
+      if (rows.length > 0 && rows[0].value) {
+        return rows[0].value
+      }
+    }
+  } catch {}
+  return sessionKey
+}
+
+export function getSessionProjectMap(
+  sessionIds: string[],
+  projectsDb = getProjectsDbPath(),
+  stateDb = getStateDbPath(),
+): Map<string, string | null> {
+  const map = new Map<string, string | null>()
+  if (sessionIds.length === 0 || !existsSync(projectsDb)) return map
+  try {
+    const { declaredToInternal, internalToDeclared } = getDeclaredConversationMap(stateDb)
+    const allLookupIds = new Set<string>()
+    for (const sid of sessionIds) {
+      allLookupIds.add(sid)
+      const mappedInternal = declaredToInternal.get(sid)
+      if (mappedInternal) allLookupIds.add(mappedInternal)
+      const mappedDeclared = internalToDeclared.get(sid)
+      if (mappedDeclared) allLookupIds.add(mappedDeclared)
+    }
+
+    const inList = Array.from(allLookupIds).map(sqliteQuote).join(', ')
+    const raw = runSqlite(
+      projectsDb,
+      `SELECT session_id, project_id FROM session_projects WHERE session_id IN (${inList});`,
+    )
+    if (raw) {
+      const rows = JSON.parse(raw) as Array<{
+        session_id: string
+        project_id: string | null
+      }>
+      const directMap = new Map<string, string | null>()
+      for (const row of rows) {
+        if (row.session_id) {
+          directMap.set(row.session_id, row.project_id || null)
+        }
+      }
+
+      for (const sid of sessionIds) {
+        const direct = directMap.get(sid)
+        if (direct !== undefined) {
+          map.set(sid, direct)
+        } else {
+          const mappedInternal = declaredToInternal.get(sid)
+          const mappedDeclared = internalToDeclared.get(sid)
+          const inherited =
+            (mappedInternal ? directMap.get(mappedInternal) : null) ??
+            (mappedDeclared ? directMap.get(mappedDeclared) : null) ??
+            null
+          if (inherited) {
+            map.set(sid, inherited)
+            try {
+              const pVal = sqliteQuote(inherited)
+              const sVal = sqliteQuote(sid)
+              runSqliteExec(
+                projectsDb,
+                `INSERT INTO session_projects (session_id, project_id, updated_at) VALUES (${sVal}, ${pVal}, ${Date.now()}) ON CONFLICT(session_id) DO UPDATE SET project_id = excluded.project_id;`,
+              )
+            } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
+  return map
+}
+
 export function setSessionProject(
   sessionId: string,
   projectId: string | null,
@@ -989,9 +1124,31 @@ export function setSessionProject(
     projectName = 'None'
   }
 
+  // Persist explicit session project binding in projects.db
+  try {
+    const pVal = projectId ? sqliteQuote(projectId) : 'NULL'
+    const sVal = sqliteQuote(sessionId)
+    runSqliteExec(
+      projectsDb,
+      `INSERT INTO session_projects (session_id, project_id, updated_at) VALUES (${sVal}, ${pVal}, ${Date.now()}) ON CONFLICT(session_id) DO UPDATE SET project_id = excluded.project_id, updated_at = excluded.updated_at;`,
+    )
+  } catch (err) {
+    console.warn('[projects-backend] failed to persist session_projects:', err)
+  }
+
   if (existsSync(stateDb)) {
-    const sql = `UPDATE sessions SET cwd = ${targetPath ? sqliteQuote(targetPath) : "''"} WHERE id = ${sqliteQuote(sessionId)};`
-    runSqliteExec(stateDb, sql)
+    const targetVal = targetPath ? sqliteQuote(targetPath) : "''"
+    const sid = sqliteQuote(sessionId)
+    const sql = `
+      INSERT INTO sessions (id, source, started_at, cwd)
+      VALUES (${sid}, 'api_server', strftime('%s', 'now'), ${targetVal})
+      ON CONFLICT(id) DO UPDATE SET cwd = ${targetVal}, source = 'api_server';
+    `
+    try {
+      runSqliteExec(stateDb, sql)
+    } catch (err) {
+      console.warn('[projects-backend] failed to update sessions cwd in stateDb:', err)
+    }
   }
 
   sessionCwdCache.set(sessionId, { cwd: targetPath || '', timestamp: Date.now() })
@@ -1017,52 +1174,111 @@ export function readSessionsFromStateDb(
 ): Array<Record<string, unknown>> {
   if (!existsSync(stateDb)) return []
   try {
+    const { declaredToInternal, internalToDeclared } = getDeclaredConversationMap(stateDb)
     const sql = `SELECT id, title, model, started_at, last_activity_at, message_count, tool_call_count, cwd, pinned, input_tokens, output_tokens, profile_name, archived FROM sessions ORDER BY COALESCE(last_activity_at, started_at) DESC LIMIT ${limit};`
     const raw = runSqlite(stateDb, sql)
     if (!raw) return []
     const rows = JSON.parse(raw) as Array<Record<string, any>>
-    return rows.map((s) => {
-      const rawProf =
-        s.profile_name &&
-        !['default', 'general'].includes(String(s.profile_name).toLowerCase())
-          ? String(s.profile_name).trim()
-          : null
-      return {
-        key: s.id,
-        id: s.id,
-        friendlyId: s.id,
-        kind: 'chat',
-        status: 'idle',
-        model: s.model || '',
-        label: s.title || undefined,
-        title: s.title || undefined,
-        derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
-        preview: undefined,
-        tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
-        totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
-        message_count: s.message_count || 0,
-        tool_call_count: s.tool_call_count || 0,
-        messageCount: s.message_count || 0,
-        toolCallCount: s.tool_call_count || 0,
-        cost: 0,
-        createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-        startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
-        updatedAt: s.last_activity_at
-          ? Math.floor(s.last_activity_at * 1000)
-          : s.started_at
-            ? Math.floor(s.started_at * 1000)
-            : Date.now(),
-        isPinned: Boolean(s.pinned),
-        archived: Boolean(s.archived),
-        cwd: s.cwd || null,
-        profile_name: rawProf,
-        profileName: rawProf,
-        profile: rawProf,
+    const activeInternalWithMessages = new Set<string>()
+    for (const r of rows) {
+      if ((r.message_count || 0) > 0) {
+        activeInternalWithMessages.add(r.id)
       }
-    })
+    }
+
+    return rows
+      .filter((s) => {
+        const msgCount = s.message_count || 0
+        const mappedInternal = declaredToInternal.get(s.id)
+        // If this is a declared placeholder session with 0 messages and an active internal session exists, suppress it
+        if (msgCount === 0 && mappedInternal && activeInternalWithMessages.has(mappedInternal)) {
+          return false
+        }
+        return true
+      })
+      .map((s) => {
+        const rawProf =
+          s.profile_name &&
+          !['default', 'general'].includes(String(s.profile_name).toLowerCase())
+            ? String(s.profile_name).trim()
+            : null
+        return {
+          key: s.id,
+          id: s.id,
+          friendlyId: s.id,
+          declaredKey: internalToDeclared.get(s.id) || undefined,
+          kind: 'chat',
+          status: 'idle',
+          model: s.model || '',
+          label: s.title || undefined,
+          title: s.title || undefined,
+          derivedTitle: s.title || `Session ${String(s.id).slice(0, 8)}`,
+          preview: undefined,
+          tokenCount: (s.input_tokens || 0) + (s.output_tokens || 0),
+          totalTokens: (s.input_tokens || 0) + (s.output_tokens || 0),
+          message_count: s.message_count || 0,
+          tool_call_count: s.tool_call_count || 0,
+          messageCount: s.message_count || 0,
+          toolCallCount: s.tool_call_count || 0,
+          cost: 0,
+          createdAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+          startedAt: s.started_at ? Math.floor(s.started_at * 1000) : Date.now(),
+          updatedAt: s.last_activity_at
+            ? Math.floor(s.last_activity_at * 1000)
+            : s.started_at
+              ? Math.floor(s.started_at * 1000)
+              : Date.now(),
+          isPinned: Boolean(s.pinned),
+          archived: Boolean(s.archived),
+          cwd: s.cwd || null,
+          profile_name: rawProf,
+          profileName: rawProf,
+          profile: rawProf,
+        }
+      })
   } catch {
     return []
   }
+}
+
+export function setSessionTitle(
+  sessionId: string,
+  title: string,
+  stateDb = getStateDbPath(),
+): boolean {
+  if (!sessionId || !title) return false
+  const internalId = resolveInternalSessionId(sessionId, stateDb)
+  const targetId = internalId || sessionId
+  let updated = false
+  if (existsSync(stateDb)) {
+    const sql = `UPDATE sessions SET title = ${sqliteQuote(title)} WHERE id = ${sqliteQuote(targetId)} OR id = ${sqliteQuote(sessionId)};`
+    try {
+      runSqliteExec(stateDb, sql)
+      updated = true
+    } catch (err) {
+      console.warn('[projects-backend] failed to update title in stateDb:', err)
+    }
+  }
+  const profilesDir = getProfilesDir()
+  if (existsSync(profilesDir)) {
+    try {
+      const entries = readdirSync(profilesDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const profDb = join(profilesDir, entry.name, 'state.db')
+        if (existsSync(profDb)) {
+          try {
+            runSqliteExec(
+              profDb,
+              `UPDATE sessions SET title = ${sqliteQuote(title)} WHERE id = ${sqliteQuote(targetId)} OR id = ${sqliteQuote(sessionId)};`,
+            )
+            updated = true
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+  return updated
 }
 
 export function setSessionArchived(

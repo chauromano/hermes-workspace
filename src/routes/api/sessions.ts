@@ -21,7 +21,7 @@ import {
   updateSession,
 } from '../../server/claude-api'
 import { createCapabilityUnavailablePayload } from '@/lib/feature-gates'
-import { findProjectForPath, getSessionCwdMap, getSessionMetaMap, extractPathFromDirective, listProjects, setSessionProject, setSessionProfile, readSessionsFromStateDb, setSessionArchived, deleteSessionFromStateDb } from '../../server/projects-backend'
+import { findProjectForPath, getSessionCwdMap, getSessionMetaMap, getSessionProjectMap, extractPathFromDirective, listProjects, setSessionProject, setSessionProfile, setSessionTitle, readSessionsFromStateDb, setSessionArchived, deleteSessionFromStateDb, getDeclaredConversationMap } from '../../server/projects-backend'
 import { saveWorkspaceSelection } from './workspace'
 import {
   deleteLocalSession,
@@ -58,6 +58,27 @@ export const Route = createFileRoute('/api/sessions')({
           // 2. If gateway failed, timed out, or returned 0 items, read directly from state.db
           if (gatewaySessions.length === 0) {
             gatewaySessions = readSessionsFromStateDb(50) as any[]
+          } else {
+            // Deduplicate declared placeholder sessions that have an active internal session
+            const { declaredToInternal } = getDeclaredConversationMap()
+            const activeInternalWithMessages = new Set<string>()
+            for (const s of gatewaySessions) {
+              const sid = String(s.key || s.friendlyId || s.id)
+              const count = Number(s.message_count ?? s.messageCount ?? 0)
+              if (count > 0) {
+                activeInternalWithMessages.add(sid)
+              }
+            }
+
+            gatewaySessions = gatewaySessions.filter((s: any) => {
+              const sid = String(s.key || s.friendlyId || s.id)
+              const count = Number(s.message_count ?? s.messageCount ?? 0)
+              const mappedInternal = declaredToInternal.get(sid)
+              if (count === 0 && mappedInternal && activeInternalWithMessages.has(mappedInternal)) {
+                return false
+              }
+              return true
+            })
           }
 
           // Merge local portable sessions (Ollama, Atomic Chat, etc.)
@@ -93,13 +114,19 @@ export const Route = createFileRoute('/api/sessions')({
 
           const sessionIds = gatewaySessions.map((s: any) => String(s.key || s.friendlyId || s.id))
           const sessionMetaMap = getSessionMetaMap(sessionIds)
+          const sessionProjectMap = getSessionProjectMap(sessionIds)
+          const { internalToDeclared } = getDeclaredConversationMap()
           const { projects: allProjects } = listProjects({ includeArchived: true })
+          const projectById = new Map(allProjects.map((p) => [p.id, p]))
 
           for (const s of gatewaySessions as any[]) {
             const sid = String(s.key || s.friendlyId || s.id)
             const meta = sessionMetaMap.get(sid)
             const cwd = s.cwd || meta?.cwd || extractPathFromDirective(s.preview) || null
-            const project = findProjectForPath(cwd, allProjects)
+            const explicitProjectId = sessionProjectMap.get(sid)
+            const project =
+              (explicitProjectId ? projectById.get(explicitProjectId) : null) ||
+              findProjectForPath(cwd, allProjects)
             const profile =
               meta?.profile ||
               (s.profile_name &&
@@ -116,6 +143,10 @@ export const Route = createFileRoute('/api/sessions')({
             s.projectSlug = project?.slug ?? null
             s.profileName = profile
             s.profile = profile
+            const declared = internalToDeclared.get(sid)
+            if (declared) {
+              s.declaredKey = declared
+            }
           }
 
           return json({ sessions: gatewaySessions, pinnedSessionKeys })
@@ -125,12 +156,17 @@ export const Route = createFileRoute('/api/sessions')({
             const fallbackSessions = readSessionsFromStateDb(50) as any[]
             const fallbackIds = fallbackSessions.map((s: any) => String(s.key || s.friendlyId || s.id))
             const sessionMetaMap = getSessionMetaMap(fallbackIds)
+            const sessionProjectMap = getSessionProjectMap(fallbackIds)
             const { projects: allProjects } = listProjects({ includeArchived: true })
+            const projectById = new Map(allProjects.map((p) => [p.id, p]))
             for (const s of fallbackSessions) {
               const sid = String(s.key || s.friendlyId || s.id)
               const meta = sessionMetaMap.get(sid)
               const cwd = s.cwd || meta?.cwd || extractPathFromDirective(s.preview) || null
-              const project = findProjectForPath(cwd, allProjects)
+              const explicitProjectId = sessionProjectMap.get(sid)
+              const project =
+                (explicitProjectId ? projectById.get(explicitProjectId) : null) ||
+                findProjectForPath(cwd, allProjects)
               const profile =
                 meta?.profile ||
                 (s.profile_name &&
@@ -187,9 +223,23 @@ export const Route = createFileRoute('/api/sessions')({
             return json({ ok: true, pinnedSessionKeys: finalKeys })
           }
 
+          const requestedFriendlyId =
+            typeof body.friendlyId === 'string' ? body.friendlyId.trim() : ''
+          const friendlyId = requestedFriendlyId || randomUUID()
+
           const capabilities = await ensureGatewayProbed()
           if (!capabilities.sessions) {
-            const friendlyId = randomUUID()
+            if (body.projectId !== undefined) {
+              const targetProjectId =
+                typeof body.projectId === 'string' && body.projectId.trim()
+                  ? body.projectId.trim()
+                  : null
+              try {
+                setSessionProject(friendlyId, targetProjectId)
+              } catch (projErr) {
+                console.warn('[sessions] failed to set initial project for session', friendlyId, projErr)
+              }
+            }
             return json({
               ...createCapabilityUnavailablePayload('sessions'),
               ok: true,
@@ -203,15 +253,22 @@ export const Route = createFileRoute('/api/sessions')({
             typeof body.label === 'string' ? body.label.trim() : ''
           const label = requestedLabel || undefined
 
-          const requestedFriendlyId =
-            typeof body.friendlyId === 'string' ? body.friendlyId.trim() : ''
-          const friendlyId = requestedFriendlyId || randomUUID()
-
           const requestedModel =
             typeof body.model === 'string' ? body.model.trim() : ''
           const model = requestedModel || undefined
 
           if (capabilities.dashboard.available && !capabilities.enhancedChat) {
+            if (body.projectId !== undefined) {
+              const targetProjectId =
+                typeof body.projectId === 'string' && body.projectId.trim()
+                  ? body.projectId.trim()
+                  : null
+              try {
+                setSessionProject(friendlyId, targetProjectId)
+              } catch (projErr) {
+                console.warn('[sessions] failed to set initial project for session', friendlyId, projErr)
+              }
+            }
             return json({
               ok: true,
               sessionKey: friendlyId,
@@ -239,6 +296,21 @@ export const Route = createFileRoute('/api/sessions')({
             model,
           })
 
+          if (body.projectId !== undefined) {
+            const targetProjectId =
+              typeof body.projectId === 'string' && body.projectId.trim()
+                ? body.projectId.trim()
+                : null
+            try {
+              setSessionProject(session.id, targetProjectId)
+              if (friendlyId && friendlyId !== session.id) {
+                setSessionProject(friendlyId, targetProjectId)
+              }
+            } catch (projErr) {
+              console.warn('[sessions] failed to set initial project for session', session.id, projErr)
+            }
+          }
+
           return json({
             ok: true,
             sessionKey: session.id,
@@ -262,45 +334,68 @@ export const Route = createFileRoute('/api/sessions')({
         }
         const csrfCheckPatch = requireJsonContentType(request)
         if (csrfCheckPatch) return csrfCheckPatch
+        const body = (await request.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >
+
+        const rawSessionKey =
+          typeof body.sessionKey === 'string' ? body.sessionKey.trim() : ''
+        const rawFriendlyId =
+          typeof body.friendlyId === 'string' ? body.friendlyId.trim() : ''
+        const sessionKey = rawSessionKey || rawFriendlyId
+
+        if (body.projectId !== undefined && sessionKey) {
+          const targetProjectId = typeof body.projectId === 'string' && body.projectId.trim() ? body.projectId.trim() : null
+          const projectRes = setSessionProject(sessionKey, targetProjectId)
+          if (projectRes.cwd) {
+            void saveWorkspaceSelection({ path: projectRes.cwd, name: projectRes.projectName }).catch(() => {})
+          }
+          return json({
+            ok: true,
+            sessionKey,
+            ...projectRes,
+          })
+        }
+
         const capabilities = await ensureGatewayProbed()
         if (!capabilities.sessions) {
-          const body = (await request.json().catch(() => ({}))) as Record<
-            string,
-            unknown
-          >
-          const rawSessionKey =
-            typeof body.sessionKey === 'string' ? body.sessionKey.trim() : ''
-          const rawFriendlyId =
-            typeof body.friendlyId === 'string' ? body.friendlyId.trim() : ''
-          const sessionKey = rawSessionKey || rawFriendlyId || randomUUID()
+          const fallbackKey = sessionKey || randomUUID()
 
           return json({
             ...createCapabilityUnavailablePayload('sessions'),
             ok: true,
-            sessionKey,
-            friendlyId: rawFriendlyId || sessionKey,
+            sessionKey: fallbackKey,
+            friendlyId: rawFriendlyId || fallbackKey,
             updated: false,
           })
         }
         try {
-          const body = (await request.json().catch(() => ({}))) as Record<
-            string,
-            unknown
-          >
-
-          const rawSessionKey =
-            typeof body.sessionKey === 'string' ? body.sessionKey.trim() : ''
-          const rawFriendlyId =
-            typeof body.friendlyId === 'string' ? body.friendlyId.trim() : ''
           const label =
             typeof body.label === 'string' ? body.label.trim() : undefined
-          const sessionKey = rawSessionKey || rawFriendlyId
 
           if (!sessionKey) {
             return json(
               { ok: false, error: 'sessionKey required' },
               { status: 400 },
             )
+          }
+
+          if (label !== undefined) {
+            setSessionTitle(sessionKey, label)
+            return json({
+              ok: true,
+              sessionKey,
+              friendlyId: rawFriendlyId || sessionKey,
+              entry: {
+                key: sessionKey,
+                id: sessionKey,
+                title: label,
+                label,
+                derivedTitle: label,
+              },
+              updated: true,
+            })
           }
 
           if (body.projectId !== undefined) {

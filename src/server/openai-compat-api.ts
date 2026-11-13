@@ -91,6 +91,7 @@ export type OpenAIChatOptions = {
   sessionId?: string
   /** Override the base URL (e.g. for local providers). Bypasses gateway. */
   baseUrl?: string
+  cwd?: string
 }
 
 type OpenAIChatRequest = {
@@ -287,6 +288,9 @@ export async function openaiChat(
   // If the gateway requires auth, _check_auth has already validated the
   // bearer above; when it does not, dropping these headers forces Hermes
   // Agent to derive a fresh api-* session from each message payload.
+  if (options.cwd) {
+    headers['X-Hermes-Workspace'] = options.cwd
+  }
   if (options.sessionId) {
     headers['X-Hermes-Session-Id'] = options.sessionId
     headers['X-Hermes-Session-Key'] = options.sessionId

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { json } from '@tanstack/react-start'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import * as yaml from 'yaml'
 import { BEARER_TOKEN, CLAUDE_API, ensureGatewayProbed } from '../../server/gateway-capabilities'
@@ -77,7 +77,7 @@ function buildCrewDefinitions(): CrewDefinition[] {
   const roster = rosterByWorkerId(dynamicProfiles)
   return [
     { id: 'general', displayName: 'General', humanLabel: 'General — Primary profile', role: 'Primary profile', profilePath: null },
-    ...dynamicProfiles.map((profile) => buildCrewDefinitionFromRoster(profile, /^swarm\d+$/i.test(profile) ? roster.get(profile) : null)),
+    ...dynamicProfiles.map((profile) => buildCrewDefinitionFromRoster(profile, roster.get(profile) ?? null)),
   ]
 }
 
@@ -125,50 +125,34 @@ function readDbStats(claudeHome: string): DbStats {
     }
   }
 
+  let db: DatabaseSync | null = null
   try {
-    const script = `
-import json, sqlite3, sys
-path = sys.argv[1]
-out = {
-  "sessionCount": 0,
-  "messageCount": 0,
-  "toolCallCount": 0,
-  "totalTokens": 0,
-  "estimatedCostUsd": None,
-  "lastSessionTitle": None,
-  "lastSessionAt": None,
-}
-conn = sqlite3.connect(path)
-conn.row_factory = sqlite3.Row
-cur = conn.cursor()
-agg = cur.execute("""
-SELECT
-  COUNT(*) as session_count,
-  COALESCE(SUM(message_count), 0) as total_messages,
-  COALESCE(SUM(tool_call_count), 0) as total_tool_calls,
-  COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) as total_tokens,
-  SUM(estimated_cost_usd) as estimated_cost,
-  MAX(started_at) as last_session_at
-FROM sessions
-""").fetchone()
-if agg is not None:
-  out["sessionCount"] = agg["session_count"] or 0
-  out["messageCount"] = agg["total_messages"] or 0
-  out["toolCallCount"] = agg["total_tool_calls"] or 0
-  out["totalTokens"] = agg["total_tokens"] or 0
-  out["estimatedCostUsd"] = agg["estimated_cost"]
-last_row = cur.execute("SELECT title, started_at FROM sessions ORDER BY started_at DESC LIMIT 1").fetchone()
-if last_row is not None:
-  out["lastSessionTitle"] = last_row["title"]
-  out["lastSessionAt"] = last_row["started_at"]
-conn.close()
-print(json.dumps(out))
-`
-    const raw = execFileSync('python3', ['-c', script, dbPath], {
-      encoding: 'utf-8',
-      timeout: 3_000,
-    })
-    return JSON.parse(raw) as DbStats
+    db = new DatabaseSync(dbPath, { readOnly: true })
+    db.exec('PRAGMA busy_timeout = 1000;')
+    const agg = db
+      .prepare(
+        `SELECT
+          COUNT(*) as session_count,
+          COALESCE(SUM(message_count), 0) as total_messages,
+          COALESCE(SUM(tool_call_count), 0) as total_tool_calls,
+          COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) as total_tokens,
+          SUM(estimated_cost_usd) as estimated_cost,
+          MAX(started_at) as last_session_at
+        FROM sessions`,
+      )
+      .get() as Record<string, unknown> | undefined
+    const lastRow = db
+      .prepare('SELECT title, started_at FROM sessions ORDER BY started_at DESC LIMIT 1')
+      .get() as Record<string, unknown> | undefined
+    return {
+      sessionCount: Number(agg?.session_count ?? 0),
+      messageCount: Number(agg?.total_messages ?? 0),
+      toolCallCount: Number(agg?.total_tool_calls ?? 0),
+      totalTokens: Number(agg?.total_tokens ?? 0),
+      estimatedCostUsd: agg?.estimated_cost != null ? Number(agg.estimated_cost) : null,
+      lastSessionTitle: lastRow?.title != null ? String(lastRow.title) : null,
+      lastSessionAt: lastRow?.started_at != null ? String(lastRow.started_at) : null,
+    }
   } catch {
     return {
       sessionCount: 0,
@@ -178,6 +162,12 @@ print(json.dumps(out))
       estimatedCostUsd: null,
       lastSessionTitle: null,
       lastSessionAt: null,
+    }
+  } finally {
+    try {
+      db?.close()
+    } catch {
+      // ignore close errors
     }
   }
 }
@@ -304,7 +294,10 @@ export const Route = createFileRoute('/api/crew-status')({
             capabilities: member.capabilities,
             profileFound: true,
             gatewayState: gatewayInfo.gatewayState,
-            processAlive: checkProcessAlive(gatewayInfo.pid),
+            processAlive:
+              checkProcessAlive(gatewayInfo.pid) ||
+              (gatewayInfo.gatewayState === 'running' &&
+                Object.values(gatewayInfo.platforms ?? {}).some((p) => p?.state === 'connected')),
             platforms: gatewayInfo.platforms,
             model: config.model,
             provider: config.provider,

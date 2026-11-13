@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { readWorkerMessages, type SwarmChatMessage } from '../../server/swarm-chat-reader'
+import { executeWorkerViaGateway, resolveWorkerProfilePath } from '../../server/swarm-gateway-fallback'
 import { rosterByWorkerId } from '../../server/swarm-roster'
 
 type DirectChatRequest = {
@@ -19,12 +20,12 @@ type DirectChatResponse = {
   ok: boolean
   workerId: string
   delivered: boolean
-  delivery?: 'tmux'
+  delivery?: 'tmux' | 'gateway'
   error?: string | null
   sessionId: string | null
   sessionTitle: string | null
   messages: Array<SwarmChatMessage>
-  source: 'state.db' | 'unavailable'
+  source: 'state.db' | 'gateway' | 'unavailable'
   fetchedAt: number
 }
 
@@ -57,7 +58,7 @@ function getProfilesDir(): string {
 }
 
 function getProfilePath(workerId: string): string {
-  return join(getProfilesDir(), workerId)
+  return resolveWorkerProfilePath(workerId)
 }
 
 function getWrapperPath(workerId: string): string {
@@ -272,11 +273,42 @@ export const Route = createFileRoute('/api/swarm-direct-chat')({
 
         const delivered = await sendPromptToLiveSession(workerId, prompt)
         if (!delivered.ok) {
+          const gwResult = await executeWorkerViaGateway(workerId, prompt, { timeoutMs })
+          if (gwResult.ok) {
+            const nowSec = Math.floor(Date.now() / 1000)
+            return json({
+              ok: true,
+              workerId,
+              delivered: true,
+              delivery: 'gateway',
+              error: null,
+              sessionId: baselineChat.sessionId ?? `gateway:${workerId}`,
+              sessionTitle: baselineChat.sessionTitle ?? `${workerId} direct chat`,
+              messages: [
+                ...baselineChat.messages,
+                {
+                  id: `gw-u-${Date.now()}`,
+                  role: 'user',
+                  content: prompt,
+                  timestamp: nowSec,
+                },
+                {
+                  id: `gw-a-${Date.now() + 1}`,
+                  role: 'assistant',
+                  content: gwResult.output,
+                  timestamp: nowSec,
+                },
+              ],
+              source: 'gateway',
+              fetchedAt: Date.now(),
+            } satisfies DirectChatResponse)
+          }
+
           return json({
             ok: false,
             workerId,
             delivered: false,
-            error: delivered.error,
+            error: gwResult.error || delivered.error,
             sessionId: baselineChat.sessionId,
             sessionTitle: baselineChat.sessionTitle,
             messages: baselineChat.messages,

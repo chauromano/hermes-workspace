@@ -47,6 +47,7 @@ import {
   isRecentSession,
   resetPendingSend,
   setPendingGeneration,
+  setRecentSession,
 } from './pending-send'
 import { useChatMeasurements } from './hooks/use-chat-measurements'
 import { useChatHistory } from './hooks/use-chat-history'
@@ -119,6 +120,7 @@ export function setLocalModelOverride(model: string) { _localModelOverride = mod
 type ChatScreenProps = {
   activeFriendlyId: string
   isNewChat?: boolean
+  initialProjectId?: string
   onSessionResolved?: (payload: {
     sessionKey: string
     friendlyId: string
@@ -467,6 +469,7 @@ function stripQueuedWrapperFromUserMessage(message: ChatMessage): ChatMessage {
 export function ChatScreen({
   activeFriendlyId,
   isNewChat = false,
+  initialProjectId,
   onSessionResolved,
   forcedSessionKey,
   compact = false,
@@ -571,16 +574,33 @@ export function ChatScreen({
     sessionsFetching: _sessionsFetching,
     refetchSessions: _refetchSessions,
   } = useChatSessions({ activeFriendlyId, isNewChat, forcedSessionKey })
-  const { activeId } = useProjects()
+  const { projects, activeId } = useProjects()
   const setActiveProjectMutation = useSetActiveProject()
 
+  const targetProjectCandidateId = activeSession?.projectId ?? (isNewChat ? (initialProjectId || null) : null)
+  const targetProjectCandidate = projects.find((p) => p.id === targetProjectCandidateId)
+  const targetProjectCandidateName = activeSession?.projectName ?? targetProjectCandidate?.name ?? null
+
+  const lastSyncedSessionProjectRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!activeSession || isNewChat) return
+    if (isNewChat) {
+      lastSyncedSessionProjectRef.current = null
+      if (initialProjectId && activeId !== initialProjectId) {
+        setActiveProjectMutation.mutate(initialProjectId)
+      } else if (!initialProjectId && activeId !== null) {
+        setActiveProjectMutation.mutate(null)
+      }
+      return
+    }
+    if (!activeSession) return
+    const syncKey = `${activeSession.key}:${activeSession.projectId ?? ''}`
+    if (lastSyncedSessionProjectRef.current === syncKey) return
+    lastSyncedSessionProjectRef.current = syncKey
     const targetProjectId = activeSession.projectId ?? null
     if (activeId !== targetProjectId) {
       setActiveProjectMutation.mutate(targetProjectId)
     }
-  }, [activeSession?.key, activeSession?.projectId, activeId])
+  }, [activeSession?.key, activeSession?.projectId, isNewChat, initialProjectId])
   const {
     historyQuery,
     historyMessages,
@@ -1070,7 +1090,9 @@ export function ChatScreen({
 
   const gatewayModel = currentModelQuery.data || ''
   const sessionModel = useSessionModelStore((s) =>
-    s.getModel(resolvedSessionKey || activeFriendlyId || (isNewChat ? 'draft' : 'main')),
+    isNewChat
+      ? s.getModel('draft') || s.getModel('new')
+      : s.getModel(resolvedSessionKey || activeFriendlyId || 'main'),
   )
   const currentModel = _localModelOverride || sessionModel || gatewayModel
 
@@ -2276,15 +2298,17 @@ export function ChatScreen({
   const createSessionForMessage = useCallback(
     async (preferredFriendlyId?: string) => {
       setCreatingSession(true)
+      const targetProj = activeSession?.projectId ?? initialProjectId ?? activeId ?? null
       try {
         const res = await fetch('/api/sessions', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(
-            preferredFriendlyId && preferredFriendlyId.trim().length > 0
+          body: JSON.stringify({
+            ...(preferredFriendlyId && preferredFriendlyId.trim().length > 0
               ? { friendlyId: preferredFriendlyId }
-              : {},
-          ),
+              : {}),
+            ...(targetProj ? { projectId: targetProj } : {}),
+          }),
         })
         if (!res.ok) throw new Error(await readError(res))
 
@@ -2312,11 +2336,16 @@ export function ChatScreen({
         setCreatingSession(false)
       }
     },
-    [queryClient],
+    [queryClient, activeSession?.projectId, initialProjectId, activeId],
   )
 
   const upsertSessionInCache = useCallback(
-    (friendlyId: string, lastMessage: ChatMessage) => {
+    (
+      friendlyId: string,
+      lastMessage: ChatMessage,
+      projectId?: string | null,
+      projectName?: string | null,
+    ) => {
       if (!friendlyId) return
       queryClient.setQueryData(
         chatQueryKeys.sessions,
@@ -2339,6 +2368,8 @@ export function ChatScreen({
                 updatedAt: now,
                 lastMessage,
                 titleStatus: 'idle',
+                projectId: projectId ?? null,
+                projectName: projectName ?? null,
               },
               ...sessions,
             ]
@@ -2350,6 +2381,8 @@ export function ChatScreen({
               ...session,
               updatedAt: now,
               lastMessage,
+              ...(projectId !== undefined ? { projectId: projectId ?? null } : {}),
+              ...(projectName !== undefined ? { projectName: projectName ?? null } : {}),
             }
           })
         },
@@ -2475,18 +2508,30 @@ export function ChatScreen({
       if (isNewChat) {
         // Create a unique UUID thread for the new session
         const threadId = crypto.randomUUID()
+        if (sessionModel) {
+          useSessionModelStore.getState().setModel(threadId, sessionModel)
+        }
+        setRecentSession(threadId)
+
         const { optimisticMessage } = createOptimisticMessage(
           trimmedBody,
           attachmentPayload,
         )
         appendHistoryMessage(queryClient, threadId, threadId, optimisticMessage)
-        upsertSessionInCache(threadId, optimisticMessage)
+        upsertSessionInCache(
+          threadId,
+          optimisticMessage,
+          targetProjectCandidateId,
+          targetProjectCandidateName,
+        )
         setPendingGeneration(true)
         setSending(true)
         setWaitingForResponse(true)
 
-        if (!isPortableMode) {
-          void createSessionForMessage(threadId).catch((err: unknown) => {
+        // Register the session and project association on the server before streaming
+        // so hermes-gateway never receives /chat/stream before the session row exists.
+        void createSessionForMessage(threadId)
+          .catch((err: unknown) => {
             if (import.meta.env.DEV) {
               console.warn('[chat] failed to register new thread', err)
             }
@@ -2494,19 +2539,19 @@ export function ChatScreen({
               queryKey: chatQueryKeys.sessions,
             })
           })
-        }
-
-        sendMessage(
-          threadId,
-          threadId,
-          trimmedBody,
-          attachmentPayload,
-          fastMode,
-          true,
-          typeof optimisticMessage.clientId === 'string'
-            ? optimisticMessage.clientId
-            : '',
-        )
+          .finally(() => {
+            sendMessage(
+              threadId,
+              threadId,
+              trimmedBody,
+              attachmentPayload,
+              fastMode,
+              true,
+              typeof optimisticMessage.clientId === 'string'
+                ? optimisticMessage.clientId
+                : '',
+            )
+          })
         if (!embedded) {
           navigate({
             to: '/chat/$sessionKey',
@@ -2930,8 +2975,8 @@ export function ChatScreen({
               thinkingLevel={thinkingLevel}
               onThinkingLevelChange={handleThinkingLevelChange}
               projectSessionKey={isNewChat ? 'new' : activeFriendlyId}
-              projectId={activeSession?.projectId}
-              projectName={activeSession?.projectName}
+              projectId={targetProjectCandidateId}
+              projectName={targetProjectCandidateName}
             />
           ) : null}
         </main>

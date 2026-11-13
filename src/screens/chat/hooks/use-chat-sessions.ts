@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { chatQueryKeys, fetchSessions } from '../chat-queries'
 import { isRecentSession } from '../pending-send'
@@ -38,22 +38,30 @@ function buildSyntheticActiveSession(
   activeFriendlyId: string,
   forcedSessionKey: string | undefined,
   stored: SessionTitleInfo | undefined,
+  cachedSession?: SessionMeta | null,
 ): SessionMeta | null {
   if (!activeFriendlyId || activeFriendlyId === 'new') return null
 
   const derivedTitle =
-    stored?.title ?? (activeFriendlyId === 'main' ? 'Hermes' : 'New Session')
+    stored?.title ??
+    cachedSession?.title ??
+    cachedSession?.derivedTitle ??
+    (activeFriendlyId === 'main' ? 'Hermes' : 'New Session')
 
   return {
     key: forcedSessionKey || activeFriendlyId,
     friendlyId: activeFriendlyId,
-    label: undefined,
-    title: undefined,
+    label: cachedSession?.label,
+    title: cachedSession?.title,
     derivedTitle,
-    updatedAt: Date.now(),
-    titleStatus: stored?.status ?? 'idle',
-    titleSource: stored?.source,
-    titleError: stored?.error,
+    updatedAt: cachedSession?.updatedAt ?? Date.now(),
+    titleStatus: stored?.status ?? cachedSession?.titleStatus ?? 'idle',
+    titleSource: stored?.source ?? cachedSession?.titleSource,
+    titleError: stored?.error ?? cachedSession?.titleError,
+    projectId: cachedSession?.projectId ?? null,
+    projectName: cachedSession?.projectName ?? null,
+    profileName: cachedSession?.profileName ?? null,
+    profile: cachedSession?.profile ?? null,
   }
 }
 
@@ -68,6 +76,7 @@ export function useChatSessions({
   isNewChat,
   forcedSessionKey,
 }: UseChatSessionsInput) {
+  const queryClient = useQueryClient()
   const sessionsQuery = useQuery({
     queryKey: chatQueryKeys.sessions,
     queryFn: fetchSessions,
@@ -84,14 +93,26 @@ export function useChatSessions({
       mergeSessionTitle(session, storedTitles[session.friendlyId]),
     )
     const activeAlreadyPresent = merged.some(
-      (session) => session.friendlyId === activeFriendlyId,
+      (session) =>
+        session.friendlyId === activeFriendlyId ||
+        session.key === activeFriendlyId ||
+        session.declaredKey === activeFriendlyId,
     )
 
     if (!activeAlreadyPresent && (forcedSessionKey || isRecentSession(activeFriendlyId))) {
+      const existingInCache = (
+        queryClient.getQueryData(chatQueryKeys.sessions) as SessionMeta[] | undefined
+      )?.find(
+        (s) =>
+          s.friendlyId === activeFriendlyId ||
+          s.key === activeFriendlyId ||
+          s.declaredKey === activeFriendlyId,
+      )
       const synthetic = buildSyntheticActiveSession(
         activeFriendlyId,
         forcedSessionKey,
         storedTitles[activeFriendlyId],
+        existingInCache,
       )
       if (synthetic) {
         merged.unshift(synthetic)
@@ -106,18 +127,29 @@ export function useChatSessions({
   }, [
     activeFriendlyId,
     forcedSessionKey,
+    queryClient,
     sessionsQuery.data,
     storedTitles,
   ])
 
   const activeSession = useMemo(() => {
-    return sessions.find((session) => session.friendlyId === activeFriendlyId)
+    return sessions.find(
+      (session) =>
+        session.friendlyId === activeFriendlyId ||
+        session.key === activeFriendlyId ||
+        session.declaredKey === activeFriendlyId,
+    )
   }, [sessions, activeFriendlyId])
   const activeExists = useMemo(() => {
     if (isNewChat) return true
     if (forcedSessionKey) return true
     if (isRecentSession(activeFriendlyId)) return true
-    return sessions.some((session) => session.friendlyId === activeFriendlyId)
+    return sessions.some(
+      (session) =>
+        session.friendlyId === activeFriendlyId ||
+        session.key === activeFriendlyId ||
+        session.declaredKey === activeFriendlyId,
+    )
   }, [activeFriendlyId, forcedSessionKey, isNewChat, sessions])
   const activeSessionKey = activeSession?.key ?? ''
   const activeTitle = useMemo(() => {

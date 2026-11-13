@@ -3,6 +3,7 @@ import type { ChatAttachment, ChatMessage } from '../types'
 import { readResolvedSessionHeaders } from '@/lib/send-stream-session-headers'
 import { useChatStore } from '@/stores/chat-store'
 import { pushActivity } from '@/components/inspector/activity-store'
+import { isRecentSession } from '../pending-send'
 
 /**
  * Determine whether a stream-resolved session key change should trigger
@@ -23,12 +24,14 @@ export function shouldResolveStreamSession({
   pinMainSession?: boolean
 }): boolean {
   // No change → nothing to resolve
-  if (resolvedSessionKey === currentSessionKey) return false
+  if (!resolvedSessionKey || resolvedSessionKey === currentSessionKey) return false
   // "new" should resolve once to a concrete session.
   if (requestedSessionKey === 'new') return true
   // "main" only stays pinned when the current route is intentionally bound to
   // the portable Workspace session in zero-fork mode.
   if (requestedSessionKey === 'main') return !pinMainSession
+  // Client-generated thread session that resolved to a backend session ID
+  if (isRecentSession(requestedSessionKey)) return true
   // Concrete session → never promote a different backend ID
   return false
 }

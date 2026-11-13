@@ -874,14 +874,23 @@ function ControlPlaneStage({
 
           <div className={cn('relative z-10 flex flex-col gap-3', viewMode === 'runtime' ? 'block' : 'hidden')}>
             {!tmuxAvailable ? (
-              <div className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-2.5 text-xs text-amber-100">
-                <div className="font-semibold text-amber-50">tmux not installed on this host</div>
-                <div className="mt-1 text-amber-100/80">Spawning a Hermes swarm worker requires tmux. Without it, the worker can start but cannot dispatch tasks (you'll see &lsquo;can't find pane: swarm-&lt;id&gt;&rsquo; errors). Install tmux:</div>
-                <code className="mt-1 inline-block rounded bg-black/30 px-2 py-0.5 text-[10px] text-amber-100">brew install tmux</code>{' '}
-                <span className="text-amber-100/60">(macOS) or</span>{' '}
-                <code className="inline-block rounded bg-black/30 px-2 py-0.5 text-[10px] text-amber-100">apt install tmux</code>{' '}
-                <span className="text-amber-100/60">(Ubuntu/Debian).</span>
-              </div>
+              members.some((member) => member.processAlive) ? (
+                <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-xs text-emerald-100">
+                  <div className="font-semibold text-emerald-50">Gateway HTTP Mode active (no local tmux)</div>
+                  <div className="mt-1 text-emerald-100/80">
+                    Tasks and direct worker chats run via Hermes Gateway HTTP endpoints. Local tmux pane streaming is disabled in this container runtime.
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-2.5 text-xs text-amber-100">
+                  <div className="font-semibold text-amber-50">tmux not installed on this host</div>
+                  <div className="mt-1 text-amber-100/80">Spawning a Hermes swarm worker requires tmux. Without it, the worker can start but cannot dispatch tasks (you'll see &lsquo;can't find pane: swarm-&lt;id&gt;&rsquo; errors). Install tmux:</div>
+                  <code className="mt-1 inline-block rounded bg-black/30 px-2 py-0.5 text-[10px] text-amber-100">brew install tmux</code>{' '}
+                  <span className="text-amber-100/60">(macOS) or</span>{' '}
+                  <code className="inline-block rounded bg-black/30 px-2 py-0.5 text-[10px] text-amber-100">apt install tmux</code>{' '}
+                  <span className="text-amber-100/60">(Ubuntu/Debian).</span>
+                </div>
+              )
             ) : null}
             {focusedRuntimeWorkerId ? (
               <div className="flex items-center justify-between rounded-xl border border-[var(--theme-border)] bg-[var(--theme-card)] px-4 py-2 text-xs text-[var(--theme-muted)]">
@@ -1245,9 +1254,17 @@ export function Swarm2Screen() {
     }
   }, [members, selectedId, focusedRuntimeWorkerId])
 
+  const didInitialCrewScrollRef = useRef(false)
+
   useLayoutEffect(() => {
     return scheduleScrollContextToTop(topRef.current)
   }, [])
+
+  useEffect(() => {
+    if (didInitialCrewScrollRef.current || members.length === 0) return
+    didInitialCrewScrollRef.current = true
+    return scheduleScrollContextToTop(topRef.current)
+  }, [members.length])
 
 
   const activeRuntimeCount = members.filter((member) =>

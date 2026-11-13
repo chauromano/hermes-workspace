@@ -100,6 +100,7 @@ export type SessionSummary = {
   profileName?: string | null
   profile?: string | null
   archived?: boolean
+  declaredKey?: string | null
 }
 
 export type SessionListResponse = {
@@ -131,6 +132,7 @@ export type SessionMeta = {
   profileName?: string | null
   profile?: string | null
   archived?: boolean
+  declaredKey?: string | null
 }
 
 export type PathsPayload = {

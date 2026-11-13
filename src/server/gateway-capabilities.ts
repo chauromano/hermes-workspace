@@ -468,7 +468,21 @@ async function probeEnhancedChatStream(): Promise<boolean> {
     // gateway 404s, anything in between 404s. Enhanced fork accepts POST
     // and returns either a 4xx structured error (validation) or starts a
     // stream; either way the path is registered.
-    if (res.status === 404 || res.status === 403) return false
+    if (res.status === 404) {
+      // Modern hermes-gateway registers POST /api/sessions/{session_id}/chat/stream
+      // and looks up the session before validating the body, returning 404 with
+      // {"error":{"code":"session_not_found",...}} for "__probe__". That proves
+      // the session chat stream endpoint exists.
+      const bodyText = await res.text().catch(() => '')
+      if (
+        bodyText.includes('session_not_found') ||
+        bodyText.includes('Session not found')
+      ) {
+        return true
+      }
+      return false
+    }
+    if (res.status === 403) return false
     // 405 = the path exists but POST is wrong. That's still vanilla — no
     // enhanced fork would 405 a POST to its own chat/stream endpoint.
     if (res.status === 405) return false

@@ -99,6 +99,7 @@ export function useCreateProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -121,24 +122,24 @@ export function useSetActiveProject() {
       return data.active_id ?? null
     },
     onMutate: async (newActiveId: string | null) => {
+      queryClient.setQueriesData<{ projects: Project[]; active_id: string | null }>(
+        { queryKey: PROJECTS_QUERY_KEY },
+        (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            active_id: newActiveId,
+            projects: old.projects.map((p) => ({
+              ...p,
+              is_active: p.id === newActiveId,
+            })),
+          }
+        },
+      )
       await queryClient.cancelQueries({ queryKey: PROJECTS_QUERY_KEY })
-      const previous = queryClient.getQueryData<{ projects: Project[]; active_id: string | null }>(PROJECTS_QUERY_KEY)
-      if (previous) {
-        queryClient.setQueryData(PROJECTS_QUERY_KEY, {
-          ...previous,
-          active_id: newActiveId,
-          projects: previous.projects.map((p) => ({
-            ...p,
-            is_active: p.id === newActiveId,
-          })),
-        })
-      }
-      return { previous }
     },
-    onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(PROJECTS_QUERY_KEY, context.previous)
-      }
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
@@ -164,6 +165,7 @@ export function useDeleteProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -196,6 +198,7 @@ export function useUpdateProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -224,6 +227,7 @@ export function useAddProjectFolder() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -250,6 +254,7 @@ export function useRemoveProjectFolder() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -273,6 +278,7 @@ export function useArchiveProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }
@@ -296,6 +302,7 @@ export function useRestoreProject() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] })
     },
   })
 }

@@ -33,7 +33,12 @@ export function MobilePromptTrigger() {
       localStorage.getItem('claude-mobile-prompt-dismissed') === 'true'
     const isSetup = localStorage.getItem('claude-mobile-setup-seen') === 'true'
 
-    if (isDismissed || isSetup) {
+    const isAutomated = typeof navigator !== 'undefined' && navigator.webdriver
+    const isLocalhost =
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'localhost'
+
+    if (isDismissed || isSetup || isAutomated || isLocalhost) {
       return
     }
 

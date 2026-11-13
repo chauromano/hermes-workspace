@@ -12,6 +12,7 @@ import { appendSwarmMemoryEvent, buildSwarmStartupSnapshot } from '../../server/
 import { rosterByWorkerId, type SwarmRosterWorker } from '../../server/swarm-roster'
 import { publishSwarmCheckpointNotification } from '../../server/swarm-notifications'
 import { ensureSwarmProfileConfig } from '../../server/swarm-profile-config'
+import { executeWorkerViaGateway, resolveWorkerProfilePath } from '../../server/swarm-gateway-fallback'
 
 const HERMES_BIN_CANDIDATES = [
   process.env.HERMES_CLI_BIN,
@@ -62,7 +63,7 @@ type WorkerResult = {
   error: string | null
   durationMs: number
   exitCode: number | null
-  delivery?: 'tmux' | 'oneshot'
+  delivery?: 'tmux' | 'oneshot' | 'gateway'
   checkpoint?: ParsedSwarmCheckpoint | null
   checkpointStatus?: 'checkpointed' | 'timeout' | 'not-requested'
 }
@@ -103,7 +104,7 @@ function getWrapperPath(workerId: string): string {
 }
 
 function getProfilePath(workerId: string): string {
-  return join(getProfilesDir(), workerId)
+  return resolveWorkerProfilePath(workerId)
 }
 
 function validateWorkerId(workerId: string): boolean {
@@ -946,12 +947,115 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
         killSignal: 'SIGTERM',
       },
       (error, stdout, stderr) => {
+        const finalizeOutput = (
+          outText: string,
+          errText: string,
+          deliveryMode: 'oneshot' | 'gateway',
+          synthCheckpointIfMissing: boolean,
+        ) => {
+          const durationMs = Date.now() - startedAt
+          const result: WorkerResult = {
+            workerId,
+            ok: true,
+            output: outText,
+            error: errText.trim() || null,
+            durationMs,
+            exitCode: 0,
+            delivery: deliveryMode,
+          }
+          if (options?.waitForCheckpoint) {
+            let checkpoint = parseSwarmCheckpoint(outText)
+            if (!checkpoint && synthCheckpointIfMissing && outText.trim()) {
+              checkpoint = {
+                stateLabel: 'DONE',
+                runtimeState: 'idle',
+                checkpointStatus: 'done',
+                filesChanged: null,
+                commandsRun: null,
+                result: outText.trim().slice(0, 400),
+                blocker: null,
+                nextAction: null,
+                raw: outText.trim(),
+              }
+            }
+            if (checkpoint) {
+              markCheckpointResult(workerId, checkpoint, options?.notifySessionKey ?? 'main')
+              recordMissionCheckpoint({
+                missionId: options?.missionId,
+                assignmentId: assignment.assignmentId ?? null,
+                workerId,
+                checkpoint,
+                source: 'swarm-dispatch',
+              })
+              appendSwarmMemoryEvent({
+                workerId,
+                missionId: options?.missionId ?? null,
+                assignmentId: assignment.assignmentId ?? null,
+                type: 'checkpoint',
+                summary: checkpoint.result ?? `Checkpoint ${checkpoint.stateLabel}`,
+                checkpoint,
+                event: {
+                  stateLabel: checkpoint.stateLabel,
+                  filesChanged: checkpoint.filesChanged,
+                  commandsRun: checkpoint.commandsRun,
+                  blocker: checkpoint.blocker,
+                  nextAction: checkpoint.nextAction,
+                },
+              })
+              publishSwarmCheckpointNotification({
+                workerId,
+                missionId: options?.missionId ?? null,
+                assignmentId: assignment.assignmentId ?? null,
+                checkpoint,
+                notifySessionKey: options?.notifySessionKey ?? 'main',
+              })
+              result.checkpoint = checkpoint
+              result.checkpointStatus = 'checkpointed'
+            } else {
+              result.checkpoint = null
+              result.checkpointStatus = 'timeout'
+            }
+          } else {
+            result.checkpointStatus = 'not-requested'
+          }
+          markDispatchResult(workerId, result)
+          recordDispatchBlock(workerId, assignment, result, options)
+          resolve(result)
+        }
+
         const durationMs = Date.now() - startedAt
         const stdoutStr = (stdout || '').toString()
         const stderrStr = (stderr || '').toString()
         const out = stdoutStr.length > MAX_OUTPUT_CHARS ? stdoutStr.slice(-MAX_OUTPUT_CHARS) : stdoutStr
 
         if (error) {
+          const errnoCode = (error as NodeJS.ErrnoException).code
+          if (errnoCode === 'ENOENT' || error.message.includes('ENOENT')) {
+            void executeWorkerViaGateway(workerId, prompt, { timeoutMs }).then((gwResult) => {
+              if (gwResult.ok) {
+                const gwOut =
+                  gwResult.output.length > MAX_OUTPUT_CHARS
+                    ? gwResult.output.slice(-MAX_OUTPUT_CHARS)
+                    : gwResult.output
+                finalizeOutput(gwOut, '', 'gateway', true)
+                return
+              }
+              const failResult: WorkerResult = {
+                workerId,
+                ok: false,
+                output: '',
+                error: gwResult.error ?? 'Gateway fallback execution failed',
+                durationMs: Date.now() - startedAt,
+                exitCode: null,
+                delivery: 'gateway',
+              }
+              markDispatchResult(workerId, failResult)
+              recordDispatchBlock(workerId, assignment, failResult, options)
+              resolve(failResult)
+            })
+            return
+          }
+
           const code = (error as { code?: number | null }).code ?? null
           const result: WorkerResult = {
             workerId,
@@ -968,60 +1072,7 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
           return
         }
 
-        const result: WorkerResult = {
-          workerId,
-          ok: true,
-          output: out,
-          error: stderrStr.trim() || null,
-          durationMs,
-          exitCode: 0,
-          delivery: 'oneshot',
-        }
-        if (options?.waitForCheckpoint) {
-          const checkpoint = parseSwarmCheckpoint(out)
-          if (checkpoint) {
-            markCheckpointResult(workerId, checkpoint, options?.notifySessionKey ?? 'main')
-            recordMissionCheckpoint({
-              missionId: options?.missionId,
-              assignmentId: assignment.assignmentId ?? null,
-              workerId,
-              checkpoint,
-              source: 'swarm-dispatch',
-            })
-            appendSwarmMemoryEvent({
-              workerId,
-              missionId: options?.missionId ?? null,
-              assignmentId: assignment.assignmentId ?? null,
-              type: 'checkpoint',
-              summary: checkpoint.result ?? `Checkpoint ${checkpoint.stateLabel}`,
-              checkpoint,
-              event: {
-                stateLabel: checkpoint.stateLabel,
-                filesChanged: checkpoint.filesChanged,
-                commandsRun: checkpoint.commandsRun,
-                blocker: checkpoint.blocker,
-                nextAction: checkpoint.nextAction,
-              },
-            })
-            publishSwarmCheckpointNotification({
-              workerId,
-              missionId: options?.missionId ?? null,
-              assignmentId: assignment.assignmentId ?? null,
-              checkpoint,
-              notifySessionKey: options?.notifySessionKey ?? 'main',
-            })
-            result.checkpoint = checkpoint
-            result.checkpointStatus = 'checkpointed'
-          } else {
-            result.checkpoint = null
-            result.checkpointStatus = 'timeout'
-          }
-        } else {
-          result.checkpointStatus = 'not-requested'
-        }
-        markDispatchResult(workerId, result)
-        recordDispatchBlock(workerId, assignment, result, options)
-        resolve(result)
+        finalizeOutput(out, stderrStr, 'oneshot', false)
       },
     )
 

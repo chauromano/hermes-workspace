@@ -253,8 +253,24 @@ async function fetchClaudeProfiles(): Promise<ClaudeProfileSummary[]> {
 // Adapt Hermes profiles into the ConfigPayload shape that the existing
 // Operations UI expects. Each profile becomes one agent.
 async function fetchOperationsConfig(): Promise<ConfigPayload> {
-  const profiles = await fetchClaudeProfiles()
+  const [profiles, crewRes] = await Promise.all([
+    fetchClaudeProfiles(),
+    fetch('/api/crew-status')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+  ])
+  const aliveAgentIds = new Set<string>(
+    Array.isArray((crewRes as { crew?: Array<{ id?: string; processAlive?: boolean }> } | null)?.crew)
+      ? ((crewRes as { crew: Array<{ id?: string; processAlive?: boolean }> }).crew
+          .filter((c) => c.processAlive && typeof c.id === 'string')
+          .map((c) => String(c.id)))
+      : [],
+  )
   const list = profiles.map((profile) => {
+    const normalizedName =
+      profile.name === 'default' || profile.name === 'general'
+        ? 'general'
+        : profile.name
     // Generate clean description fallback from soul if description is empty
     let desc = profile.description || ''
     if (!desc && profile.soul) {
@@ -282,6 +298,7 @@ async function fetchOperationsConfig(): Promise<ConfigPayload> {
       avatar: profile.avatar || '',
       emoji: profile.emoji || '',
       color: profile.color || '',
+      isGatewayAlive: aliveAgentIds.has(normalizedName) || aliveAgentIds.has(profile.name),
     }
   })
   // Default-profile model becomes the operations defaultModel suggestion
@@ -470,14 +487,19 @@ function getAgentSessions(agentId: string, sessions: GatewaySession[]): GatewayS
     })
 }
 
-function getAgentStatus(latestSession: GatewaySession | null): OperationsAgentStatus {
-  if (!latestSession) return 'idle'
+function getAgentStatus(
+  latestSession: GatewaySession | null,
+  isGatewayAlive = false,
+): OperationsAgentStatus {
+  if (latestSession) {
+    const status = readString(latestSession.status).toLowerCase()
+    if (status.includes('fail') || status.includes('error')) return 'error'
 
-  const status = readString(latestSession.status).toLowerCase()
-  if (status.includes('fail') || status.includes('error')) return 'error'
+    const updatedAt = readTimestamp(latestSession.updatedAt)
+    if (updatedAt && Date.now() - updatedAt < 120_000) return 'active'
+  }
 
-  const updatedAt = readTimestamp(latestSession.updatedAt)
-  if (updatedAt && Date.now() - updatedAt < 120_000) return 'active'
+  if (isGatewayAlive) return 'active'
 
   return 'idle'
 }
@@ -595,6 +617,19 @@ export function useOperations() {
     refetchInterval: 30_000,
   })
 
+  const crewStatusQuery = useQuery({
+    queryKey: ['operations', 'crew-status'],
+    queryFn: async () => {
+      const res = await fetch('/api/crew-status')
+      if (!res.ok) return []
+      const payload = (await res.json().catch(() => null)) as {
+        crew?: Array<{ id?: string; processAlive?: boolean }>
+      } | null
+      return Array.isArray(payload?.crew) ? payload.crew : []
+    },
+    refetchInterval: 15_000,
+  })
+
   const agents = useMemo(() => {
     const parsed = configQuery.data?.parsed
     const allAgents = normalizeAgentList(parsed?.agents?.list)
@@ -603,6 +638,11 @@ export function useOperations() {
     const configAgents = allAgents.filter((a) => !HIDDEN_AGENTS.has(a.id))
     const sessions = sessionsQuery.data ?? []
     const cronJobs = cronJobsQuery.data ?? []
+    const aliveAgentIds = new Set(
+      (crewStatusQuery.data ?? [])
+        .filter((c) => c.processAlive && typeof c.id === 'string')
+        .map((c) => String(c.id)),
+    )
 
     return configAgents.map((agent) => {
       const meta = loadAgentMeta(agent.id, {
@@ -627,7 +667,8 @@ export function useOperations() {
           .filter((value): value is number => value !== null)
           .sort((left, right) => right - left)[0] ??
         null
-      const status = getAgentStatus(latestSession)
+      const isGatewayAlive = aliveAgentIds.has(agent.id) || aliveAgentIds.has(agent.name)
+      const status = getAgentStatus(latestSession, isGatewayAlive)
       const recentOutputs = [
         ...agentSessions.map((session) => buildSessionOutput(session, agent.id)),
         ...jobs.map((job) => buildCronOutput(job, agent.id)),
@@ -664,6 +705,7 @@ export function useOperations() {
     configQuery.data,
     sessionsQuery.data,
     cronJobsQuery.data,
+    crewStatusQuery.data,
     metaVersion,
   ])
 

@@ -18,6 +18,7 @@ import type { SessionMeta } from '../../types'
 import { Button } from '@/components/ui/button'
 import { usePinnedSessions } from '@/hooks/use-pinned-sessions'
 import { useProjects, useSetActiveProject, type Project } from '@/hooks/use-projects'
+import { useSessionModelStore } from '@/stores/session-model-store'
 import { ProjectModal } from '@/components/projects/project-modal'
 import {
   MenuContent,
@@ -247,29 +248,29 @@ export const SidebarSessions = memo(function SidebarSessions({
 
   // Action: Create new chat session (untied, latest active profile)
   const handleNewChat = useCallback(() => {
-    setActiveProjectMutation.mutate(null, {
-      onSettled: () => {
-        navigate({
-          to: '/chat/$sessionKey',
-          params: { sessionKey: 'new' },
-        })
-        onSelect?.()
-      },
+    useSessionModelStore.getState().setModel('new', '')
+    useSessionModelStore.getState().setModel('draft', '')
+    navigate({
+      to: '/chat/$sessionKey',
+      params: { sessionKey: 'new' },
+      search: { projectId: undefined },
     })
+    setActiveProjectMutation.mutate(null)
+    onSelect?.()
   }, [setActiveProjectMutation, navigate, onSelect])
 
   // Action: Start new session for a specific project
   const handleNewProjectSession = useCallback(
     (project: Project) => {
-      setActiveProjectMutation.mutate(project.id, {
-        onSettled: () => {
-          navigate({
-            to: '/chat/$sessionKey',
-            params: { sessionKey: 'new' },
-          })
-          onSelect?.()
-        },
+      useSessionModelStore.getState().setModel('new', '')
+      useSessionModelStore.getState().setModel('draft', '')
+      setActiveProjectMutation.mutate(project.id)
+      navigate({
+        to: '/chat/$sessionKey',
+        params: { sessionKey: 'new' },
+        search: { projectId: project.id },
       })
+      onSelect?.()
     },
     [setActiveProjectMutation, navigate, onSelect],
   )
@@ -286,6 +287,11 @@ export const SidebarSessions = memo(function SidebarSessions({
     setProjectModalOpen(true)
   }, [])
 
+  const visibleProjectIds = useMemo(
+    () => new Set(projects.map((p) => p.id)),
+    [projects],
+  )
+
   // Partition sessions into Pinned, Chat (untied), and Project/Status
   const { pinnedSessions, chatSessions, projectSessions } = useMemo(() => {
     const pinnedKeys = new Set(pinnedSessionKeys)
@@ -299,8 +305,8 @@ export const SidebarSessions = memo(function SidebarSessions({
         continue
       }
 
-      // Check if session belongs to a project
-      if (!session.projectId) {
+      // Check if session belongs to a visible (non-deleted, non-archived) project
+      if (!session.projectId || !visibleProjectIds.has(session.projectId)) {
         if (matchesDateFilter(session, chatDateFilter)) {
           chats.push(session)
         }
@@ -316,7 +322,7 @@ export const SidebarSessions = memo(function SidebarSessions({
       chatSessions: chats,
       projectSessions: projectSess,
     }
-  }, [pinnedSessionKeys, sessions, chatDateFilter, sessionsDateFilter])
+  }, [pinnedSessionKeys, sessions, visibleProjectIds, chatDateFilter, sessionsDateFilter])
 
   // Group project sessions by Project
   const sessionsByProject = useMemo(() => {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Hermes Agent FastAPI Client
  *
  * HTTP client for the Hermes Agent FastAPI backend (default: http://127.0.0.1:8642).
@@ -167,6 +167,15 @@ export async function createSession(opts?: {
     )
     if (resp?.session) return resp.session
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    if (
+      opts?.id &&
+      (errMsg.includes('409') ||
+        errMsg.includes('Session already exists') ||
+        errMsg.includes('session_exists'))
+    ) {
+      return { id: opts.id, title: opts.title || opts.id } as ClaudeSession
+    }
     if (!getCapabilities().dashboard.available) throw err
   }
   if (getCapabilities().dashboard.available) {
@@ -339,6 +348,7 @@ export function toSessionSummary(
   session: ClaudeSession,
 ): Record<string, unknown> {
   return {
+    id: session.id,
     key: session.id,
     friendlyId: session.id,
     kind: 'chat',
@@ -387,22 +397,104 @@ type StreamChatOptions = {
  * Send a chat message and stream SSE events from Hermes Agent FastAPI.
  * Returns a promise that resolves when the stream ends.
  */
+const KNOWN_PROVIDER_PREFIXES = new Set([
+  'openai-codex',
+  'openrouter',
+  'nous',
+  'anthropic',
+  'openai',
+  'google',
+  'gemini',
+  'ollama',
+  'local',
+  'custom',
+  'zai',
+  'kimi-coding',
+  'minimax',
+  'minimax-cn',
+  'copilot',
+  'xai',
+  'xai-oauth',
+  'deepseek',
+  'groq',
+  'together',
+  'fireworks',
+  'mistral',
+  'bedrock',
+  'vertex',
+  'azure',
+  'vllm',
+  'lmstudio',
+])
+
+function buildStreamChatPayload(body: {
+  message: string
+  model?: string
+  provider?: string
+  system_message?: string
+  attachments?: Array<Record<string, unknown>>
+}): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    message: body.message,
+  }
+  if (body.system_message !== undefined) {
+    payload.system_message = body.system_message
+  }
+  if (body.attachments !== undefined) {
+    payload.attachments = body.attachments
+  }
+
+  const rawModel = typeof body.model === 'string' ? body.model.trim() : ''
+  const explicitProvider =
+    typeof body.provider === 'string' ? body.provider.trim() : ''
+
+  if (rawModel && rawModel !== 'hermes-agent') {
+    let provider = explicitProvider
+    let model = rawModel
+    if (!provider && rawModel.includes('/')) {
+      const slashIdx = rawModel.indexOf('/')
+      const candidatePrefix = rawModel.slice(0, slashIdx).trim().toLowerCase()
+      const remainder = rawModel.slice(slashIdx + 1).trim()
+      if (remainder && KNOWN_PROVIDER_PREFIXES.has(candidatePrefix)) {
+        provider = rawModel.slice(0, slashIdx).trim()
+        model = remainder
+      }
+    }
+    payload.model = model
+    if (provider) {
+      payload.provider = provider
+    }
+    // Tell hermes-agent's /api/sessions/{id}/chat/stream to honor the
+    // per-request model/provider instead of sticking to the session's
+    // previously persisted model in state.db.
+    payload.require_model_lock = true
+  } else if (rawModel) {
+    payload.model = rawModel
+  }
+
+  return payload
+}
+
 export async function streamChat(
   sessionId: string,
   body: {
     message: string
     model?: string
+    provider?: string
     system_message?: string
     attachments?: Array<Record<string, unknown>>
+    profile?: string
   },
   opts: StreamChatOptions,
 ): Promise<void> {
+  const payload = buildStreamChatPayload(body)
+  const gatewayUrl = getActiveGatewayUrl(body.profile)
   const res = await fetch(
-    `${CLAUDE_API}/api/sessions/${sessionId}/chat/stream`,
+    `${gatewayUrl}/api/sessions/${sessionId}/chat/stream`,
     {
       method: 'POST',
       headers: { ..._authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       signal: opts.signal,
     },
   )

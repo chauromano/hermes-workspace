@@ -16,6 +16,7 @@ import {
 } from '../../server/session-utils'
 import { isAuthenticated } from '@/server/auth-middleware'
 import { getLocalSession, getLocalMessages } from '../../server/local-session-store'
+import { resolveInternalSessionId } from '../../server/projects-backend'
 
 export const Route = createFileRoute('/api/history')({
   server: {
@@ -98,17 +99,32 @@ export const Route = createFileRoute('/api/history')({
               })),
             })
           }
+          const internalId = resolveInternalSessionId(sessionKey)
+          const targetFetchKey = internalId || sessionKey
           let messages: Awaited<ReturnType<typeof getMessages>> = []
           let sessionModel: string | undefined
           try {
             const [fetchedMessages, sess] = await Promise.all([
-              getMessages(sessionKey),
-              getSession(sessionKey).catch(() => null),
+              getMessages(targetFetchKey),
+              getSession(targetFetchKey).catch(() => null),
             ])
             messages = fetchedMessages
             sessionModel = (sess?.model as string) || undefined
           } catch {
             messages = []
+          }
+
+          if (messages.length === 0 && targetFetchKey !== sessionKey) {
+            try {
+              const [fallbackMessages, sess] = await Promise.all([
+                getMessages(sessionKey),
+                getSession(sessionKey).catch(() => null),
+              ])
+              if (fallbackMessages.length > 0) {
+                messages = fallbackMessages
+                sessionModel = (sess?.model as string) || sessionModel
+              }
+            } catch {}
           }
 
           // Fallback to local session store for portable/local model sessions
@@ -135,7 +151,7 @@ export const Route = createFileRoute('/api/history')({
 
           return json({
             sessionKey,
-            sessionId: sessionKey,
+            sessionId: targetFetchKey,
             messages: boundedMessages.map((message, index) =>
               toChatMessage(message, { historyIndex: index, sessionModel }),
             ),

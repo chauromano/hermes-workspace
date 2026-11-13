@@ -495,11 +495,6 @@ export function UsageMeter({ visible = true }: { visible?: boolean }) {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err)
       setError(errorMessage)
-      const silent =
-        /unauthorized/i.test(errorMessage) || /not found/i.test(errorMessage)
-      if (!silent) {
-        toast('Failed to fetch usage data', { type: 'error' })
-      }
     }
   }, [statusSessionKey])
 

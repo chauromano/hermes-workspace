@@ -1050,8 +1050,8 @@ function ChatComposerComponent({
     },
   })
   const currentModelQuery = useQuery({
-    queryKey: ['claude', 'session-status-model', sessionKey || 'main'],
-    queryFn: () => fetchCurrentModelFromStatus(sessionKey),
+    queryKey: ['claude', 'session-status-model', sessionKey || 'new'],
+    queryFn: () => fetchCurrentModelFromStatus(sessionKey || 'new'),
     refetchInterval: 30_000,
     retry: false,
   })
@@ -1135,7 +1135,9 @@ function ChatComposerComponent({
       // 3. Sync default model for the activated profile to the composer session
       const targetProfile = profilesQuery.data?.profiles?.find((p) => p.name === profileName)
       if (targetProfile?.model) {
-        useSessionModelStore.getState().setModel(sessionKey, targetProfile.model)
+        const activeKey = sessionKey || 'draft'
+        useSessionModelStore.getState().setModel(activeKey, targetProfile.model)
+        useSessionModelStore.getState().setModel('new', targetProfile.model)
       }
 
       // 4. Bind the active session to this profile immediately on backend
@@ -1225,7 +1227,9 @@ function ChatComposerComponent({
       // Per-session, browser-local persistence. No global config write —
       // picking a model here only affects this chat. The actual model is
       // passed on each request via the chat-completion `model` field.
-      setPersistedSessionModel(normalizedSessionKey || 'draft', resolved)
+      const targetSessionKey = normalizedSessionKey || 'draft'
+      setPersistedSessionModel(targetSessionKey, resolved)
+      setPersistedSessionModel('new', resolved)
       setIsModelMenuOpen(false)
     },
     [

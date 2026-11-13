@@ -55,8 +55,7 @@ export type ResponsesChatRequest = {
   signal?: AbortSignal
   baseUrl?: string
   profile?: string
-  baseUrl?: string
-  profile?: string
+  cwd?: string
 }
 
 const _authHeaders = (): Record<string, string> =>
@@ -127,6 +126,11 @@ export async function* streamResponses(
   if (req.instructions) body.instructions = req.instructions
   if (req.model) body.model = req.model
   if (req.sessionId) body.session_id = req.sessionId
+  if (req.cwd) {
+    headers['X-Hermes-Workspace'] = req.cwd
+    body.cwd = req.cwd
+    body.workspace = req.cwd
+  }
 
   if (req.profile) headers['X-Hermes-Profile'] = req.profile
   const targetApi = req.baseUrl || getActiveGatewayUrl(req.profile)
